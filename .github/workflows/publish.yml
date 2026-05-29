@@ -1,13 +1,13 @@
 name: Publish to PyPI
 
 # Triggers:
-#  - A pushed tag like v0.1.0 → build + publish to PyPI
-#  - Manual run from Actions UI → build + publish to TestPyPI
+#  - A pushed tag like v0.2.1 -> build + publish to PyPI
+#  - Manual run from Actions UI -> build + publish to TestPyPI
 #
 # Setup before this works:
 #  1. Go to https://pypi.org/manage/account/publishing/ and add a
 #     "Trusted Publisher" for this repo (owner/pmb, workflow publish.yml).
-#     No API tokens needed — OIDC handles auth.
+#     No API tokens needed - OIDC handles auth.
 #  2. Optionally do the same on https://test.pypi.org/ for the manual job.
 
 on:

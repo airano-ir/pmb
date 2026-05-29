@@ -355,11 +355,15 @@ class Engine:
         # Pick the right model id depending on backend (fastembed uses the
         # same canonical names but advertises its catalogue separately).
         emb_backend = self.config.get("embedding.backend")
-        emb_model = (
-            self.config.get("embedding.fastembed_model")
-            if emb_backend == "fastembed"
-            else self.config.get("embedding.model")
-        )
+        if emb_backend == "fastembed":
+            emb_model = self.config.get("embedding.fastembed_model")
+        elif emb_backend == "ollama":
+            emb_model = self.config.get("embedding.ollama_model")
+        elif emb_backend == "openai":
+            emb_model = self.config.get("embedding.openai_model")
+        else:
+            emb_model = self.config.get("embedding.model")
+        emb_base_url = self.config.get("embedding.ollama_url")
         # Improvement #1: reranker is needed if EITHER the always-on
         # `recall.rerank` flag is True OR the gated `recall.rerank_when_close`
         # is True. We pass the model name to HybridSearch in either case;
@@ -372,6 +376,7 @@ class Engine:
             vector_path=self.workspace.vector_path,
             model_name=emb_model,
             embedding_backend=emb_backend,
+            embedding_base_url=emb_base_url,
             bm25_weight=self.config.get("recall.bm25_weight"),
             rerank_model_name=(
                 self.config.get("recall.rerank_model")

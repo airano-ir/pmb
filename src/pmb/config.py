@@ -31,7 +31,7 @@ import yaml
 
 
 # ----------------------------------------------------------------------
-# Schema — every knob the user can tune, with type and human help text
+# Schema - every knob the user can tune, with type and human help text
 # ----------------------------------------------------------------------
 
 
@@ -45,7 +45,7 @@ class _Setting:
     max: Optional[float] = None
 
 
-# A single source of truth — every knob in PMB lives here. Adding a key
+# A single source of truth - every knob in PMB lives here. Adding a key
 # here is the only step needed to expose it as `pmb config <key>`.
 SCHEMA: dict[str, _Setting] = {
     # Recall / search
@@ -107,7 +107,7 @@ SCHEMA: dict[str, _Setting] = {
         bool, False,
         "HippoRAG-style Personalized PageRank over the entity graph. "
         "Diffuses relevance through graph for multi-hop unlock. Off by "
-        "default — adds noise to single-entity lookups. Enable for "
+        "default - adds noise to single-entity lookups. Enable for "
         "multi-hop-heavy workloads; combine with intent gating.",
     ),
     "recall.ppr_weight": _Setting(
@@ -137,7 +137,7 @@ SCHEMA: dict[str, _Setting] = {
         bool, False,
         "PMB v2.2: when query looks multi-hop, LLM splits it into 2-3 atomic "
         "sub-queries, runs each, fuses via Reciprocal Rank Fusion. Costs 1 "
-        "LLM call per multi-hop query (cached on disk). Off by default — "
+        "LLM call per multi-hop query (cached on disk). Off by default - "
         "enable for multi-hop heavy workloads. Single-hop queries unaffected.",
     ),
     "recall.reflection_to_edges": _Setting(
@@ -146,7 +146,7 @@ SCHEMA: dict[str, _Setting] = {
         "LLM-extracted entities/people/themes BACK to the source event in "
         "the graph (not just to the reflection chunk). Source becomes "
         "findable via reflection vocabulary without a separate index hit. "
-        "On by default — pure win, no cost.",
+        "On by default - pure win, no cost.",
     ),
     "recall.temporal_enabled": _Setting(
         bool, True,
@@ -170,7 +170,7 @@ SCHEMA: dict[str, _Setting] = {
         bool, True,
         "Improvement E: classify query intent (direct/temporal/multi-hop/"
         "narrative/inferential) and re-weight layer boosts accordingly. "
-        "Cheap (<0.1ms, no LLM). On by default — pure win.",
+        "Cheap (<0.1ms, no LLM). On by default - pure win.",
     ),
     "recall.predictive_enabled": _Setting(
         bool, True,
@@ -215,7 +215,7 @@ SCHEMA: dict[str, _Setting] = {
     "recall.graph_expansion_llm": _Setting(
         bool, False,
         "Use an LLM to extract concrete entities from abstract queries before "
-        "graph traversal. Adds one LLM call per recall — off by default.",
+        "graph traversal. Adds one LLM call per recall - off by default.",
     ),
     "recall.cache_size": _Setting(
         int, 128, "LRU cache size for recall queries (0 disables)",
@@ -271,7 +271,7 @@ SCHEMA: dict[str, _Setting] = {
         "qwen2.5:1.5b, ~900MB) to pick the single best candidate. "
         "Adds ~100-300ms per query but lifts top-1 by 5-15pp on hard "
         "queries where hybrid + cross-encoder all give close scores. "
-        "OFF by default — opt-in: `pmb config set recall.llm_rerank true`. "
+        "OFF by default - opt-in: `pmb config set recall.llm_rerank true`. "
         "Requires `ollama serve` running and `ollama pull qwen2.5:1.5b`. "
         "Degrades gracefully: any LLM error keeps the previous order.",
     ),
@@ -306,7 +306,7 @@ SCHEMA: dict[str, _Setting] = {
         bool, True,
         "Improvement UU: split compound queries on natural markers "
         "('X and why Y' / 'X потому что Y' / 'X, also Y') and fuse "
-        "sub-query results via Reciprocal Rank Fusion. No LLM needed — "
+        "sub-query results via Reciprocal Rank Fusion. No LLM needed - "
         "patterns cover ~80%% of compound queries on EN+RU. "
         "Default ON: regression-safe (single-clause queries skip split "
         "entirely; only fires when both halves carry content tokens).",
@@ -314,7 +314,7 @@ SCHEMA: dict[str, _Setting] = {
     "recall.auto_vocab_bridges": _Setting(
         bool, True,
         "Improvement TT: auto-mine VOCAB_BRIDGES from this workspace's "
-        "own events via PMI co-occurrence. Makes PAMVR domain-agnostic — "
+        "own events via PMI co-occurrence. Makes PAMVR domain-agnostic - "
         "instead of hand-curated coding-lexicon bridges (typing↔mypy, "
         "database↔Postgres), the engine learns the user's actual vocabulary "
         "(e.g. on a personal workspace it might learn ['recipe','onion'] or "
@@ -391,12 +391,27 @@ SCHEMA: dict[str, _Setting] = {
     ),
     "embedding.backend": _Setting(
         str, "sentence-transformers",
-        "Inference runtime",
-        choices=("sentence-transformers", "fastembed"),
+        "Embedding inference runtime. 'ollama'/'openai' use a server (different "
+        "vector dim → use a FRESH workspace or `pmb reindex`).",
+        choices=("sentence-transformers", "fastembed", "ollama", "openai"),
     ),
     "embedding.fastembed_model": _Setting(
         str, "sentence-transformers/all-MiniLM-L6-v2",
         "fastembed-compatible model id (used only when backend=fastembed)",
+    ),
+    "embedding.ollama_model": _Setting(
+        str, "nomic-embed-text",
+        "Ollama embedding model (used only when backend=ollama). "
+        "Run `ollama pull nomic-embed-text` first. 768-dim.",
+    ),
+    "embedding.ollama_url": _Setting(
+        str, "http://localhost:11434",
+        "Ollama server base URL (used only when backend=ollama).",
+    ),
+    "embedding.openai_model": _Setting(
+        str, "text-embedding-3-small",
+        "OpenAI embedding model (used only when backend=openai). Needs "
+        "OPENAI_API_KEY in the environment. 1536-dim.",
     ),
     # Decay / forgetting
     "decay.factor_per_day": _Setting(
@@ -495,14 +510,14 @@ SCHEMA: dict[str, _Setting] = {
     ),
     "dedup.cosine_high": _Setting(
         float, 0.92,
-        "L2 high threshold — at or above this, the new write is silently "
+        "L2 high threshold - at or above this, the new write is silently "
         "merged into the existing canonical event. Conservative default; "
         "tighter = fewer false merges, looser = catches more dups.",
         min=0.5, max=0.999,
     ),
     "dedup.cosine_mid": _Setting(
         float, 0.80,
-        "L2 mid threshold — pairs in [mid, high) are written as borderline "
+        "L2 mid threshold - pairs in [mid, high) are written as borderline "
         "candidates into the dedup queue for async LLM verification (L2.5).",
         min=0.5, max=0.99,
     ),
@@ -524,7 +539,7 @@ SCHEMA: dict[str, _Setting] = {
     "mcp.record_batch_async": _Setting(
         bool, True,
         "MCP `record_batch` tool returns IMMEDIATELY after spawning "
-        "background processing — no waiting for embedding/graph/LanceDB. "
+        "background processing - no waiting for embedding/graph/LanceDB. "
         "Trade-off: ULIDs not returned synchronously, and recall called "
         "within ~1s of the write may miss the new events. Set False for "
         "synchronous semantics (testing/debugging).",

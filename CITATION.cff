@@ -6,12 +6,12 @@ message: >-
 type: software
 authors:
   - name: PMB contributors
-repository-code: https://github.com/yourname/pmb
+repository-code: https://github.com/oleksiijko/pmb
 abstract: >-
   Local-first persistent memory for AI coding agents over MCP.
   Hybrid BM25+vector retrieval with SQLite + LanceDB storage.
-  Evidence-recall@10 on LoCoMo: 94.1% across the full 10-conversation
-  run with v0.1.0 defaults. Warm-recall p50 latency 65-195 ms;
+  Evidence-recall@10 on LoCoMo: 94.5% across the full 10-conversation
+  run with default settings. Warm-recall p50 latency 65-195 ms;
   no API keys required.
 keywords:
   - mcp
@@ -20,4 +20,4 @@ keywords:
   - ai-agent
   - rag
 license: Apache-2.0
-version: 0.1.0
+version: 0.2.1

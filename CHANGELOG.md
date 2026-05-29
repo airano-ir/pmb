@@ -2,6 +2,43 @@
 
 All notable changes to PMB are documented here.
 
+## [0.2.1]
+
+### Added
+
+- **6 more agent integrations (9 total).** `pmb connect` now wires
+  windsurf, gemini, vscode, zed, opencode and continue in addition to
+  claude-code / cursor / codex. `pmb connect --list` shows every agent and
+  its config path; `--config-path` overrides the location.
+- **Git-backed workspace sync.** `pmb workspace init|push|pull|status|clone`
+  versions and syncs a workspace to any git remote - cross-device, team
+  memory, and backups with no server.
+- **Encrypted workspace bundles.** `pmb workspace export|import` packs a
+  workspace into a single authenticated-encrypted file (scrypt + AES/HMAC),
+  safe to store even on a public remote. Needs `pip install 'pmb-ai[crypto]'`.
+- **Memory import.** `pmb import chatgpt|claude|mem0|markdown <path>` brings
+  existing history into a fresh workspace; the entity graph rebuilds after.
+- **`pmb why "<query>"`.** Explains recall ranking with a full trace of which
+  PAMVR rules fired and each multiplier - no more black box.
+- **Pluggable embedders.** `embedding.backend` now also accepts `ollama` and
+  `openai`. A dimension guard refuses to mix embedders of different vector
+  sizes in one workspace (which would corrupt recall).
+- **`scripts/benchmarks/vs_mem0.py`.** Reproducible head-to-head: same data,
+  same queries, same scorer. PMB measured live; mem0 measured with
+  `--with-mem0` or shown from published numbers (clearly labelled).
+
+### Fixed
+
+- PyPI page now renders the README logo + screenshots (absolute image URLs).
+- LanceDB table is created with the active embedder's real vector dimension
+  instead of a hardcoded 384, enabling non-default embedders on fresh
+  workspaces.
+
+### Notes
+
+- 57 new regression tests. The headline 94.5% LoCoMo recall@10 and 70ms p50
+  are unchanged - the hardening suite verifies no recall regression.
+
 ## [Unreleased]
 
 ### Hardening pass 2 - lazy LanceDB + use-case clarity

@@ -2,14 +2,14 @@
 PMB CLI.
 
 Commands:
-- pmb init [--name NAME]              — инициализация workspace в текущей папке
-- pmb stats                           — статистика workspace
-- pmb list [--limit N] [--type T]     — список последних событий
-- pmb remember "query" "response"     — добавить Q/A
-- pmb recall "query" [-k 5]           — поиск
-- pmb pin ULID                        — закрепить
-- pmb forget ULID                     — архивировать
-- pmb workspaces                      — все workspaces
+- pmb init [--name NAME]              - инициализация workspace в текущей папке
+- pmb stats                           - статистика workspace
+- pmb list [--limit N] [--type T]     - список последних событий
+- pmb remember "query" "response"     - добавить Q/A
+- pmb recall "query" [-k 5]           - поиск
+- pmb pin ULID                        - закрепить
+- pmb forget ULID                     - архивировать
+- pmb workspaces                      - все workspaces
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ console = Console()
 
 def _humanize_time(ts: Optional[float]) -> str:
     if ts is None:
-        return "—"
+        return "-"
     return time.strftime("%Y-%m-%d %H:%M", time.gmtime(ts))
 
 
@@ -62,7 +62,7 @@ def dashboard(
       • recall debugger (paste query → see scoring breakdown)
       • per-event inspector (entities, derived facts, edges, pin/archive/feedback)
 
-    Bound to localhost by default. No external dependencies — pure stdlib.
+    Bound to localhost by default. No external dependencies - pure stdlib.
     """
     eng = Engine()
     try:
@@ -109,7 +109,7 @@ def warmup():
     """P1-1: Eagerly load model + BM25 + LanceDB so the next recall is fast.
 
     Without this the first query pays ~1-2s cold-start cost. Useful when
-    integrating PMB into a latency-sensitive flow (voice assistant) — call
+    integrating PMB into a latency-sensitive flow (voice assistant) - call
     `pmb warmup` at startup and the actual user-facing query is hot.
     """
     eng = Engine()
@@ -254,8 +254,59 @@ def recall(
 
 
 @app.command()
+def why(
+    query: str = typer.Argument(...),
+    top_k: int = typer.Option(3, "-k", "--top", help="Explain the top-K results"),
+):
+    """Explain WHY recall ranked results the way it did - full PAMVR trace.
+
+    Most memory tools are a black box: you get results, no idea why. `pmb why`
+    shows, per result, exactly which of the 14 predicate-aware reranking rules
+    fired and the multiplier each contributed. Great for debugging a miss or
+    just understanding the engine.
+
+      pmb why "where do I live now"
+    """
+    from pmb.reasoning.pamvr import explain_pamvr
+    eng = Engine()
+    pack = eng.recall(query=query, top_k=top_k)
+
+    console.print(f"\n[bold]Why these results for:[/] {query}")
+    console.print(f"[dim]Workspace {pack.workspace_name} · {pack.elapsed_ms:.1f}ms · "
+                  f"{pack.n_total_in_workspace} events[/]\n")
+
+    if not pack.results:
+        console.print("[yellow]No matches - nothing to explain.[/]")
+        return
+
+    bridges = getattr(eng, "_vocab_bridges", None)
+    for i, r in enumerate(pack.results, 1):
+        ev = eng.events.get_by_ulid(r.ulid)
+        content = r.content[:160] + ("…" if len(r.content) > 160 else "")
+        console.print(f"[bold cyan]#{i}[/]  {content}")
+        console.print(
+            f"   [dim]final score {r.score:.3f}  "
+            f"(bm25 {r.bm25_score:.2f} · vec {r.vec_score:.2f} · imp {r.importance:.2f})[/]"
+        )
+        if ev is None:
+            console.print("   [dim](event detail unavailable)[/]\n")
+            continue
+        exp = explain_pamvr(query, ev, base_score=1.0, vocab_bridges=bridges)
+        if not exp["rules_fired"]:
+            console.print("   [dim]no PAMVR rules fired (pure BM25+vector match)[/]\n")
+            continue
+        for step in exp["rules_fired"]:
+            mult = step["mult"]
+            arrow = "[green]▲[/]" if mult > 1.0 else "[red]▼[/]"
+            console.print(f"     {arrow} {step['rule']:<40} ×{mult:.2f}")
+        net = exp["net_multiplier"]
+        net_color = "green" if net >= 1.0 else "red"
+        console.print(f"   [bold]net PAMVR multiplier: [{net_color}]×{net:.2f}[/][/]\n")
+
+
+@app.command()
 def pin(ulid: str = typer.Argument(...)):
-    """Закрепить событие — высокая importance, не архивируется автоматом."""
+    """Закрепить событие - высокая importance, не архивируется автоматом."""
     eng = Engine()
     eng.pin(ulid)
     console.print(f"[green]Pinned[/] {ulid}")
@@ -263,7 +314,7 @@ def pin(ulid: str = typer.Argument(...)):
 
 @app.command()
 def forget(ulid: str = typer.Argument(...)):
-    """Заархивировать событие. Не удаляется навсегда — можно unforget."""
+    """Заархивировать событие. Не удаляется навсегда - можно unforget."""
     eng = Engine()
     eng.forget(ulid)
     console.print(f"[yellow]Archived[/] {ulid}")
@@ -334,7 +385,7 @@ def rehearse(
     max_n: int = typer.Option(20, "-n", "--max-n",
                               help="Cap on rehearsals per run"),
 ):
-    """Spaced-repetition rehearsal — refresh important but idle memories.
+    """Spaced-repetition rehearsal - refresh important but idle memories.
 
     Like the brain's testing effect: a memory you haven't touched in a
     while drifts down; running rehearsal periodically (cron weekly) keeps
@@ -467,7 +518,7 @@ def prune_graph(
     of thousands of edges. Most are one-off co-mentions that don't help
     recall. This command drops them (and any orphan entities left behind).
 
-    Reversible? No — but events and embeddings aren't touched, so a
+    Reversible? No - but events and embeddings aren't touched, so a
     `pmb regraph` rebuilds everything.
 
     Time: ~50ms even on a workspace with 100k edges.
@@ -490,14 +541,14 @@ def prune_graph(
 
 @app.command()
 def tui():
-    """Improvement PP: full-workspace TUI — Memory / Recall / Stats / Dedup / Tune.
+    """Improvement PP: full-workspace TUI - Memory / Recall / Stats / Dedup / Tune.
 
     5-tab terminal workspace:
-      [1] Memory   — paginated event browser, filter, detail pane
-      [2] Recall   — interactive query playground with score breakdown
-      [3] Stats    — live MCP perf (auto-refresh 2s)
-      [4] Dedup    — borderline duplicate pairs awaiting decision
-      [5] Tune     — all 67 settings, click to edit, type-validated
+      [1] Memory   - paginated event browser, filter, detail pane
+      [2] Recall   - interactive query playground with score breakdown
+      [3] Stats    - live MCP perf (auto-refresh 2s)
+      [4] Dedup    - borderline duplicate pairs awaiting decision
+      [5] Tune     - all 67 settings, click to edit, type-validated
 
     Hotkeys: 1-5 switch tabs · / filter · r reload · q quit · ? help
 
@@ -527,7 +578,7 @@ def tune():
 
     Examples of what you can tune:
       - recall.top_k, recall.rerank, recall.graph_boost
-      - dedup.cosine_high (0.92 default — lower = more aggressive merging)
+      - dedup.cosine_high (0.92 default - lower = more aggressive merging)
       - embedding.backend (sentence-transformers vs fastembed)
       - mcp.record_batch_async, recall.adaptive_decompose
     """
@@ -548,9 +599,9 @@ def regraph():
     """Wipe and rebuild the entity/edge graph from active events.
 
     Use this after the entity extractor has been improved (new stop-lists,
-    path guards, cross-kind dedup, etc.) so old garbage nodes — question
+    path guards, cross-kind dedup, etc.) so old garbage nodes - question
     words, path components, dialogue roles, code identifiers misclassified
-    as people — get removed without touching the event log itself.
+    as people - get removed without touching the event log itself.
 
     Safe: only touches `graph_entities`, `graph_event_entities`, `graph_edges`,
     and the workspace-scoped `known_persons` dictionary. Events / embeddings /
@@ -578,14 +629,14 @@ def reflect(
     source: Optional[str] = typer.Option(None, "--source",
                                           help="Reflect on a single event by ULID"),
 ):
-    """PMB v2 — Reflective Memory.
+    """PMB v2 - Reflective Memory.
 
     For each event, an LLM asks itself 'why does this matter? what does
     it imply? what questions might this answer?'. The answers are stored
     as new searchable events that bridge multi-hop queries.
 
     Run periodically in background (cron / idle hook). Recall stays fast
-    — all LLM work happens here.
+    - all LLM work happens here.
     """
     eng = Engine()
     if source:
@@ -628,7 +679,7 @@ def arcs(
     backend: str = typer.Option("auto", "--backend"),
     status: str = typer.Option("active", "--status", help="active / closed / all"),
 ):
-    """PMB v2 — narrative arcs.
+    """PMB v2 - narrative arcs.
 
     Arcs are LLM-clustered story threads ("Postgres adoption journey",
     "Alice's onboarding"). Recall uses them to answer 'tell me about X'
@@ -666,7 +717,7 @@ def arcs(
         )
     elif action == "show":
         if arc_id is None:
-            console.print("[red]pmb arcs show <id> — id required[/]")
+            console.print("[red]pmb arcs show <id> - id required[/]")
             return
         detail = eng.arc_detail(arc_id)
         if not detail:
@@ -858,7 +909,7 @@ def health_feedback():
 
     color = {"healthy": "green", "mixed": "yellow", "poor": "red"}[s["verdict"]]
     rate = s["useful_rate"]
-    rate_str = f"{rate:.1%}" if rate is not None else "—"
+    rate_str = f"{rate:.1%}" if rate is not None else "-"
 
     console.print(Panel.fit(
         f"Verdict: [{color}]{s['verdict']}[/]\n"
@@ -1031,7 +1082,7 @@ def consolidate(
 ):
     """LLM-based sleep-stage consolidation.
 
-    No API key needed if `claude` CLI is in PATH — uses your existing
+    No API key needed if `claude` CLI is in PATH - uses your existing
     Claude Code login. Alternative backends: ANTHROPIC_API_KEY for direct
     API, or Ollama for fully local.
 
@@ -1148,7 +1199,7 @@ def doctor(
     """Диагностика установки и runtime state.
 
     With --remote user@host:/path, also prints a `.mcp.json` snippet that
-    tunnels MCP over ssh — for the case where PMB and Ollama live on
+    tunnels MCP over ssh - for the case where PMB and Ollama live on
     a server and the agent (Claude Code / Cursor) runs locally.
     """
     from pmb.cli.doctor import print_doctor
@@ -1161,7 +1212,7 @@ config_app = typer.Typer(help="Inspect and tune PMB knobs from the console.")
 app.add_typer(config_app, name="config")
 
 
-# Ollama subcommand — for fully-local LLM ops (no Anthropic / OpenAI key)
+# Ollama subcommand - for fully-local LLM ops (no Anthropic / OpenAI key)
 from pmb.cli.ollama_cmd import app as ollama_app
 app.add_typer(ollama_app, name="ollama")
 
@@ -1271,16 +1322,20 @@ def config_edit(
     path = cfg.global_path if glob else cfg.workspace_path
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
-        path.write_text("# PMB config — run `pmb config list` for keys\n", encoding="utf-8")
+        path.write_text("# PMB config - run `pmb config list` for keys\n", encoding="utf-8")
     editor = os.environ.get("EDITOR") or ("notepad" if os.name == "nt" else "nano")
     os.system(f'{editor} "{path}"')
 
 
 @app.command()
 def connect(
-    agent: str = typer.Argument(..., help="claude-code | cursor | codex"),
+    agent: Optional[str] = typer.Argument(
+        None,
+        help="claude-code | cursor | codex | windsurf | gemini | vscode | "
+             "zed | opencode | continue",
+    ),
     scope: str = typer.Option("project", "--scope",
-                              help="project | global (claude-code only)"),
+                              help="project | global (where the agent supports both)"),
     remote: Optional[str] = typer.Option(
         None, "--remote",
         help="SSH-tunnel: user@host:/abs/path/to/repo (memory + Ollama on server)",
@@ -1291,7 +1346,7 @@ def connect(
     workspace: Optional[str] = typer.Option(
         None, "--workspace", "-w",
         help="Force a SPECIFIC workspace id (override cwd-based detection). "
-             "Use this to SHARE one memory across multiple AI clients — e.g. "
+             "Use this to SHARE one memory across multiple AI clients - e.g. "
              "Claude Code + Cursor both pointing at 'personal' workspace.",
     ),
     pmb_home: Optional[Path] = typer.Option(
@@ -1299,23 +1354,55 @@ def connect(
         help="Override PMB_HOME (where workspaces live on disk). Useful for "
              "multi-user shared memory on a NAS / Dropbox path.",
     ),
+    config_path: Optional[str] = typer.Option(
+        None, "--config-path",
+        help="Override the agent's MCP config file location (for editors "
+             "whose config lives somewhere our default guess doesn't cover).",
+    ),
+    list_agents: bool = typer.Option(
+        False, "--list", help="List every supported agent and its config file, then exit.",
+    ),
     probe: bool = typer.Option(False, "--probe", help="Spawn pmb-mcp briefly to verify it starts"),
 ):
     """Add a `pmb` entry to your agent's MCP config without touching other entries.
+
+    Supports 9 agents: claude-code, cursor, codex, windsurf, gemini, vscode,
+    zed, opencode, continue.
 
     SHARING ONE MEMORY ACROSS AI CLIENTS:
 
       pmb connect claude-code --workspace personal
       pmb connect cursor      --workspace personal
+      pmb connect zed         --workspace personal
 
-      → both clients now read/write the same workspace `personal`.
-      → records from one are immediately visible to the other.
+      → all clients now read/write the same workspace `personal`.
+      → records from one are immediately visible to the others.
     """
-    from pmb.cli.connect import connect as do_connect, probe_mcp
+    from pmb.cli.connect import (
+        connect as do_connect, probe_mcp,
+        JSON_AGENT_SPECS, supported_agents,
+    )
+
+    if list_agents:
+        t = Table(show_header=True, header_style="bold magenta", title="Supported agents")
+        t.add_column("Agent"); t.add_column("Config / notes")
+        t.add_row("claude-code", "Claude Code - .mcp.json (project) / ~/.claude.json (global)")
+        t.add_row("cursor", "Cursor - <project>/.cursor/mcp.json or ~/.cursor/mcp.json")
+        t.add_row("codex", "OpenAI Codex CLI - ~/.codex/config.toml")
+        for aid in sorted(JSON_AGENT_SPECS):
+            t.add_row(aid, JSON_AGENT_SPECS[aid].docs)
+        console.print(t)
+        console.print(f"\n[dim]{len(supported_agents())} agents total.[/]")
+        return
+
+    if not agent:
+        console.print("[red]Missing AGENT.[/] Run [cyan]pmb connect --list[/] to see options.")
+        raise typer.Exit(code=2)
+
     try:
         result = do_connect(
             agent, cwd=Path.cwd(), scope=scope, remote=remote, name_override=name,
-            workspace_id=workspace, pmb_home=pmb_home,
+            workspace_id=workspace, pmb_home=pmb_home, config_path=config_path,
         )
     except ValueError as e:
         console.print(f"[red]{e}[/]")
@@ -1359,6 +1446,272 @@ def connect(
         "~30-60s while the embedding model loads. Subsequent recalls return "
         "in <100ms. To pre-warm before connecting, run [bold]pmb warmup[/] "
         "first.[/]"
+    )
+
+
+workspace_app = typer.Typer(
+    help="Git-backed workspace sync: push / pull / clone your memory to any remote."
+)
+app.add_typer(workspace_app, name="workspace")
+
+
+def _sync_for_current_workspace():
+    """Build a WorkspaceGitSync bound to the current workspace's storage dir."""
+    from pmb.core.git_sync import WorkspaceGitSync
+    ws = detect_workspace()
+    ws.ensure_dirs()
+    return WorkspaceGitSync(ws.storage_dir), ws
+
+
+@workspace_app.command("init")
+def workspace_init(
+    remote: Optional[str] = typer.Option(
+        None, "--remote", "-r",
+        help="Git remote URL (e.g. git@github.com:you/my-memory.git). Optional - "
+             "you can add it later or push locally only.",
+    ),
+    branch: str = typer.Option("main", "--branch", "-b"),
+    lean: bool = typer.Option(
+        False, "--lean",
+        help="Don't track derived caches (bm25, vocab bridges). Smaller repo; "
+             "rebuilt locally on first recall after a clone/pull.",
+    ),
+):
+    """Turn the current workspace into a git repo (optionally with a remote)."""
+    sync, ws = _sync_for_current_workspace()
+    res = sync.init(remote=remote, branch=branch, include_cache=not lean)
+    color = "green" if res.ok else "red"
+    console.print(Panel.fit(
+        f"[{color}]{res.detail}[/]\n"
+        f"workspace: [cyan]{ws.name}[/] ({ws.id[:12]})\n"
+        f"storage:   {ws.storage_dir}\n"
+        f"remote:    {remote or '- (none yet)'}\n"
+        f"mode:      {'lean (caches rebuilt locally)' if lean else 'full (caches synced)'}",
+        title="workspace init",
+    ))
+    if not res.ok:
+        raise typer.Exit(1)
+    if remote:
+        console.print("[dim]Next: `pmb workspace push` to upload your memory.[/]")
+
+
+@workspace_app.command("push")
+def workspace_push(
+    remote: str = typer.Option("origin", "--remote", "-r"),
+    branch: str = typer.Option("main", "--branch", "-b"),
+    message: Optional[str] = typer.Option(None, "--message", "-m"),
+    lean: bool = typer.Option(False, "--lean", help="Exclude derived caches."),
+):
+    """Commit and push the current workspace's memory to its git remote."""
+    sync, ws = _sync_for_current_workspace()
+    res = sync.push(remote=remote, branch=branch, message=message, include_cache=not lean)
+    color = "green" if res.ok else "red"
+    console.print(f"[{color}]workspace push:[/] {res.detail}")
+    if not res.ok:
+        raise typer.Exit(1)
+
+
+@workspace_app.command("pull")
+def workspace_pull(
+    remote: str = typer.Option("origin", "--remote", "-r"),
+    branch: str = typer.Option("main", "--branch", "-b"),
+    ours: bool = typer.Option(
+        False, "--ours",
+        help="On binary conflict keep LOCAL memory (default: remote wins).",
+    ),
+):
+    """Pull workspace memory from the git remote (remote wins on conflict)."""
+    sync, ws = _sync_for_current_workspace()
+    res = sync.pull(remote=remote, branch=branch, strategy="ours" if ours else "theirs")
+    color = "green" if res.ok else "red"
+    console.print(f"[{color}]workspace pull:[/] {res.detail}")
+    if res.extra and res.extra.get("hint"):
+        console.print(f"[dim]{res.extra['hint']}[/]")
+    if not res.ok:
+        raise typer.Exit(1)
+    console.print("[dim]If you ran with --lean previously, the next recall rebuilds "
+                  "the BM25 index automatically.[/]")
+
+
+@workspace_app.command("status")
+def workspace_status():
+    """Show git status of the current workspace (branch, remote, dirty)."""
+    sync, ws = _sync_for_current_workspace()
+    res = sync.status()
+    if not res.ok:
+        console.print(f"[yellow]{res.detail}[/]")
+        return
+    e = res.extra or {}
+    console.print(Panel.fit(
+        f"workspace: [cyan]{ws.name}[/] ({ws.id[:12]})\n"
+        f"branch:    {e.get('branch') or '-'}\n"
+        f"remote:    {e.get('remote') or '- (none)'}\n"
+        f"state:     {'[yellow]dirty[/]' if e.get('dirty') else '[green]clean[/]'} "
+        f"({e.get('n_changed', 0)} change(s))\n"
+        f"last:      {e.get('last_commit') or '-'}",
+        title="workspace status",
+    ))
+
+
+@workspace_app.command("export")
+def workspace_export(
+    out: str = typer.Argument(..., help="Output bundle path, e.g. memory.enc"),
+    key_file: Optional[Path] = typer.Option(
+        None, "--key-file",
+        help="Encrypt with a raw 32-byte key file instead of a passphrase.",
+    ),
+):
+    """Encrypt the current workspace into a single portable bundle.
+
+    Safe to back up anywhere - Dropbox, a USB stick, even a PUBLIC git repo:
+    the bundle is authenticated-encrypted (AES + HMAC), so the storage host
+    only ever sees ciphertext. Restore with `pmb workspace import`.
+    """
+    from pmb.core.encryption import export_workspace, EncryptionUnavailable
+    _, ws = _sync_for_current_workspace()
+    passphrase = None
+    if not key_file:
+        import getpass
+        passphrase = getpass.getpass("Passphrase to encrypt workspace: ")
+        confirm = getpass.getpass("Confirm passphrase: ")
+        if passphrase != confirm:
+            console.print("[red]Passphrases do not match.[/]")
+            raise typer.Exit(2)
+        if not passphrase:
+            console.print("[red]Empty passphrase rejected.[/]")
+            raise typer.Exit(2)
+    try:
+        res = export_workspace(ws.storage_dir, Path(out),
+                               passphrase=passphrase, key_file=key_file)
+    except EncryptionUnavailable as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(2)
+    color = "green" if res.ok else "red"
+    console.print(f"[{color}]workspace export:[/] {res.detail}")
+    if not res.ok:
+        raise typer.Exit(1)
+
+
+@workspace_app.command("import")
+def workspace_import(
+    bundle: str = typer.Argument(..., help="Encrypted bundle path"),
+    name: str = typer.Argument(..., help="Local workspace id to create"),
+    key_file: Optional[Path] = typer.Option(
+        None, "--key-file", help="Decrypt with the matching 32-byte key file.",
+    ),
+):
+    """Decrypt a bundle into ~/.pmb/workspaces/<name>."""
+    from pmb.core.encryption import import_workspace, EncryptionUnavailable
+    from pmb.core.workspace import DEFAULT_PMB_HOME
+    import os as _os
+    pmb_home = Path(_os.environ.get("PMB_HOME", DEFAULT_PMB_HOME))
+    dest = pmb_home / "workspaces" / name
+    passphrase = None
+    if not key_file:
+        import getpass
+        passphrase = getpass.getpass("Passphrase to decrypt workspace: ")
+    try:
+        res = import_workspace(Path(bundle), dest,
+                               passphrase=passphrase, key_file=key_file)
+    except EncryptionUnavailable as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(2)
+    color = "green" if res.ok else "red"
+    console.print(f"[{color}]workspace import:[/] {res.detail}")
+    if not res.ok:
+        raise typer.Exit(1)
+    console.print(
+        f"[dim]Use it: [bold]PMB_WORKSPACE={name} pmb stats[/][/]"
+    )
+
+
+@workspace_app.command("clone")
+def workspace_clone(
+    url: str = typer.Argument(..., help="Git URL of a workspace repo"),
+    name: str = typer.Argument(..., help="Local workspace id to create"),
+):
+    """Clone a remote workspace into ~/.pmb/workspaces/<name>."""
+    from pmb.core.git_sync import clone_workspace
+    from pmb.core.workspace import DEFAULT_PMB_HOME
+    import os as _os
+    pmb_home = Path(_os.environ.get("PMB_HOME", DEFAULT_PMB_HOME))
+    res = clone_workspace(url, name, pmb_home)
+    color = "green" if res.ok else "red"
+    console.print(f"[{color}]workspace clone:[/] {res.detail}")
+    if not res.ok:
+        raise typer.Exit(1)
+    console.print(
+        f"[dim]Use it: [bold]PMB_WORKSPACE={name} pmb stats[/] or "
+        f"[bold]pmb connect claude-code --workspace {name}[/][/]"
+    )
+
+
+@app.command("import")
+def import_cmd(
+    source: str = typer.Argument(..., help="chatgpt | claude | mem0 | markdown"),
+    path: str = typer.Argument(..., help="Path to the export file or directory"),
+    roles: str = typer.Option(
+        "user", "--roles",
+        help="For chat sources: which roles to import (comma-separated: "
+             "user,assistant). Default 'user' keeps signal high.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Parse and preview, but don't write to memory.",
+    ),
+):
+    """Import existing memory from another tool - no more empty cold start.
+
+    Examples:
+      pmb import chatgpt ~/Downloads/conversations.json
+      pmb import claude  ~/Downloads/claude-export/
+      pmb import mem0    mem0_dump.json
+      pmb import markdown ~/notes/        # Obsidian vault, plain notes
+
+    After import, the entity graph is rebuilt automatically so recall works
+    immediately.
+    """
+    from pmb.ingest import parse_source
+    role_set = {r.strip().lower() for r in roles.split(",") if r.strip()}
+    try:
+        result = parse_source(source, Path(path), roles=role_set)
+    except ValueError as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(2)
+
+    if result.notes:
+        for n in result.notes:
+            console.print(f"[yellow]note:[/] {n}")
+
+    console.print(
+        f"[cyan]Parsed[/] {result.n_parsed} item(s) from [bold]{result.source}[/] "
+        f"([dim]{result.skipped} skipped[/])"
+    )
+    if result.n_parsed == 0:
+        console.print("[yellow]Nothing to import.[/]")
+        raise typer.Exit(0 if not result.notes else 1)
+
+    # Preview a few
+    for it in result.items[:3]:
+        preview = it["content"][:100].replace("\n", " ")
+        console.print(f"  [dim]·[/] {preview}…")
+
+    if dry_run:
+        console.print("[dim](dry-run - nothing written)[/]")
+        return
+
+    eng = Engine()
+    console.print(f"[yellow]Importing {result.n_parsed} items (bulk mode)…[/]")
+    out = eng.record_batch_bulk(result.items)
+    console.print(
+        f"[green]Imported[/] {out.get('n_ok', 0)} ok, "
+        f"{out.get('n_failed', 0)} failed."
+    )
+    console.print("[yellow]Rebuilding entity graph…[/]")
+    rg = eng.regraph()
+    console.print(
+        f"[green]Done.[/] Graph: {rg.get('entities_created', 0)} entity links "
+        f"from {rg.get('events_reindexed', 0)} events. "
+        f"Run [cyan]pmb stats[/] to see your imported memory."
     )
 
 

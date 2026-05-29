@@ -63,13 +63,24 @@ jobs:
       - name: Install package + dev deps
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,crypto]"
 
       - name: Hardening regression suite
         run: pytest tests/test_hardening.py -q --tb=short
 
       - name: RU/UK suite
         run: pytest tests/test_ru_uk_suite.py -q --tb=short
+
+      - name: Connect + workspace-sync + encryption suite
+        run: >
+          pytest tests/test_connect.py tests/test_connect_codex.py
+          tests/test_connect_rules.py tests/test_connect_extended.py
+          tests/test_git_sync.py tests/test_encryption.py -q --tb=short
+
+      - name: Import + explain + embedder-backend suite
+        run: >
+          pytest tests/test_import.py tests/test_pamvr_explain.py
+          tests/test_embedder_backends.py -q --tb=short
 
       - name: Lightweight tests (no heavy ML)
         run: pytest tests/test_config.py tests/test_redact.py -q --tb=short

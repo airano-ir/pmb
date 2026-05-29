@@ -1,5 +1,5 @@
 """
-PAMVR — Predicate-Aware Multi-View Reranking.
+PAMVR - Predicate-Aware Multi-View Reranking.
 
 Empirically discovered set of post-scoring boosts that drive top-1 accuracy
 from 60% to 93.3% on our 30-query qualitative benchmark without any LLM and
@@ -68,7 +68,7 @@ VOCAB_BRIDGES: dict[str, list[str]] = {
 
 
 # Verb synonym groups for verb-match boost.
-# Cross-lingual stems included — "live" expands to RU "живу/живёт/живут"
+# Cross-lingual stems included - "live" expands to RU "живу/живёт/живут"
 # AND UK "живу/живе/живуть" so that an English query asking about a
 # Russian or Ukrainian fact finds it. Closes the EN→RU=0% gap.
 VERB_SYNS: dict[str, set[str]] = {
@@ -103,11 +103,11 @@ VERB_SYNS: dict[str, set[str]] = {
                 "мігрував", "мігрували", "перейшли"},
     "use":     {"use", "used", "using", "используем", "используется",
                 "використовуємо", "використовується"},
-    # New: work — bridges "Where does X work" to RU "работает" / UK "працює"
+    # New: work - bridges "Where does X work" to RU "работает" / UK "працює"
     "work":    {"work", "works", "worked", "working", "job", "employed",
                 "работаю", "работает", "работаешь", "работают", "работал",
                 "працюю", "працює", "працюєш", "працюють", "працював"},
-    # New: name — "what's my name" → finds "Меня зовут"
+    # New: name - "what's my name" → finds "Меня зовут"
     "name":    {"name", "called", "зовут", "зовусь", "называют",
                 "звати", "звуть", "ім'я"},
 }
@@ -118,7 +118,7 @@ VERB_SYNS: dict[str, set[str]] = {
 DEFAULT_NAMED_ENTITIES = {"alex", "bob", "carol", "dana", "alice", "stripe", "adyen"}
 
 
-# Dynamic proper-noun extractor — works on Latin AND Cyrillic AND Greek.
+# Dynamic proper-noun extractor - works on Latin AND Cyrillic AND Greek.
 # Matches any capitalised token of length >= 3 that isn't a sentence opener
 # of a known function-word (we strip those via post-filter).
 _PROPER_NOUN_RE = re.compile(
@@ -207,7 +207,7 @@ def _verb_match(query_verb: str, content_lower: str) -> bool:
 
 
 # =====================================================================
-# Precomputed query features — shared across all candidates of one recall.
+# Precomputed query features - shared across all candidates of one recall.
 # Refactored to slash the per-candidate cost (was 4-6 regex per candidate,
 # now ~1-2). Critical for keeping p99 latency low when PAMVR is on.
 # =====================================================================
@@ -251,7 +251,7 @@ class _QueryFeatures:
     user_names: set[str] = field(default_factory=set)
     query_has_user_name: bool = False
     # Self-intent: query like "Кто я", "Where do I live", "what's my name"
-    # — first-person question. Boost first-person candidates.
+    # - first-person question. Boost first-person candidates.
     has_self_intent: bool = False
 
 
@@ -289,7 +289,7 @@ def prepare_query_features(
     dynamic_proper -= {e.lower() for e in found_entities}
     f.all_proper = list(found_entities) + list(dynamic_proper)
     f.proper_lower = [e.lower() for e in f.all_proper]
-    # Pre-compile entity regexes — these were rebuilt per candidate before.
+    # Pre-compile entity regexes - these were rebuilt per candidate before.
     f.proper_patterns = [
         re.compile(rf"\b{re.escape(e)}\b", re.IGNORECASE)
         for e in f.all_proper
@@ -382,7 +382,7 @@ def prepare_query_features(
     return f
 
 
-# First-person markers — used by self-reference rescue
+# First-person markers - used by self-reference rescue
 _FIRST_PERSON_RE = re.compile(
     r"\b(?:я|меня|мне|мной|i|i'm|im|i've|my|myself|мене|мені|мною)\b",
     re.IGNORECASE,
@@ -395,7 +395,7 @@ def _has_first_person(text: str) -> bool:
     return bool(_FIRST_PERSON_RE.search(text))
 
 
-# Relation markers — used at apply time too
+# Relation markers - used at apply time too
 _RELATION_MARKERS = {
     "друг", "друга", "другу", "подруга", "подруги",
     "жена", "жены", "муж", "мужа", "сестра", "сестры",
@@ -412,12 +412,17 @@ def apply_pamvr(
     named_entities: Optional[set[str]] = None,
     vocab_bridges: Optional[dict[str, list[str]]] = None,
     query_features: Optional[_QueryFeatures] = None,
+    trace: Optional[list] = None,
 ) -> float:
     """Apply all PAMVR boost rules to a base score. Returns the new score.
 
     Pass `query_features` (from `prepare_query_features`) for ~3× faster
     per-candidate processing. Without it, features are recomputed per
     candidate (slow, but kept for backward compatibility).
+
+    Pass `trace` (an empty list) to capture WHICH rules fired and their
+    multipliers - this powers `pmb why`. It is None on the hot path, so the
+    checkpoint helper returns immediately and adds zero measurable overhead.
     """
     if not query or event is None:
         return base_score
@@ -431,11 +436,25 @@ def apply_pamvr(
     meta = event.metadata or {}
     score = base_score
 
+    # Trace checkpoint - records the multiplier a rule block just applied,
+    # WITHOUT touching any `score *= X` line. Reads `score` via closure.
+    _prev = [base_score]
+
+    def _t(rule: str):
+        if trace is None:
+            return
+        prev = _prev[0]
+        if prev and abs(score - prev) > 1e-9:
+            trace.append({"rule": rule, "mult": round(score / prev, 4)})
+        _prev[0] = score
+
     # ---- 1. Topic intersection (penalty for zero overlap) ----
     if len(f.qt) >= 2:
         n_hit = sum(1 for t in f.qt_expanded if t in ct)
         if n_hit == 0:
             score *= 0.70
+
+    _t("topic-intersection (zero overlap penalty)")
 
     # ---- 3. Verb match (moved BEFORE entity strict so it can rescue) ----
     verb_hit = False
@@ -444,13 +463,15 @@ def apply_pamvr(
         if verb_hit:
             score *= 1.25
 
+    _t("verb-match")
+
     # ---- 2. Entity strict (uses precompiled regexes) ----
     # Three-tier match logic:
     #   (a) literal entity present in content → strong boost
-    #   (b) self-reference rescue — query proper noun IS the user's name
+    #   (b) self-reference rescue - query proper noun IS the user's name
     #       AND candidate has first-person marker (я/I/мене) → match
     #       Closes "Where does Алексей live?" → "Я живу в Киеве" gap.
-    #   (c) verb+topic rescue — no entity but verb match + topic overlap
+    #   (c) verb+topic rescue - no entity but verb match + topic overlap
     #       → soft demote (not a hard miss)
     #   (d) otherwise → hard penalty
     if f.all_proper:
@@ -461,26 +482,32 @@ def apply_pamvr(
             score *= 1.20
         elif f.query_has_user_name and _has_first_person(ct):
             # (b) self-reference rescue: e.g. user is Алексей, query asks
-            # about Алексей, candidate is "Я живу в Киеве" — match.
+            # about Алексей, candidate is "Я живу в Киеве" - match.
             score *= 1.10
         elif not (verb_hit and f.topic_tokens
                   and any(t in ct for t in f.topic_expanded)):
             # (d) no entity AND no rescue → still penalise
             score *= 0.55
         else:
-            # (c) verb+topic rescued — gentle nudge down only
+            # (c) verb+topic rescued - gentle nudge down only
             score *= 0.90
+
+    _t("entity-strict (named entity in content)")
 
     # ---- 4. Verb + topic combo (both signals agree) ----
     if f.query_verb and verb_hit and f.topic_tokens:
         if any(t in ct for t in f.topic_expanded):
             score *= 1.50
 
+    _t("verb+topic combo (both agree)")
+
     # ---- 5. Use-verb expansion (use → deploy/host/run) ----
     if f.has_use_verb:
         if re.search(r"\b(?:use|used|using|deploy|deployed|host|hosted|"
                      r"run on|running|production on)\b", ct):
             score *= 1.25
+
+    _t("use-verb expansion (use→deploy/host/run)")
 
     # ---- 6. Keyword AND ----
     if len(f.qt) >= 2:
@@ -494,6 +521,8 @@ def apply_pamvr(
             else:
                 score *= (1.0 + 0.3 * ratio)
 
+    _t("keyword-AND (query token overlap)")
+
     # ---- 7. Vocab bridge (uses precomputed list) ----
     if f.bridges_in_query:
         bridges_hit = 0
@@ -506,6 +535,8 @@ def apply_pamvr(
         else:
             score *= (1.0 + 0.15 * (bridges_hit / bridges_total))
 
+    _t("vocab-bridge (domain synonym)")
+
     # ---- 8. Prefix kind ----
     kind = meta.get("activity_kind") or meta.get("kind") or ""
     for kinds, prefixes in f.fix_pat_kinds:
@@ -516,6 +547,8 @@ def apply_pamvr(
             score *= 1.25
             break
 
+    _t("prefix-kind (fix:/decision marker)")
+
     # ---- 9. Policy intent ----
     if f.has_policy_intent:
         if kind in ("decision", "agreed", "policy") or re.search(
@@ -524,6 +557,8 @@ def apply_pamvr(
         ):
             score *= 1.30
 
+    _t("policy-intent (decision-shaped fact)")
+
     # ---- 10. Topic constraint (X policy → X must be in content) ----
     if f.policy_topic_terms:
         if any(t in ct for t in f.policy_topic_terms):
@@ -531,10 +566,14 @@ def apply_pamvr(
         else:
             score *= 0.55
 
+    _t("topic-constraint (X-policy needs X)")
+
     # ---- 11. Time duration ----
     if f.has_time_intent:
         if _TIME_DURATION_RE.search(event.content or ""):
             score *= 1.40
+
+    _t("time-duration (lifetime + digits)")
 
     # ---- 12. Now / current ----
     if f.has_now_intent:
@@ -546,10 +585,14 @@ def apply_pamvr(
         else:
             score *= 0.90
 
+    _t("now/current vs past tense")
+
     # ---- 13. Quantitative ----
     if f.has_quant_intent:
         if re.search(r"\d", event.content or ""):
             score *= 1.15
+
+    _t("quantitative (how-many/long + digits)")
 
     # ---- 13b. Relation-marker disambiguation ----
     # Cheap per-candidate: split ct into tokens once, check intersection.
@@ -561,6 +604,8 @@ def apply_pamvr(
         else:
             score *= 0.80
 
+    _t("relation-marker disambiguation")
+
     # ---- 14. Entity count (collective who-questions) ----
     if f.has_team_intent:
         n_persons = sum(1 for p in f.entities
@@ -570,10 +615,41 @@ def apply_pamvr(
         elif n_persons >= 2:
             score *= 1.15
 
+    _t("entity-count (collective who-question)")
+
     # ---- 15. Self-intent: first-person question → boost first-person
     # facts. Closes "Кто я", "где я живу" → "Я живу в Киеве" gap that
     # PAMVR otherwise misses because "я" is a stop-word.
     if f.has_self_intent and _has_first_person(ct):
         score *= 1.30
 
+    _t("self-intent (first-person rescue)")
+
     return score
+
+
+def explain_pamvr(
+    query: str,
+    event: Any,
+    base_score: float = 1.0,
+    named_entities: Optional[set[str]] = None,
+    vocab_bridges: Optional[dict[str, list[str]]] = None,
+) -> dict:
+    """Run PAMVR with tracing on. Returns which rules fired, each multiplier,
+    the net multiplier, and the final score. Powers `pmb why`.
+
+    Because every rule is a pure multiplier independent of `base_score`, the
+    rule list and multipliers are exact regardless of what base you pass."""
+    trace: list[dict] = []
+    final = apply_pamvr(
+        query, event, base_score,
+        named_entities=named_entities, vocab_bridges=vocab_bridges,
+        trace=trace,
+    )
+    net = (final / base_score) if base_score else 1.0
+    return {
+        "base_score": base_score,
+        "final_score": final,
+        "net_multiplier": round(net, 4),
+        "rules_fired": trace,
+    }

@@ -1,5 +1,5 @@
 """
-Hybrid Search — BM25 + dense vector retrieval.
+Hybrid Search - BM25 + dense vector retrieval.
 
 Стратегия:
 - Embeddings: sentence-transformers (локально)
@@ -9,11 +9,12 @@ Hybrid Search — BM25 + dense vector retrieval.
 
 Storage:
 - Vectors в LanceDB (ulid → embedding)
-- BM25 — in-memory rebuild on cold start (быстро, ~100-1000 events)
+- BM25 - in-memory rebuild on cold start (быстро, ~100-1000 events)
 """
 
 from __future__ import annotations
 
+import os
 import pickle
 import re
 import time
@@ -28,12 +29,12 @@ from rank_bm25 import BM25Okapi
 # Bump when the on-disk pickle layout becomes incompatible
 _BM25_CACHE_VERSION = 2
 
-# Heavy deps loaded lazily — importing them at module top makes any CLI
+# Heavy deps loaded lazily - importing them at module top makes any CLI
 # command cold-start in 30-60s on Windows even when no search is needed.
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer  # noqa
 
-# Default multilingual embedding model — handles 50+ languages including
+# Default multilingual embedding model - handles 50+ languages including
 # English, Russian, Spanish, Chinese, etc. Cross-lingual recall works: a
 # Russian query matches an English memory and vice versa.
 #
@@ -53,7 +54,7 @@ EMBED_DIM = 384
 
 
 def _lancedb():
-    import lancedb  # local import — first call pays the cost
+    import lancedb  # local import - first call pays the cost
     return lancedb
 
 
@@ -100,6 +101,128 @@ class _FastEmbedAdapter:
         return arr[0] if single else arr
 
 
+class _OllamaEmbedAdapter:
+    """Embed via a local Ollama server - fully offline, no Python ML deps.
+
+    Exposes the same `.encode()` contract as sentence-transformers so the
+    rest of HybridSearch is backend-agnostic. Vector dim depends on the
+    model (nomic-embed-text → 768), so switching to this on a workspace that
+    already has 384-dim vectors requires a fresh workspace / reindex - the
+    dimension guard in HybridSearch.add enforces this loudly.
+    """
+
+    def __init__(self, model_name: str = "nomic-embed-text",
+                 base_url: str = "http://localhost:11434"):
+        self.model_name = model_name
+        self.base_url = base_url.rstrip("/")
+        self._dim: Optional[int] = None
+
+    def _embed_one(self, text: str) -> np.ndarray:
+        import json as _json
+        import urllib.request
+        body = _json.dumps({"model": self.model_name, "prompt": text}).encode()
+        req = urllib.request.Request(
+            f"{self.base_url}/api/embeddings", data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = _json.loads(r.read())
+        vec = np.asarray(data.get("embedding") or [], dtype=np.float32)
+        if vec.size == 0:
+            raise RuntimeError(f"Ollama returned empty embedding for model {self.model_name!r}")
+        self._dim = int(vec.shape[0])
+        return vec
+
+    def encode(self, texts, show_progress_bar=False, batch_size: int = 32):
+        single = isinstance(texts, str)
+        inputs = [texts] if single else list(texts)
+        if not inputs:
+            return np.zeros((0, self._dim or EMBED_DIM), dtype=np.float32)
+        out = np.stack([self._embed_one(t) for t in inputs]).astype(np.float32)
+        return out[0] if single else out
+
+    def get_sentence_embedding_dimension(self) -> Optional[int]:
+        return self._dim
+
+
+class _OpenAIEmbedAdapter:
+    """Embed via the OpenAI embeddings API. Needs OPENAI_API_KEY in the env.
+
+    Uses urllib (no openai SDK dependency). text-embedding-3-small → 1536-dim.
+    """
+
+    def __init__(self, model_name: str = "text-embedding-3-small"):
+        self.model_name = model_name
+        self._dim: Optional[int] = None
+        self._key = os.environ.get("OPENAI_API_KEY")
+
+    def encode(self, texts, show_progress_bar=False, batch_size: int = 32):
+        import json as _json
+        import urllib.request
+        single = isinstance(texts, str)
+        inputs = [texts] if single else list(texts)
+        if not inputs:
+            return np.zeros((0, self._dim or EMBED_DIM), dtype=np.float32)
+        if not self._key:
+            raise RuntimeError(
+                "backend=openai needs OPENAI_API_KEY in the environment"
+            )
+        vecs: list[np.ndarray] = []
+        for i in range(0, len(inputs), batch_size):
+            chunk = inputs[i:i + batch_size]
+            body = _json.dumps({"model": self.model_name, "input": chunk}).encode()
+            req = urllib.request.Request(
+                "https://api.openai.com/v1/embeddings", data=body,
+                headers={"Content-Type": "application/json",
+                         "Authorization": f"Bearer {self._key}"},
+            )
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = _json.loads(r.read())
+            for row in data.get("data", []):
+                vecs.append(np.asarray(row["embedding"], dtype=np.float32))
+        if not vecs:
+            raise RuntimeError("OpenAI returned no embeddings")
+        self._dim = int(vecs[0].shape[0])
+        out = np.stack(vecs).astype(np.float32)
+        return out[0] if single else out
+
+    def get_sentence_embedding_dimension(self) -> Optional[int]:
+        return self._dim
+
+
+def _read_table_vector_dim(tbl) -> Optional[int]:
+    """Read the fixed vector dimension of an existing LanceDB 'events' table.
+
+    Returns None if it can't be determined (we then skip the dim guard rather
+    than blocking the user on an introspection quirk)."""
+    try:
+        field = tbl.schema.field("vector")
+        size = getattr(field.type, "list_size", None)
+        return int(size) if size and size > 0 else None
+    except Exception:
+        return None
+
+
+def _model_dim(model) -> int:
+    """Best-effort embedding dimension for any backend's model object."""
+    # sentence-transformers renamed the method; try the new name first to
+    # avoid a FutureWarning, then the legacy name, then a probe.
+    for attr in ("get_embedding_dimension", "get_sentence_embedding_dimension"):
+        fn = getattr(model, attr, None)
+        if callable(fn):
+            try:
+                d = fn()
+                if d:
+                    return int(d)
+            except Exception:
+                pass
+    try:
+        v = np.asarray(model.encode(["x"], show_progress_bar=False))
+        return int(v.reshape(v.shape[0], -1).shape[1]) if v.ndim > 1 else int(v.shape[0])
+    except Exception:
+        return EMBED_DIM
+
+
 @dataclass
 class SearchHit:
     ulid: str
@@ -141,20 +264,30 @@ class _ModelCache:
     _name: Optional[str] = None
     _backend: Optional[str] = None
 
+    _base_url: Optional[str] = None
+
     @classmethod
     def get(
         cls, model_name: str = DEFAULT_MODEL,
         backend: str = "sentence-transformers",
+        base_url: Optional[str] = None,
     ):
         if (cls._model is None
                 or cls._name != model_name
-                or cls._backend != backend):
+                or cls._backend != backend
+                or cls._base_url != base_url):
             if backend == "fastembed":
                 cls._model = _FastEmbedAdapter(model_name)
+            elif backend == "ollama":
+                cls._model = _OllamaEmbedAdapter(
+                    model_name, base_url or "http://localhost:11434")
+            elif backend == "openai":
+                cls._model = _OpenAIEmbedAdapter(model_name)
             else:
                 cls._model = _SentenceTransformer()(model_name)
             cls._name = model_name
             cls._backend = backend
+            cls._base_url = base_url
         return cls._model
 
 
@@ -177,11 +310,11 @@ class HybridSearch:
     Hybrid index: BM25 + vector search.
 
     Lifecycle:
-      add(ulid, text) — добавить документ
-      build() — пересобрать BM25 (вызвать после bulk add)
-      search(query, top_k) — найти
+      add(ulid, text) - добавить документ
+      build() - пересобрать BM25 (вызвать после bulk add)
+      search(query, top_k) - найти
 
-    Vectors хранятся в LanceDB (persistent), BM25 — в памяти (rebuild on init).
+    Vectors хранятся в LanceDB (persistent), BM25 - в памяти (rebuild on init).
     """
 
     def __init__(
@@ -191,16 +324,22 @@ class HybridSearch:
         bm25_weight: float = 0.5,
         rerank_model_name: Optional[str] = None,
         embedding_backend: str = "sentence-transformers",
+        embedding_base_url: Optional[str] = None,
     ):
         self.vector_path = vector_path
         self.model_name = model_name
         self.bm25_weight = bm25_weight
         self.vec_weight = 1.0 - bm25_weight
         self.embedding_backend = embedding_backend
-        # Reranker is fully opt-in — None disables it entirely (no load)
+        self.embedding_base_url = embedding_base_url
+        # Vector dimension of the active LanceDB table - set when the table is
+        # opened/created. None until then. Guards against mixing embedders of
+        # different dims in one workspace (would corrupt recall).
+        self._table_dim: Optional[int] = None
+        # Reranker is fully opt-in - None disables it entirely (no load)
         self.rerank_model_name = rerank_model_name
 
-        # Model is lazy — avoid the 1-3s load for CLI commands that never embed
+        # Model is lazy - avoid the 1-3s load for CLI commands that never embed
         # (stats, list, pin, forget, session, schedule, workspaces, doctor).
         self._model = None
         self._reranker = None
@@ -253,11 +392,23 @@ class HybridSearch:
         if not used_modern and hasattr(self._lance, "table_names"):
             existing = list(self._lance.table_names() or [])
         if "events" in existing:
-            return self._lance.open_table("events")
-        # Create empty table with proper schema
+            tbl = self._lance.open_table("events")
+            self._table_dim = _read_table_vector_dim(tbl)
+            return tbl
+        # Create with the ACTIVE embedder's dimension (not a hardcoded 384):
+        # by the time the table is created the query/event has already been
+        # encoded, so the model is loaded and we can ask it its real dim. This
+        # lets ollama (768) / openai (1536) backends work on a fresh workspace.
+        dim = EMBED_DIM
+        if self._model is not None:
+            try:
+                dim = _model_dim(self._model)
+            except Exception:
+                dim = EMBED_DIM
+        self._table_dim = dim
         empty_data = [{
             "ulid": "_init",
-            "vector": np.zeros(EMBED_DIM, dtype=np.float32).tolist(),
+            "vector": np.zeros(dim, dtype=np.float32).tolist(),
             "text": "",
         }]
         tbl = self._lance.create_table("events", data=empty_data)
@@ -269,7 +420,10 @@ class HybridSearch:
     def model(self):
         """Lazy embedding-model accessor (first call loads ~80MB)."""
         if self._model is None:
-            self._model = _ModelCache.get(self.model_name, self.embedding_backend)
+            self._model = _ModelCache.get(
+                self.model_name, self.embedding_backend,
+                base_url=self.embedding_base_url,
+            )
         return self._model
 
     def is_ready(self) -> bool:
@@ -335,14 +489,33 @@ class HybridSearch:
             return np.zeros((0, EMBED_DIM), dtype=np.float32)
         return self.model.encode(texts, show_progress_bar=False, batch_size=32).astype(np.float32)
 
+    def _guard_dim(self, vec_dim: int) -> None:
+        """Refuse to write a vector whose dimension doesn't match the table.
+
+        Mixing embedders of different dims (e.g. MiniLM=384 then OpenAI=1536)
+        in one workspace silently corrupts recall. We fail loudly with a fix
+        instead. Touching `self._table` here also resolves `self._table_dim`.
+        """
+        _ = self._table  # ensure table opened → _table_dim populated
+        td = self._table_dim
+        if td is not None and vec_dim != td:
+            raise RuntimeError(
+                f"Embedding dimension mismatch: this workspace's vector index "
+                f"is {td}-dim but the active embedder produces {vec_dim}-dim "
+                f"vectors. Switching embedding backends needs a FRESH workspace "
+                f"(set PMB_WORKSPACE to a new id) or a full re-embed into one. "
+                f"Mixing dims would corrupt recall."
+            )
+
     def add(self, ulid: str, text: str) -> None:
-        """Добавить один документ. Не пересобирает BM25 — вызови build() после batch."""
+        """Добавить один документ. Не пересобирает BM25 - вызови build() после batch."""
         # Make sure BM25 in-memory state is loaded before we append to it,
         # otherwise the first write after a process start would silently
         # drop pre-existing events.
         if not self._bm25_reloaded:
             self.reload_bm25()
         emb = self.embed(text)
+        self._guard_dim(len(emb))
         self._table.add([{
             "ulid": ulid,
             "vector": emb.tolist(),
@@ -361,6 +534,8 @@ class HybridSearch:
             self.reload_bm25()
         texts = [t for _, t in items]
         embs = self.embed_batch(texts)
+        if len(embs):
+            self._guard_dim(int(embs.shape[1]))
         rows = [
             {"ulid": ulid, "vector": emb.tolist(), "text": text}
             for (ulid, text), emb in zip(items, embs)
@@ -391,7 +566,7 @@ class HybridSearch:
 
         Returns: number of events re-encoded.
         """
-        # Drop all vectors — table will be repopulated
+        # Drop all vectors - table will be repopulated
         try:
             self._table.delete("ulid IS NOT NULL")  # drop all
         except Exception:
@@ -420,12 +595,12 @@ class HybridSearch:
         return self.vector_path.parent / "bm25_index.pkl"
 
     def _save_bm25_cache(self) -> None:
-        """Persist BM25 state — both tokens AND the fitted BM25Okapi.
+        """Persist BM25 state - both tokens AND the fitted BM25Okapi.
 
         Storing the fitted index (not just tokens) lets cold-start skip the
         BM25 rebuild on the first search. For 5000+ events this saves
         100-300ms per CLI invocation. We always serialise the tokens too in
-        case BM25Okapi unpickling fails on a different rank_bm25 version —
+        case BM25Okapi unpickling fails on a different rank_bm25 version -
         the loader will rebuild from tokens.
         """
         try:
@@ -454,7 +629,7 @@ class HybridSearch:
                 return False
             self._bm25_ulids = list(payload["ulids"])
             self._bm25_tokens = list(payload["tokens"])
-            # `fitted` is optional — if absent or unpickling fails for some
+            # `fitted` is optional - if absent or unpickling fails for some
             # reason, _ensure_bm25() rebuilds from tokens at first search.
             fitted = payload.get("fitted")
             if isinstance(fitted, BM25Okapi):
@@ -476,7 +651,7 @@ class HybridSearch:
         MCP cold-start fix: a fresh workspace has NO BM25 pickle AND NO
         LanceDB table. The LanceDB-scan fallback used to trigger
         `import lancedb` (22s on Windows) just to discover there's nothing
-        to load. We now check the SQLite events count first — if zero,
+        to load. We now check the SQLite events count first - if zero,
         skip the LanceDB step entirely.
         """
         self._bm25_reloaded = True
@@ -588,7 +763,7 @@ class HybridSearch:
 
         vec_scores: dict[str, float] = {}
         for r in vec_results:
-            # LanceDB возвращает _distance (L2 default) — конвертируем в similarity
+            # LanceDB возвращает _distance (L2 default) - конвертируем в similarity
             dist = r.get("_distance", 0.0)
             ulid = r.get("ulid", "")
             if ulid:

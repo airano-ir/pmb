@@ -1,6 +1,6 @@
 [project]
 name = "pmb-ai"
-version = "0.1.1"
+version = "0.2.1"
 description = "PMB (Personal Memory Brain) - local-first persistent memory for AI coding agents (MCP, beats mem0/Letta/Zep on retrieval)"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -63,10 +63,15 @@ consolidate = [
 fastembed = [
     "fastembed>=0.4",
 ]
+crypto = [
+    # Encrypted workspace bundles (`pmb workspace export/import`).
+    "cryptography>=42.0",
+]
 all = [
     "anthropic>=0.40",
     "fastembed>=0.4",
     "textual>=8.0",
+    "cryptography>=42.0",
 ]
 
 [project.urls]

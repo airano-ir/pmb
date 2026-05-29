@@ -1,5 +1,5 @@
 """
-`pmb connect <agent>` — one-shot MCP wiring for the common agents.
+`pmb connect <agent>` - one-shot MCP wiring for the common agents.
 
 What this does (and does not do):
 - Updates the agent's MCP config file in place, ADDING a `pmb` (or
@@ -28,7 +28,7 @@ from typing import Optional
 
 
 # ----------------------------------------------------------------------
-# Agent instruction templates — written into AGENTS.md / CLAUDE.md so the
+# Agent instruction templates - written into AGENTS.md / CLAUDE.md so the
 # AI follows PMB rules from the FIRST message, without needing manual setup.
 # ----------------------------------------------------------------------
 
@@ -36,7 +36,7 @@ PMB_AGENT_RULES_START = "<!-- PMB-RULES-START (managed by `pmb connect`) -->"
 PMB_AGENT_RULES_END   = "<!-- PMB-RULES-END -->"
 
 PMB_AGENT_RULES_BODY = """\
-## PMB — memory tools (via MCP)
+## PMB - memory tools (via MCP)
 
 **PMB is OFF by default.** Ignore PMB and answer normally for general
 questions. Engage PMB ONLY on the explicit triggers below.
@@ -48,7 +48,7 @@ Only if user asks about themselves / their past / their project:
 - "what did I / when did I / who is <name> / why did we choose"
 
 For general/technical questions ("что такое Next.js", "как работает X",
-"explain Y", coding help, debugging) — DO NOT call recall. Answer directly.
+"explain Y", coding help, debugging) - DO NOT call recall. Answer directly.
 
 ### When to CALL pmb.recent_activity / what_just_happened
 
@@ -79,17 +79,17 @@ Only if the user EXPLICITLY does one of these:
                         "content":"Chose X over Y for project Z because..."}])
    ```
 
-For general questions answered from your own knowledge — DO NOT save anything.
+For general questions answered from your own knowledge - DO NOT save anything.
 PMB is not a logbook of every interaction.
 
 ### Rules when you DO call PMB
 
 - Exactly ONE `record_batch` per turn (collect all items in one call).
 - NEVER call `recall` after writing to "verify".
-- NEVER call `pin()` separately — use the `pin: true` field on items.
+- NEVER call `pin()` separately - use the `pin: true` field on items.
 - Use ABSOLUTE dates ("On May 25, 2026") not "today".
 
-### Style — never expose the plumbing
+### Style - never expose the plumbing
 
 - Never say "в памяти / I found in memory / согласно записям / я записал"
 - After recall, use results as your own knowledge, weave them naturally
@@ -179,7 +179,7 @@ def claude_code_paths(scope: str, cwd: Path) -> AgentTarget:
       - global  → ~/.claude.json    (Claude Code's user-level config)
 
     For project mode we create the file if missing. For global we never
-    create it from scratch — only edit one that Claude Code already wrote;
+    create it from scratch - only edit one that Claude Code already wrote;
     otherwise we fall back to project so the user isn't surprised.
     """
     if scope == "project":
@@ -206,14 +206,14 @@ def codex_paths(cwd: Path) -> AgentTarget:
     """OpenAI Codex CLI's MCP config: ~/.codex/config.toml.
 
     Codex uses TOML and stores MCP servers as `[mcp_servers.<name>]`
-    sections. No project-level config — global only.
+    sections. No project-level config - global only.
     """
     global_path = Path.home() / ".codex" / "config.toml"
     return AgentTarget("codex", [global_path], global_path)
 
 
 # ----------------------------------------------------------------------
-# JSON merge — never trample existing mcpServers
+# JSON merge - never trample existing mcpServers
 # ----------------------------------------------------------------------
 
 
@@ -261,7 +261,7 @@ def make_local_entry(
     """The local pmb MCP server entry.
 
     workspace_id forces a SPECIFIC workspace (override the cwd-based auto-
-    detection). Use this to share one workspace across multiple AI clients —
+    detection). Use this to share one workspace across multiple AI clients -
     e.g. Claude Code + Cursor both pointing at the same `personal` workspace.
 
     pmb_home overrides PMB_HOME (where workspaces live on disk). Useful for
@@ -311,7 +311,7 @@ def merge_codex_entry(
 ) -> tuple[dict, str]:
     """Codex stores MCP servers as nested `[mcp_servers.<name>]` tables.
 
-    TOML round-trips through dict-of-dicts — same structure, different
+    TOML round-trips through dict-of-dicts - same structure, different
     serialization. We touch ONLY the `mcp_servers.<name>` key, never the
     rest of the config (which has marketplaces / plugins / projects etc.).
     """
@@ -336,14 +336,281 @@ def merge_codex_entry(
 
 
 # ----------------------------------------------------------------------
-# Probe — run pmb-mcp briefly and check it speaks MCP
+# Extended agent registry (Sprint 1) - data-driven specs for agents that
+# wire MCP through a JSON or YAML config. The big-three (claude-code /
+# cursor / codex) keep their dedicated code paths above; everything here
+# is purely additive so their behaviour and tests are untouched.
+#
+# Each agent differs in three ways we have to model:
+#   1. WHERE the config file lives (project vs home, XDG vs %APPDATA%).
+#   2. WHICH top-level key holds the servers ("mcpServers" / "servers" /
+#      "context_servers" / "mcp").
+#   3. The SHAPE of a single server entry (flat command, command-as-list,
+#      command-wrapped-object, env vs environment, list-of-objects YAML).
+#
+# `--config-path` on the CLI lets a user override (1) when their install
+# puts the file somewhere our default guess doesn't cover.
+# ----------------------------------------------------------------------
+
+
+@dataclass
+class JsonAgentSpec:
+    name: str
+    servers_key: str            # top-level key the agent reads servers from
+    shape: str                  # "claude" | "vscode" | "zed" | "opencode" | "continue-yaml"
+    fmt: str = "json"           # "json" | "yaml"
+    project_path: Optional[str] = None   # relative to cwd
+    global_path: Optional[str] = None     # relative to home; ".config/..." → XDG
+    instruction_file: Optional[str] = None
+    instruction_in_home: bool = False
+    docs: str = ""              # one-liner shown in help / docs
+
+
+JSON_AGENT_SPECS: dict[str, JsonAgentSpec] = {
+    # Codeium Windsurf - Claude-shaped mcpServers JSON.
+    "windsurf": JsonAgentSpec(
+        name="windsurf",
+        servers_key="mcpServers",
+        shape="claude",
+        global_path=".codeium/windsurf/mcp_config.json",
+        instruction_file=".windsurfrules",
+        docs="Codeium Windsurf (~/.codeium/windsurf/mcp_config.json)",
+    ),
+    # Google Gemini CLI - Claude-shaped mcpServers JSON in ~/.gemini/settings.json.
+    "gemini": JsonAgentSpec(
+        name="gemini",
+        servers_key="mcpServers",
+        shape="claude",
+        global_path=".gemini/settings.json",
+        instruction_file=".gemini/GEMINI.md",
+        instruction_in_home=True,
+        docs="Google Gemini CLI (~/.gemini/settings.json)",
+    ),
+    # VS Code native MCP / GitHub Copilot - project .vscode/mcp.json, "servers" key.
+    "vscode": JsonAgentSpec(
+        name="vscode",
+        servers_key="servers",
+        shape="vscode",
+        project_path=".vscode/mcp.json",
+        instruction_file=".github/copilot-instructions.md",
+        docs="VS Code / Copilot MCP (<project>/.vscode/mcp.json)",
+    ),
+    # Zed editor - context_servers, command wrapped as {path,args,env}.
+    "zed": JsonAgentSpec(
+        name="zed",
+        servers_key="context_servers",
+        shape="zed",
+        global_path=".config/zed/settings.json",
+        docs="Zed editor (~/.config/zed/settings.json)",
+    ),
+    # OpenCode (sst/opencode) - "mcp" key, command-as-list, type:local.
+    "opencode": JsonAgentSpec(
+        name="opencode",
+        servers_key="mcp",
+        shape="opencode",
+        global_path=".config/opencode/opencode.json",
+        instruction_file="AGENTS.md",
+        docs="OpenCode (~/.config/opencode/opencode.json)",
+    ),
+    # Continue.dev - YAML config, mcpServers is a LIST of objects.
+    "continue": JsonAgentSpec(
+        name="continue",
+        servers_key="mcpServers",
+        shape="continue-yaml",
+        fmt="yaml",
+        global_path=".continue/config.yaml",
+        docs="Continue.dev (~/.continue/config.yaml)",
+    ),
+}
+
+
+def supported_agents() -> list[str]:
+    """All agent ids `pmb connect` accepts, in display order."""
+    return ["claude-code", "cursor", "codex", *sorted(JSON_AGENT_SPECS)]
+
+
+def _xdg_config_home() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+
+
+def _resolve_extended_path(
+    spec: JsonAgentSpec, cwd: Path, scope: str, override: Optional[str],
+) -> Path:
+    """Pick the config file for an extended agent.
+
+    Precedence: explicit --config-path > project file (when the agent has
+    one and scope=project) > global file. `.config/...` global paths are
+    routed through XDG_CONFIG_HOME so Linux/macOS custom configs are honored.
+    """
+    if override:
+        return Path(override).expanduser()
+    if spec.project_path and (scope == "project" or not spec.global_path):
+        return cwd / spec.project_path
+    if spec.global_path:
+        if spec.global_path.startswith(".config/"):
+            return _xdg_config_home() / spec.global_path[len(".config/"):]
+        return Path.home() / spec.global_path
+    if spec.project_path:
+        return cwd / spec.project_path
+    raise ValueError(f"no config path resolvable for agent {spec.name!r}")
+
+
+def _split_entry(entry: dict) -> tuple[str, list[str], dict]:
+    """Pull (command, args, env) out of a make_local/remote_entry dict."""
+    command = entry.get("command", "")
+    args = list(entry.get("args") or [])
+    env = dict(entry.get("env") or {})
+    return command, args, env
+
+
+def shape_entry(shape: str, command: str, args: list[str], env: dict) -> dict:
+    """Render a single server entry in the agent-specific shape."""
+    if shape in ("claude", "vscode"):
+        # Flat: {command, args?, env?}. VS Code lives under "servers" but the
+        # per-entry shape is identical to the Claude one.
+        e: dict = {"command": command}
+        if args:
+            e["args"] = args
+        if env:
+            e["env"] = env
+        return e
+    if shape == "zed":
+        # Zed wraps the launch spec in a "command" object.
+        return {"command": {"path": command, "args": args, "env": env}}
+    if shape == "opencode":
+        # OpenCode: command is a list, env is "environment", explicit enabled.
+        return {
+            "type": "local",
+            "command": [command, *args],
+            "enabled": True,
+            "environment": env,
+        }
+    raise ValueError(f"unknown entry shape {shape!r}")
+
+
+def merge_keyed_entry(
+    existing: dict, servers_key: str, name: str, shaped: dict,
+) -> tuple[dict, str]:
+    """Add/replace `name` under a dict-shaped servers key (preserve siblings)."""
+    cfg = dict(existing) if existing else {}
+    servers = dict(cfg.get(servers_key) or {})
+    action = "replaced" if name in servers else "added"
+    servers[name] = shaped
+    cfg[servers_key] = servers
+    return cfg, action
+
+
+def merge_continue_entry(
+    existing: dict, name: str, command: str, args: list[str], env: dict,
+) -> tuple[dict, str]:
+    """Continue.dev stores mcpServers as a LIST of {name, command, ...}."""
+    cfg = dict(existing) if existing else {}
+    servers = list(cfg.get("mcpServers") or [])
+    new_entry: dict = {"name": name, "command": command}
+    if args:
+        new_entry["args"] = args
+    if env:
+        new_entry["env"] = env
+    action = "added"
+    for i, s in enumerate(servers):
+        if isinstance(s, dict) and s.get("name") == name:
+            servers[i] = new_entry
+            action = "replaced"
+            break
+    else:
+        servers.append(new_entry)
+    cfg["mcpServers"] = servers
+    return cfg, action
+
+
+def _load_yaml(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        import yaml
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def _save_yaml(path: Path, data: dict) -> None:
+    import yaml
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def connect_extended_agent(
+    agent: str,
+    *,
+    cwd: Path,
+    scope: str,
+    remote: Optional[str],
+    name_override: Optional[str],
+    workspace_id: Optional[str],
+    pmb_home: Optional[Path],
+    config_path: Optional[str] = None,
+) -> dict:
+    """Wire one of the JSON_AGENT_SPECS agents. Returns the same dict shape
+    as `connect()` so the CLI layer renders both paths identically."""
+    spec = JSON_AGENT_SPECS[agent]
+
+    if remote:
+        base = make_remote_entry(remote)
+        name = name_override or "pmb-remote"
+    else:
+        base = make_local_entry(cwd, workspace_id=workspace_id, pmb_home=pmb_home)
+        name = name_override or ("pmb-shared" if workspace_id else "pmb")
+
+    command, args, env = _split_entry(base)
+    path = _resolve_extended_path(spec, cwd, scope, config_path)
+
+    if spec.fmt == "yaml":
+        existing = _load_yaml(path)
+        new_cfg, action = merge_continue_entry(existing, name, command, args, env)
+        shaped = next(s for s in new_cfg["mcpServers"] if s.get("name") == name)
+        _save_yaml(path, new_cfg)
+    else:
+        shaped = shape_entry(spec.shape, command, args, env)
+        existing = _load_json(path)
+        new_cfg, action = merge_keyed_entry(existing, spec.servers_key, name, shaped)
+        _save_json(path, new_cfg)
+
+    rules_written: list[dict] = []
+    if spec.instruction_file:
+        try:
+            if spec.instruction_in_home:
+                inst_path = Path.home() / spec.instruction_file
+            else:
+                inst_path = cwd / spec.instruction_file
+            written = install_agent_rules(inst_path)
+            rules_written.append({"path": str(inst_path), "action": written})
+        except Exception as e:  # noqa: BLE001 - surface to caller, never crash connect
+            rules_written.append({"error": str(e)})
+
+    return {
+        "agent": agent,
+        "scope": scope,
+        "config_path": str(path),
+        "entry_name": name,
+        "action": action,
+        "entry": shaped,
+        "workspace_id": workspace_id,
+        "instruction_rules": rules_written,
+    }
+
+
+# ----------------------------------------------------------------------
+# Probe - run pmb-mcp briefly and check it speaks MCP
 # ----------------------------------------------------------------------
 
 
 def probe_mcp(timeout_seconds: float = 6.0) -> tuple[bool, str]:
     """Spawn pmb-mcp, send an `initialize` request over stdio, read response.
 
-    Returns (ok, message). On Windows we keep the timeout short — the goal
+    Returns (ok, message). On Windows we keep the timeout short - the goal
     is to surface obvious 'doesn't even start' problems, not full
     integration testing.
     """
@@ -402,13 +669,24 @@ def connect(
     name_override: Optional[str] = None,
     workspace_id: Optional[str] = None,
     pmb_home: Optional[Path] = None,
+    config_path: Optional[str] = None,
 ) -> dict:
     """Write the MCP entry into the right config file.
 
     workspace_id and pmb_home are forwarded to the MCP server via env vars
     (PMB_WORKSPACE, PMB_HOME). When set, the server uses that exact workspace
-    regardless of cwd — letting multiple AI clients share one memory.
+    regardless of cwd - letting multiple AI clients share one memory.
     """
+    # Extended agents (windsurf / gemini / vscode / zed / opencode / continue)
+    # have their own config formats - handle them and return early. The
+    # big-three below keep their original code path untouched.
+    if agent in JSON_AGENT_SPECS:
+        return connect_extended_agent(
+            agent, cwd=cwd, scope=scope, remote=remote,
+            name_override=name_override, workspace_id=workspace_id,
+            pmb_home=pmb_home, config_path=config_path,
+        )
+
     if agent == "claude-code":
         target = claude_code_paths(scope, cwd)
     elif agent == "cursor":
@@ -417,7 +695,8 @@ def connect(
         target = codex_paths(cwd)
     else:
         raise ValueError(
-            f"unsupported agent {agent!r}. Try: claude-code, cursor, codex"
+            f"unsupported agent {agent!r}. Try one of: "
+            + ", ".join(supported_agents())
         )
 
     path = next((p for p in target.config_paths if p.exists()), target.fallback_path)
@@ -450,7 +729,7 @@ def connect(
             # Only write to the GLOBAL one by default (home), or to the
             # project one when scope='project'. Skip the other.
             is_global = str(inst_path.parent) == str(Path.home() / f".{agent.replace('-code', '').replace('codex', 'codex')}")
-            # Simpler: just write to the first path (global) — most agents
+            # Simpler: just write to the first path (global) - most agents
             # read both, global is safer (works across all projects).
             written = install_agent_rules(inst_path)
             rules_written.append({

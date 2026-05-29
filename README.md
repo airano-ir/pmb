@@ -123,16 +123,25 @@ pmb doctor
 pmb stats
 ```
 
-**2. Hook up your AI agent.** One command per agent:
+**2. Hook up your AI agent.** One command per agent - 9 supported:
 
 ```bash
 pmb connect claude        # Anthropic Claude Code
 pmb connect codex         # OpenAI Codex CLI
 pmb connect cursor        # Cursor
+pmb connect windsurf      # Codeium Windsurf
+pmb connect gemini        # Google Gemini CLI
+pmb connect vscode        # VS Code / GitHub Copilot MCP
+pmb connect zed           # Zed editor
+pmb connect opencode      # OpenCode
+pmb connect continue      # Continue.dev
+
+pmb connect --list        # show every agent + its config path
 ```
 
 This writes an MCP server entry into the agent's config (e.g. `~/.codex/config.toml`)
-and appends a tiny rule block to `AGENTS.md` / `CLAUDE.md`.
+and appends a tiny rule block to `AGENTS.md` / `CLAUDE.md`. Point several agents at
+one shared workspace with `--workspace personal` so they all see the same memory.
 
 **3. Use your agent normally.** PMB activates only on explicit memory triggers:
 
@@ -153,6 +162,85 @@ pmb dashboard      # web UI on http://127.0.0.1:8765
 
 ---
 
+## 🔄 Sync, backup, and team memory - without a server
+
+A PMB workspace is just files on disk, so git can version and sync it. No
+cloud service, no account, no vendor in the middle:
+
+```bash
+# Back up / sync your memory to any git remote (private or public)
+pmb workspace init --remote git@github.com:you/my-memory.git
+pmb workspace push                       # commit + push (after every session, or via cron)
+pmb workspace pull                        # on a second machine - remote wins on conflict
+pmb workspace clone <url> work-laptop     # bring memory to a fresh device
+
+# Encrypt the whole workspace into one portable, authenticated bundle
+pmb workspace export memory.enc           # AES + HMAC, scrypt-derived key
+pmb workspace import memory.enc personal  # restore anywhere
+```
+
+The two compose: **`export` to an encrypted bundle, then push that to a
+*public* repo** - the remote only ever sees ciphertext, so your memory is
+backed up everywhere and readable nowhere but your machine. Cloud memory
+services (mem0, Letta, Zep) can't offer this; the data has to live on their
+servers to work. (Encryption needs `pip install 'pmb-ai[crypto]'`.)
+
+---
+
+## 📥 Import your existing memory - no empty cold start
+
+A fresh memory knows nothing about you, which makes day one feel useless. But
+you already have years of context in ChatGPT, Claude, mem0, or a notes folder.
+Bring it in with one command (the entity graph rebuilds automatically after):
+
+```bash
+pmb import chatgpt ~/Downloads/conversations.json   # OpenAI data export
+pmb import claude  ~/Downloads/claude-export/        # Anthropic data export
+pmb import mem0    mem0_dump.json                     # migrate off a competitor
+pmb import markdown ~/notes/                          # Obsidian vault / plain notes
+```
+
+`--roles user,assistant` controls which chat turns to keep (default: your own
+words); `--dry-run` previews without writing.
+
+---
+
+## 🔍 `pmb why` - see exactly why recall ranked a result
+
+Most memory tools are a black box. PMB shows the full reranker trace: which of
+the 14 predicate-aware rules fired on each result and the multiplier each one
+contributed.
+
+```bash
+$ pmb why "where do I live now"
+#1  I moved to Lisbon in April 2026 from Kyiv
+    ▲ verb-match                              ×1.25
+    ▲ now/current vs past tense               ×1.30
+    ▲ self-intent (first-person rescue)       ×1.30
+    net PAMVR multiplier: ×2.11
+```
+
+Great for debugging a miss, tuning, or just trusting the engine.
+
+---
+
+## 🔌 Pluggable embedders
+
+The default multilingual model needs no setup. But you can point PMB at your
+own embedder - fully local via Ollama, or a hosted API:
+
+```bash
+pmb config set embedding.backend ollama     # local, offline (nomic-embed-text)
+pmb config set embedding.backend openai     # text-embedding-3-small (needs OPENAI_API_KEY)
+pmb config set embedding.backend fastembed  # ONNX, fast on CPU
+```
+
+A dimension guard refuses to mix embedders of different vector sizes in one
+workspace (which would corrupt recall) - switch backends in a fresh workspace
+or re-embed. Use `pmb why` and the LoCoMo bench to verify recall holds on yours.
+
+---
+
 ## 📊 Benchmarks
 
 ### 1. LoCoMo (the standard) - 94.5% recall@10
@@ -160,7 +248,7 @@ pmb dashboard      # web UI on http://127.0.0.1:8765
 LoCoMo is the multi-session benchmark from Snap Research: 10 conversations × ~199 QA pairs each, cited by mem0, Letta, and Zep in their papers.
 
 ```
-mean evidence_recall@10 = 94.5% (full 10-conv run, v0.1.0 defaults)
+mean evidence_recall@10 = 94.5% (full 10-conv run, default settings)
 
    conv-26  █████████████████████████  96.0%   conv-44  █████████████████████████  96.2%
    conv-30  █████████████████████████  95.2%   conv-47  ████████████████████████   93.2%
@@ -542,7 +630,9 @@ If your workload doesn't appear here, that doesn't mean PMB can't help - it mean
 pmb stats                  workspace summary (event count, by type, graph stats)
 pmb list                   last N events
 pmb recall "<query>"       search memory from the shell
+pmb why "<query>"          explain the ranking - full PAMVR rule trace
 pmb fact "<content>"       record a standalone fact
+pmb import <src> <path>    import chatgpt | claude | mem0 | markdown history
 pmb pin <ulid>             pin a memory (max importance, no decay)
 pmb forget <ulid>          archive (reversible)
 pmb feedback <ulid> useful|wrong   tune importance based on real outcomes
@@ -551,8 +641,13 @@ pmb tui                    full TUI: Memory · Recall · Stats · Dedup · Tune
 pmb dashboard              web UI on :8765
 pmb tune                   settings-only TUI (67 knobs)
 
-pmb connect codex|claude|cursor    auto-wire MCP into the agent
+pmb connect <agent>               auto-wire MCP (9 agents; --list to see all)
 pmb ollama status|use|test         local LLM integration
+
+pmb workspace push|pull            sync memory to/from any git remote
+pmb workspace clone <url> <name>   clone a remote workspace
+pmb workspace export <file.enc>    encrypt workspace to a portable bundle
+pmb workspace import <file.enc>    restore an encrypted bundle
 
 pmb dedupe                 one-shot duplicate sweep
 pmb regraph                rebuild the entity graph from events
@@ -655,7 +750,7 @@ See [`SECURITY.md`](SECURITY.md) for the full threat model and vulnerability rep
 - [x] Cross-lingual recall (multilingual MiniLM by default)
 - [x] Per-MCP-call performance tracking
 - [x] Ollama backend for fully-local LLM ops
-- [x] LoCoMo evidence-recall@10: **94.1 %** on the full 10-conversation run with v0.1.0 defaults (up from 91.6 % under previous defaults)
+- [x] LoCoMo evidence-recall@10: **94.5%** on the full 10-conversation run with default settings (up from 91.6% under previous defaults)
 - [x] Lazy package imports - `import pmb` takes 48 ms (was ~14 s)
 - [x] **Lazy LanceDB import** - `Engine()` no longer pays the 22 s `import lancedb` cost up front; CLI commands `pmb stats / list / config / pin / forget` now run in ~1 s end-to-end (was ~14 s)
 

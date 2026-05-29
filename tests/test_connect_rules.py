@@ -21,8 +21,8 @@ def test_create_new_instructions_file(tmp_path):
     body = f.read_text(encoding="utf-8")
     assert PMB_AGENT_RULES_START in body
     assert PMB_AGENT_RULES_END in body
-    assert "record_fact" in body
-    assert "Сегодня я упал" in body  # RU example present
+    assert "record_batch" in body
+    assert "запомни" in body  # RU trigger example present
 
 
 def test_append_to_existing_instructions(tmp_path):
@@ -34,7 +34,7 @@ def test_append_to_existing_instructions(tmp_path):
     assert "User Custom Rules" in body          # preserved
     assert "Don't overwrite me" in body         # preserved
     assert PMB_AGENT_RULES_START in body        # added
-    assert "record_fact" in body
+    assert "record_batch" in body
 
 
 def test_update_existing_rules_block(tmp_path):
@@ -56,7 +56,7 @@ def test_update_existing_rules_block(tmp_path):
     assert "Custom" in body
     assert "other content" in body
     # New rules present
-    assert "record_fact" in body
+    assert "record_batch" in body
     assert "old content" not in body
 
 
@@ -83,7 +83,7 @@ def test_connect_codex_writes_agents_md(tmp_path, monkeypatch):
     agents_md = tmp_path / ".codex" / "AGENTS.md"
     assert agents_md.exists()
     body = agents_md.read_text(encoding="utf-8")
-    assert "record_fact" in body
+    assert "record_batch" in body
     assert PMB_AGENT_RULES_START in body
     # Result reports it too
     assert result.get("instruction_rules"), "should report rules written"
@@ -97,7 +97,7 @@ def test_connect_claude_writes_claude_md(tmp_path, monkeypatch):
     claude_md = tmp_path / ".claude" / "CLAUDE.md"
     assert claude_md.exists()
     body = claude_md.read_text(encoding="utf-8")
-    assert "record_fact" in body
+    assert "record_batch" in body
 
 
 def test_connect_idempotent_no_dup(tmp_path, monkeypatch):
