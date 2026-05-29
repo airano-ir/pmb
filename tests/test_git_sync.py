@@ -47,13 +47,17 @@ def env():
     identity configured so commits don't fail in CI."""
     with tempfile.TemporaryDirectory() as t:
         root = Path(t)
+        # Git identity + default branch BEFORE creating any repo, so the bare
+        # remote advertises `main` as its default (matches GitHub). Without
+        # this, a runner whose git defaults to `master` makes the bare HEAD
+        # point at a missing branch and clones produce an empty working tree.
+        for k, v in [("user.email", "ci@pmb.test"), ("user.name", "PMB CI"),
+                     ("init.defaultBranch", "main")]:
+            subprocess.run(["git", "config", "--global", k, v],
+                           capture_output=True, text=True)
         ws = root / "workspaces" / "test"
         _seed_workspace(ws)
         remote = _make_bare_remote(root / "remote.git")
-        # local git identity for commits
-        for k, v in [("user.email", "ci@pmb.test"), ("user.name", "PMB CI")]:
-            subprocess.run(["git", "config", "--global", k, v],
-                           capture_output=True, text=True)
         yield ws, remote, root
 
 

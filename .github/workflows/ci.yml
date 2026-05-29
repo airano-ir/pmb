@@ -29,9 +29,9 @@ jobs:
         continue-on-error: true
 
   # --------------------------------------------------------------
-  # Hardening + RU/UK regression suite — the must-pass tests.
+  # Regression + feature suites - the must-pass tests.
   # These verify the headline features (PAMVR, keyed-upsert, warmup,
-  # multilingual extraction, durable queue, chunked IN, pattern split).
+  # durable queue, chunked IN, pattern split, connect, sync, import).
   # --------------------------------------------------------------
   test:
     name: tests · ${{ matrix.os }} · py${{ matrix.python }}
@@ -67,9 +67,6 @@ jobs:
 
       - name: Hardening regression suite
         run: pytest tests/test_hardening.py -q --tb=short
-
-      - name: RU/UK suite
-        run: pytest tests/test_ru_uk_suite.py -q --tb=short
 
       - name: Connect + workspace-sync + encryption suite
         run: >

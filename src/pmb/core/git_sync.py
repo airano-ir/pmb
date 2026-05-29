@@ -301,5 +301,31 @@ def clone_workspace(url: str, name: str, pmb_home: Path) -> GitResult:
     )
     if r.returncode != 0:
         return GitResult(False, "clone", f"clone failed: {r.stderr.strip()[:400]}")
+
+    # Robustness: if the remote's HEAD points at a branch that doesn't match
+    # what was actually pushed (e.g. a self-hosted bare repo defaulting to
+    # `master` while we push `main`), `git clone` leaves an empty working
+    # tree. Detect that and check out the branch that actually has content.
+    has_files = any(p.name != ".git" for p in dest.iterdir())
+    if not has_files:
+        br = subprocess.run(
+            ["git", "-C", str(dest), "branch", "-r"],
+            capture_output=True, text=True, check=False,
+        ).stdout
+        remote_branches = [
+            ln.strip().split("/", 1)[-1]
+            for ln in br.splitlines()
+            if "->" not in ln and ln.strip()
+        ]
+        target = "main" if "main" in remote_branches else (
+            "master" if "master" in remote_branches else
+            (remote_branches[0] if remote_branches else None)
+        )
+        if target:
+            subprocess.run(
+                ["git", "-C", str(dest), "checkout", target],
+                capture_output=True, text=True, check=False,
+            )
+
     return GitResult(True, "clone", f"cloned into workspace {name!r}",
                      {"workspace": name, "path": str(dest)})
