@@ -218,6 +218,145 @@ def fact(
 
 
 @app.command()
+def note(
+    text: str = typer.Argument(..., help="The note to remember, in quotes"),
+    importance: float = typer.Option(0.6, "--importance", "-i"),
+    pin: bool = typer.Option(False, "--pin", help="Pin it (max importance, never auto-archived)"),
+):
+    """Instant capture - jot a memory straight from the terminal, no agent.
+
+    The lowest-friction way to feed PMB:
+      pmb note "decided to use Postgres for JSONB"
+      pmb note "Anna's birthday is March 3" --pin
+    """
+    eng = Engine()
+    ulid = eng.record_fact(
+        fact=text,
+        importance=0.95 if pin else importance,
+        metadata={"source": "cli-note"},
+    )
+    if pin:
+        try:
+            eng.pin(ulid)
+        except Exception:
+            pass
+    console.print(f"[green]Noted[/] [cyan]{ulid}[/]" + (" [yellow](pinned)[/]" if pin else ""))
+
+
+@app.command()
+def audit(
+    limit: int = typer.Option(2000, "-n", "--limit", help="Max events to scan"),
+):
+    """'What does PMB know about me?' - a grouped, read-only view of memory.
+
+    Shows everything stored, grouped by type and by source, so you can see
+    at a glance what PMB has accumulated and where it came from. Local,
+    read-only, no model load.
+    """
+    from collections import Counter
+    from pmb.provenance import source_key, describe_source
+    eng = Engine()
+    events = eng.events.list_active(eng.workspace.id, limit=limit)
+
+    if not events:
+        console.print("[yellow]Memory is empty. Use `pmb note` or connect an agent.[/]")
+        return
+
+    console.print(Panel.fit(
+        f"[bold]{len(events)}[/] active memories in workspace "
+        f"[cyan]{eng.workspace.name}[/]",
+        title="PMB audit - what I know about you",
+    ))
+
+    by_type = Counter(e.event_type for e in events)
+    by_source = Counter(source_key(e.metadata) for e in events)
+    pinned = [e for e in events if e.importance >= 0.9]
+
+    t1 = Table(show_header=True, header_style="bold magenta", title="By type")
+    t1.add_column("Type", style="cyan"); t1.add_column("Count", justify="right")
+    for t, n in by_type.most_common():
+        t1.add_row(t, str(n))
+    console.print(t1)
+
+    t2 = Table(show_header=True, header_style="bold magenta", title="By source (where it came from)")
+    t2.add_column("Source", style="cyan"); t2.add_column("Count", justify="right")
+    for s, n in by_source.most_common():
+        t2.add_row(s, str(n))
+    console.print(t2)
+
+    # Highest-importance / pinned facts - the things PMB treats as core about you
+    if pinned:
+        t3 = Table(show_header=True, header_style="bold magenta",
+                   title=f"Core / pinned facts (importance ≥ 0.9) - top {min(15, len(pinned))}")
+        t3.add_column("Content"); t3.add_column("From", style="dim")
+        for e in sorted(pinned, key=lambda x: -x.importance)[:15]:
+            content = e.content[:70] + ("…" if len(e.content) > 70 else "")
+            t3.add_row(content, describe_source(e.metadata))
+        console.print(t3)
+
+    console.print(
+        "[dim]Tip: `pmb recall \"<query>\"` to search · `pmb forget <ulid>` to archive "
+        "· `pmb export` (coming) for full dump.[/]"
+    )
+
+
+@app.command()
+def watch(
+    path: str = typer.Argument(..., help="File or directory to watch (e.g. ~/journal.md)"),
+    interval: float = typer.Option(5.0, "--interval", help="Poll interval seconds"),
+    once: bool = typer.Option(False, "--once", help="Single pass then exit (cron-friendly)"),
+    importance: float = typer.Option(0.5, "--importance", "-i"),
+):
+    """Auto-capture: ingest new paragraphs from a notes file/folder into memory.
+
+    Turns existing note-taking into memory with zero extra effort:
+      pmb watch ~/journal.md          # poll forever (Ctrl+C to stop)
+      pmb watch ~/notes/ --once       # single pass (run from cron/Task Scheduler)
+
+    Content-hash dedup: editing old text won't re-ingest; only new paragraphs
+    are added.
+    """
+    from pmb.ingest.watch import scan_new_chunks, load_state, save_state
+    eng = Engine()
+    target = Path(path).expanduser()
+    if not target.exists():
+        console.print(f"[red]Path not found:[/] {target}")
+        raise typer.Exit(2)
+
+    state_path = eng.workspace.storage_dir / "watch_state.json"
+
+    def _pass() -> int:
+        seen = load_state(state_path)
+        new_items, updated = scan_new_chunks(target, seen)
+        if new_items:
+            eng.record_batch_bulk([
+                {"type": "fact", "content": it["content"], "importance": importance,
+                 "metadata": {"source": "watch", "file": it["file"]}}
+                for it in new_items
+            ])
+            save_state(state_path, updated)
+        return len(new_items)
+
+    if once:
+        n = _pass()
+        console.print(f"[green]Ingested[/] {n} new paragraph(s) from {target}")
+        if n:
+            eng.regraph()
+        return
+
+    console.print(f"[cyan]Watching[/] {target} (every {interval:.0f}s). Ctrl+C to stop.")
+    import time as _time
+    try:
+        while True:
+            n = _pass()
+            if n:
+                console.print(f"  [green]+{n}[/] new paragraph(s) ingested")
+            _time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopped watching. Run `pmb regraph` to refresh the entity graph.[/]")
+
+
+@app.command()
 def recall(
     query: str = typer.Argument(...),
     top_k: int = typer.Option(5, "-k", "--top"),
@@ -239,16 +378,20 @@ def recall(
         console.print("[yellow]No matches.[/]")
         return
 
+    from pmb.provenance import describe_source
     for i, r in enumerate(pack.results, 1):
         ts = _humanize_time(r.timestamp)
         sigs = (f"score={r.score:.2f} bm25={r.bm25_score:.2f} "
                 f"vec={r.vec_score:.2f} imp={r.importance:.2f}")
         title = f"#{i}  [{r.event_type}]  {ts}  ({sigs})"
         content = r.content[:500] + "..." if len(r.content) > 500 else r.content
+        # Source attribution: show WHERE this memory came from (trust feature).
+        src = describe_source(r.metadata)
+        subtitle = f"[dim]{r.ulid}  ·  from: {src}[/]"
         console.print(Panel(
             content,
             title=title,
-            subtitle=f"[dim]{r.ulid}[/]",
+            subtitle=subtitle,
             title_align="left",
         ))
 
