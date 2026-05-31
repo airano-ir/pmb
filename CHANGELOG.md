@@ -6,6 +6,13 @@ All notable changes to PMB are documented here.
 
 ### Added
 
+- **`pmb note "..."`** - instant memory capture from the terminal, no agent.
+- **`pmb audit`** - "what does PMB know about me?": a grouped, read-only view
+  of everything stored, by type and by source.
+- **Source attribution on recall** - every hit shows where it came from
+  ("from: chatgpt · Project planning", "from: note (cli)", etc.). Trust feature.
+- **`pmb watch <file|dir>`** - auto-capture: new paragraphs in a notes file or
+  folder (e.g. `~/journal.md`) get ingested as memory; content-hash dedup.
 - **6 more agent integrations (9 total).** `pmb connect` now wires
   windsurf, gemini, vscode, zed, opencode and continue in addition to
   claude-code / cursor / codex. `pmb connect --list` shows every agent and
