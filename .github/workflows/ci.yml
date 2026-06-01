@@ -79,8 +79,10 @@ jobs:
           pytest tests/test_import.py tests/test_pamvr_explain.py
           tests/test_embedder_backends.py -q --tb=short
 
-      - name: Provenance + watch-capture suite
-        run: pytest tests/test_provenance_watch.py -q --tb=short
+      - name: Provenance + watch + memory-quality + distill suite
+        run: >
+          pytest tests/test_provenance_watch.py tests/test_memory_quality.py
+          tests/test_distill.py -q --tb=short
 
       - name: Lightweight tests (no heavy ML)
         run: pytest tests/test_config.py tests/test_redact.py -q --tb=short

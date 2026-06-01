@@ -79,8 +79,27 @@ Only if the user EXPLICITLY does one of these:
                         "content":"Chose X over Y for project Z because..."}])
    ```
 
+4. The user CORRECTS you, or you discover a reusable gotcha/technique that
+   should change how you work in THIS project going forward - record a LESSON:
+   ```
+   record_batch(items=[{"type":"lesson",
+                        "content":"This repo uses pnpm, never npm"}])
+   ```
+   Lessons are procedural ("how to work here"), not facts. Record them when
+   the user says "no, do it this way", "we always/never ...", "stop doing X",
+   or when a fix reveals a non-obvious project rule. They are stored at high
+   importance and surface automatically on future recalls.
+
 For general questions answered from your own knowledge - DO NOT save anything.
 PMB is not a logbook of every interaction.
+
+### When to RECALL lessons (apply them, don't repeat mistakes)
+
+At the START of a non-trivial coding task in a known project, call
+`recall("<task topic> conventions lessons")` once. If a lesson comes back
+(e.g. "use pnpm, never npm"), FOLLOW it - that's the point of lessons. This is
+the one case where recall is worth it for a coding task, not just a personal
+question.
 
 ### Rules when you DO call PMB
 
