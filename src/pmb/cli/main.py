@@ -19,12 +19,13 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich.markup import escape as esc
 
 from pmb.core.engine import Engine
 from pmb.core.workspace import detect_workspace, list_workspaces, Workspace
@@ -210,10 +211,17 @@ def remember(
 def fact(
     text: str = typer.Argument(..., help="The factual statement to record"),
     importance: float = typer.Option(0.7, "--importance", "-i"),
+    ttl: Optional[str] = typer.Option(
+        None, "--ttl",
+        help="Auto-expire after a duration (30d, 12h, 2w, 3mo). Archived later "
+             "by `pmb prune-expired`; never affects recall.",
+    ),
 ):
     """Record a standalone fact (project decision, preference, setting)."""
     eng = Engine()
     ulid = eng.record_fact(fact=text, importance=importance)
+    if ttl:
+        _apply_ttl(eng, ulid, ttl)
     console.print(f"[green]Fact stored[/] ULID: [cyan]{ulid}[/]")
 
 
@@ -222,12 +230,18 @@ def note(
     text: str = typer.Argument(..., help="The note to remember, in quotes"),
     importance: float = typer.Option(0.6, "--importance", "-i"),
     pin: bool = typer.Option(False, "--pin", help="Pin it (max importance, never auto-archived)"),
+    ttl: Optional[str] = typer.Option(
+        None, "--ttl",
+        help="Auto-expire after a duration (30d, 12h, 2w, 3mo). Archived later "
+             "by `pmb prune-expired`; never affects recall.",
+    ),
 ):
     """Instant capture - jot a memory straight from the terminal, no agent.
 
     The lowest-friction way to feed PMB:
       pmb note "decided to use Postgres for JSONB"
       pmb note "Anna's birthday is March 3" --pin
+      pmb note "spike: try Redis cache" --ttl 14d
     """
     eng = Engine()
     ulid = eng.record_fact(
@@ -240,6 +254,8 @@ def note(
             eng.pin(ulid)
         except Exception:
             pass
+    if ttl:
+        _apply_ttl(eng, ulid, ttl)
     console.print(f"[green]Noted[/] [cyan]{ulid}[/]" + (" [yellow](pinned)[/]" if pin else ""))
 
 
@@ -251,6 +267,11 @@ def learn(
         False, "--failed",
         help="Record a FAILURE (negative memory): 'tried X, it didn't work'. "
              "Surfaces with a warning so you/the agent don't repeat it.",
+    ),
+    ttl: Optional[str] = typer.Option(
+        None, "--ttl",
+        help="Auto-expire after a duration (e.g. 90d). Rarely needed for "
+             "lessons; useful for time-bound rules.",
     ),
 ):
     """Teach PMB a durable LESSON - a correction or technique to apply going
@@ -273,6 +294,8 @@ def learn(
         importance=importance,
         metadata={"source": "lesson", "kind": kind},
     )
+    if ttl:
+        _apply_ttl(eng, ulid, ttl)
     word = "Recorded failure" if failed else "Learned"
     console.print(f"[green]{word}[/] [cyan]{ulid}[/] [dim]({kind}, importance {importance})[/]")
     console.print("[dim]Tip: `pmb lessons` to review · `pmb consolidate` to distill "
@@ -2006,6 +2029,696 @@ def import_cmd(
         f"from {rg.get('events_reindexed', 0)} events. "
         f"Run [cyan]pmb stats[/] to see your imported memory."
     )
+
+
+# ===========================================================================
+# Local-use features (private / offline). Categories:
+#   C. Recall/research : timeline, insights, tags/collections
+#   D. Own-your-data   : forget-topic, ttl/expiry, export, snapshots
+#   E. Proactivity     : reminders, digest
+#
+# Every command below is CLI + display + write-layer ONLY. None of them call
+# or alter engine.recall(), so retrieval quality (LoCoMo 94.5%) and latency
+# are unaffected by construction. TTL/expiry is enforced by an explicit
+# `prune-expired` sweep (archive, reversible), never inside recall.
+# ===========================================================================
+
+_DUR_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400,
+              "w": 604800, "mo": 2592000, "y": 31536000}
+_ALL_EVENTS = 10_000_000  # effectively "no limit" for analytics/export scans
+
+
+def _parse_duration(text: str) -> Optional[float]:
+    """'30d' / '12h' / '2w' / '3mo' / '1y' (or a bare integer = days) -> seconds.
+
+    Returns None if unparseable.
+    """
+    import re
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    if t.isdigit():
+        return float(int(t) * 86400)
+    m = re.fullmatch(r"(\d+)\s*(mo|[smhdwy])", t)
+    if not m:
+        return None
+    return float(int(m.group(1)) * _DUR_UNITS[m.group(2)])
+
+
+def _day_key(ts: float) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(ts))
+
+
+def _kind_marker(meta: Optional[dict]) -> str:
+    kind = (meta or {}).get("kind", "")
+    if kind == "failure":
+        return "[red]⚠[/] "
+    if kind == "lesson":
+        return "[magenta]★[/] "
+    return ""
+
+
+def _apply_ttl(eng, ulid: str, duration: str) -> None:
+    """Stamp metadata.expires_at on an event. Used by note/learn/fact --ttl."""
+    secs = _parse_duration(duration)
+    if secs is None:
+        console.print(f"[yellow]Ignored bad --ttl:[/] {duration} "
+                      "(try 30d, 12h, 2w, 3mo, 1y)")
+        return
+    ev = eng.events.get_by_ulid(ulid)
+    if ev is None:
+        return
+    meta = dict(ev.metadata or {})
+    meta["expires_at"] = time.time() + secs
+    eng.events.set_metadata(ulid, meta)
+    console.print(f"[dim]TTL set: expires {_humanize_time(meta['expires_at'])}[/]")
+
+
+@app.command()
+def timeline(
+    limit: int = typer.Option(60, "-n", "--limit", help="Max events to show"),
+    event_type: Optional[str] = typer.Option(None, "--type", help="Filter by event type"),
+    days: Optional[float] = typer.Option(None, "--days", help="Only events from the last N days"),
+    newest_first: bool = typer.Option(False, "--newest-first",
+                                      help="Reverse order (default: oldest -> newest)"),
+):
+    """Chronological view of your memory - the story of a project, by day.
+
+      pmb timeline                 # last 60 memories, oldest->newest, grouped by day
+      pmb timeline --days 7        # just this week
+      pmb timeline --type goal     # only goals, over time
+
+    Read-only.
+    """
+    eng = Engine()
+    events = eng.events.list_active(eng.workspace.id, limit=_ALL_EVENTS, event_type=event_type)
+    if days is not None:
+        cutoff = time.time() - days * 86400
+        events = [e for e in events if e.timestamp >= cutoff]
+    events.sort(key=lambda e: e.timestamp, reverse=newest_first)
+    # keep the most recent `limit`; when oldest-first, that's the tail
+    events = events[:limit] if newest_first else events[-limit:]
+
+    if not events:
+        console.print("[yellow]No events in range. Add memories with `pmb note` "
+                      "or connect an agent.[/]")
+        return
+
+    console.print(Panel.fit(
+        f"[bold]{len(events)}[/] memories · workspace [cyan]{esc(eng.workspace.name)}[/]"
+        + (f" · last {days:g}d" if days else ""),
+        title="PMB timeline",
+    ))
+    last_day = None
+    for e in events:
+        day = _day_key(e.timestamp)
+        if day != last_day:
+            console.print(f"\n[bold cyan]{day}[/]")
+            last_day = day
+        clock = time.strftime("%H:%M", time.gmtime(e.timestamp))
+        content = esc(e.content[:100]) + ("…" if len(e.content) > 100 else "")
+        console.print(f"  [dim]{clock}[/]  {_kind_marker(e.metadata)}[{e.event_type}] {content}")
+
+
+@app.command()
+def insights():
+    """Personal analytics over your memory: size, growth, and top topics.
+
+    Read-only snapshot of what PMB has accumulated:
+      • totals + type breakdown
+      • how far back memory goes, and recent growth per week
+      • most-mentioned topics (from the entity graph)
+      • procedural memory (lessons / failures) and goals
+    """
+    from collections import defaultdict
+    eng = Engine()
+    s = eng.stats()
+    ev = s["events"]
+    events = eng.events.list_active(eng.workspace.id, limit=_ALL_EVENTS)
+
+    oldest = ev.get("oldest_timestamp")
+    newest = ev.get("newest_timestamp")
+    span_days = ((newest - oldest) / 86400.0) if (oldest and newest) else 0.0
+
+    console.print(Panel.fit(
+        f"[bold]{ev['active']}[/] active memories ([dim]{ev['archived']} archived[/]) · "
+        f"workspace [cyan]{esc(eng.workspace.name)}[/]\n"
+        f"memory spans [bold]{span_days:.0f}[/] days "
+        f"({_humanize_time(oldest)} -> {_humanize_time(newest)})",
+        title="PMB insights",
+    ))
+
+    if ev["by_type"]:
+        tt = Table(show_header=True, header_style="bold magenta", title="By type")
+        tt.add_column("Type", style="cyan"); tt.add_column("Count", justify="right")
+        for t, n in sorted(ev["by_type"].items(), key=lambda x: -x[1]):
+            tt.add_row(t, str(n))
+        console.print(tt)
+
+    week_counts: dict = defaultdict(int)
+    for e in events:
+        week_counts[time.strftime("%Y-W%W", time.gmtime(e.timestamp))] += 1
+    if week_counts:
+        recent = sorted(week_counts.items())[-8:]
+        peak = max(n for _, n in recent) or 1
+        gt = Table(show_header=True, header_style="bold magenta", title="Growth (recent weeks)")
+        gt.add_column("Week"); gt.add_column("New", justify="right"); gt.add_column("")
+        for wk, n in recent:
+            gt.add_row(wk, str(n), f"[green]{'█' * max(1, round(20 * n / peak))}[/]")
+        console.print(gt)
+
+    try:
+        ents = eng.graph_top_entities(limit=12)
+    except Exception:
+        ents = []
+    if ents:
+        et = Table(show_header=True, header_style="bold magenta", title="Top topics (entity graph)")
+        et.add_column("Topic", style="cyan"); et.add_column("Kind", style="dim")
+        et.add_column("Mentions", justify="right")
+        for e in ents:
+            et.add_row(esc(str(e["name"])), str(e.get("kind", "")), str(e["n_mentions"]))
+        console.print(et)
+
+    n_lessons = sum(1 for e in events if (e.metadata or {}).get("kind") == "lesson")
+    n_failures = sum(1 for e in events if (e.metadata or {}).get("kind") == "failure")
+    n_goals = sum(1 for e in events if e.event_type == "goal")
+    n_pinned = sum(1 for e in events if e.importance >= 0.9)
+    hl = Table(show_header=True, header_style="bold magenta", title="Highlights")
+    hl.add_column("Signal"); hl.add_column("Count", justify="right")
+    hl.add_row("Lessons (procedural)", str(n_lessons))
+    hl.add_row("Failures (don't-repeat)", str(n_failures))
+    hl.add_row("Goals", str(n_goals))
+    hl.add_row("Pinned / core (importance ≥ 0.9)", str(n_pinned))
+    console.print(hl)
+
+
+@app.command()
+def digest(
+    period: str = typer.Argument("today", help="today | week | month"),
+    days: Optional[float] = typer.Option(None, "--days", help="Override: last N days"),
+):
+    """'What did I tell you recently?' - a quick recap of new memories.
+
+      pmb digest            # since the start of today (UTC)
+      pmb digest week       # last 7 days
+      pmb digest --days 3   # last 3 days
+
+    Read-only. Good for an end-of-day or weekly review.
+    """
+    from collections import defaultdict
+    now = time.time()
+    if days is not None:
+        cutoff, label = now - days * 86400, f"last {days:g} days"
+    elif period == "today":
+        cutoff, label = now - (now % 86400), "today"
+    elif period == "week":
+        cutoff, label = now - 7 * 86400, "last 7 days"
+    elif period == "month":
+        cutoff, label = now - 30 * 86400, "last 30 days"
+    else:
+        console.print(f"[red]Unknown period:[/] {period}. Use today | week | month, or --days N.")
+        raise typer.Exit(2)
+
+    eng = Engine()
+    events = [e for e in eng.events.list_active(eng.workspace.id, limit=_ALL_EVENTS)
+              if e.timestamp >= cutoff]
+    if not events:
+        console.print(f"[yellow]Nothing new in {label}.[/]")
+        return
+    events.sort(key=lambda e: e.timestamp)
+
+    console.print(Panel.fit(
+        f"[bold]{len(events)}[/] new memories · [cyan]{label}[/] · "
+        f"workspace {esc(eng.workspace.name)}",
+        title="PMB digest",
+    ))
+    by_type: dict = defaultdict(list)
+    for e in events:
+        by_type[e.event_type].append(e)
+    for etype, items in sorted(by_type.items(), key=lambda x: -len(x[1])):
+        console.print(f"\n[bold magenta]{etype}[/] ({len(items)})")
+        for e in items[:30]:
+            clock = time.strftime("%m-%d %H:%M", time.gmtime(e.timestamp))
+            content = esc(e.content[:110]) + ("…" if len(e.content) > 110 else "")
+            console.print(f"  [dim]{clock}[/]  {_kind_marker(e.metadata)}{content}")
+        if len(items) > 30:
+            console.print(f"  [dim]… and {len(items) - 30} more[/]")
+
+
+@app.command()
+def export(
+    fmt: str = typer.Option("markdown", "--format", "-f", help="markdown | json"),
+    out: Optional[str] = typer.Option(None, "--out", "-o", help="Write to file (default: stdout)"),
+    event_type: Optional[str] = typer.Option(None, "--type", help="Only this event type"),
+    include_archived: bool = typer.Option(False, "--include-archived",
+                                          help="Also dump archived memories"),
+):
+    """Export all memory to readable Markdown or JSON - your data, in the open.
+
+      pmb export                          # Markdown to stdout
+      pmb export -o memory.md             # Markdown to a file
+      pmb export --format json -o mem.json
+
+    Plain, unencrypted, human-readable. For an ENCRYPTED portable bundle, use
+    `pmb workspace export` instead.
+    """
+    from collections import defaultdict
+    from pmb.provenance import describe_source
+    eng = Engine()
+    events = eng.events.list_all(
+        eng.workspace.id, limit=_ALL_EVENTS,
+        event_type=event_type, include_archived=include_archived,
+    )
+    events.sort(key=lambda e: e.timestamp)
+
+    if fmt == "json":
+        payload = {
+            "workspace": {"id": eng.workspace.id, "name": eng.workspace.name},
+            "exported_at": _humanize_time(time.time()),
+            "n_events": len(events),
+            "events": [{
+                "ulid": e.ulid, "type": e.event_type, "content": e.content,
+                "timestamp": e.timestamp, "time": _humanize_time(e.timestamp),
+                "importance": e.importance, "access_count": e.access_count,
+                "archived": e.archived_at is not None, "metadata": e.metadata or {},
+            } for e in events],
+        }
+        text = json.dumps(payload, indent=2, ensure_ascii=False)
+    elif fmt == "markdown":
+        lines = [f"# PMB memory export - {eng.workspace.name}", "",
+                 f"_Exported {_humanize_time(time.time())} · {len(events)} memories_", ""]
+        by_type: dict = defaultdict(list)
+        for e in events:
+            by_type[e.event_type].append(e)
+        for etype, items in sorted(by_type.items()):
+            lines.append(f"## {etype} ({len(items)})")
+            lines.append("")
+            for e in items:
+                kind = (e.metadata or {}).get("kind")
+                kmark = " ★lesson" if kind == "lesson" else (" ⚠failure" if kind == "failure" else "")
+                tag = " `[archived]`" if e.archived_at is not None else ""
+                lines.append(f"- **{_humanize_time(e.timestamp)}**{kmark}{tag} - {e.content}")
+                lines.append(f"  - _from: {describe_source(e.metadata)} · "
+                             f"importance {e.importance:.2f}_")
+            lines.append("")
+        text = "\n".join(lines)
+    else:
+        console.print(f"[red]Unknown format:[/] {fmt}. Use markdown | json.")
+        raise typer.Exit(2)
+
+    if out:
+        Path(out).expanduser().write_text(text, encoding="utf-8")
+        console.print(f"[green]Exported[/] {len(events)} memories -> {out}")
+    else:
+        print(text)  # raw, no rich markup parsing
+
+
+@app.command(name="forget-topic")
+def forget_topic(
+    topic: str = typer.Argument(..., help="Topic / keyword to forget, e.g. 'project-x'"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview only, change nothing"),
+    field: str = typer.Option("any", "--in",
+                              help="Where to match: any | content | tag | source"),
+):
+    """Forget everything about a topic in one command (archives, reversible).
+
+      pmb forget-topic project-x          # archive every memory mentioning it
+      pmb forget-topic acme --dry-run     # preview first
+
+    Case-insensitive substring match in content (and tags / source metadata).
+    Archived, not hard-deleted - restore individually with `pmb unforget` if
+    you change your mind.
+    """
+    eng = Engine()
+    needle = topic.strip().lower()
+    if not needle:
+        console.print("[red]Empty topic.[/]")
+        raise typer.Exit(2)
+    events = eng.events.list_active(eng.workspace.id, limit=_ALL_EVENTS)
+
+    def _matches(e) -> bool:
+        meta = e.metadata or {}
+        if field in ("any", "content") and needle in (e.content or "").lower():
+            return True
+        if field in ("any", "tag"):
+            if any(needle in str(t).lower() for t in (meta.get("tags") or [])):
+                return True
+        if field in ("any", "source"):
+            for k in ("source", "file", "project"):
+                if needle in str(meta.get(k, "")).lower():
+                    return True
+        return False
+
+    matched = [e for e in events if _matches(e)]
+    if not matched:
+        console.print(f"[yellow]No active memories match[/] '{esc(topic)}'.")
+        return
+
+    console.print(f"[bold]{len(matched)}[/] memories match '[cyan]{esc(topic)}[/]':")
+    for e in matched[:15]:
+        content = esc(e.content[:80]) + ("…" if len(e.content) > 80 else "")
+        console.print(f"  [dim]{_humanize_time(e.timestamp)}[/] [{e.event_type}] {content}")
+    if len(matched) > 15:
+        console.print(f"  [dim]… and {len(matched) - 15} more[/]")
+
+    if dry_run:
+        console.print(f"[dim](dry-run) Would archive {len(matched)} memories. Nothing changed.[/]")
+        return
+    if not yes and not typer.confirm(
+        f"Archive all {len(matched)} memories about '{topic}'?"
+    ):
+        console.print("[yellow]Cancelled.[/]")
+        return
+    for e in matched:
+        eng.forget(e.ulid)
+    console.print(f"[green]Archived[/] {len(matched)} memories about '{esc(topic)}'. "
+                  f"[dim](reversible - archived, not deleted)[/]")
+
+
+@app.command()
+def ttl(
+    ulid: str = typer.Argument(..., help="Event ULID"),
+    duration: str = typer.Argument(..., help="30d / 12h / 2w / 3mo / 1y - or 'clear' to remove"),
+):
+    """Set (or clear) an expiry on a memory.
+
+      pmb ttl 018f...  30d     # expire 30 days from now
+      pmb ttl 018f...  clear   # remove the expiry
+
+    Expiry is enforced only by `pmb prune-expired` (or a cron job) - it never
+    touches recall, so there is zero effect on retrieval speed or quality.
+    """
+    eng = Engine()
+    ev = eng.events.get_by_ulid(ulid)
+    if ev is None:
+        console.print(f"[red]No event with ULID[/] {ulid}")
+        raise typer.Exit(2)
+    meta = dict(ev.metadata or {})
+    if duration.strip().lower() in ("clear", "none", "off"):
+        meta.pop("expires_at", None)
+        eng.events.set_metadata(ulid, meta)
+        console.print(f"[yellow]Cleared[/] expiry on {ulid}")
+        return
+    secs = _parse_duration(duration)
+    if secs is None:
+        console.print(f"[red]Bad duration:[/] {duration}. Try 30d, 12h, 2w, 3mo, 1y.")
+        raise typer.Exit(2)
+    meta["expires_at"] = time.time() + secs
+    eng.events.set_metadata(ulid, meta)
+    console.print(f"[green]Set[/] expiry on {ulid} -> {_humanize_time(meta['expires_at'])}")
+
+
+@app.command(name="prune-expired")
+def prune_expired(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview only, change nothing"),
+):
+    """Archive memories whose TTL has passed (set via `pmb ttl` / `--ttl`).
+
+    Reversible (archives, doesn't delete). Run from cron / Task Scheduler for
+    automatic cleanup. Off the recall path.
+    """
+    eng = Engine()
+    now = time.time()
+    events = eng.events.list_active(eng.workspace.id, limit=_ALL_EVENTS)
+    expired = [e for e in events
+               if isinstance((e.metadata or {}).get("expires_at"), (int, float))
+               and e.metadata["expires_at"] <= now]
+    if not expired:
+        console.print("[green]Nothing expired.[/]")
+        return
+    console.print(f"[bold]{len(expired)}[/] memories past their TTL:")
+    for e in expired[:15]:
+        content = esc(e.content[:70]) + ("…" if len(e.content) > 70 else "")
+        console.print(f"  [dim]exp {_humanize_time(e.metadata['expires_at'])}[/] {content}")
+    if dry_run:
+        console.print(f"[dim](dry-run) Would archive {len(expired)}.[/]")
+        return
+    for e in expired:
+        eng.forget(e.ulid)
+    console.print(f"[green]Archived[/] {len(expired)} expired memories.")
+
+
+@app.command()
+def tag(
+    ulid: str = typer.Argument(..., help="Event ULID"),
+    tags: List[str] = typer.Argument(..., help="One or more tags to add"),
+):
+    """Tag a memory for local organization (collections).
+
+      pmb tag 018f... work urgent
+      pmb tagged work          # later: list everything tagged 'work'
+    """
+    eng = Engine()
+    ev = eng.events.get_by_ulid(ulid)
+    if ev is None:
+        console.print(f"[red]No event with ULID[/] {ulid}")
+        raise typer.Exit(2)
+    meta = dict(ev.metadata or {})
+    current = list(meta.get("tags") or [])
+    added = []
+    for t in tags:
+        t = t.strip()
+        if t and t not in current:
+            current.append(t); added.append(t)
+    meta["tags"] = current
+    eng.events.set_metadata(ulid, meta)
+    console.print(f"[green]Tagged[/] {ulid} +{added or '(nothing new)'}  "
+                  f"[dim](now: {', '.join(esc(t) for t in current) or '-'})[/]")
+
+
+@app.command()
+def untag(
+    ulid: str = typer.Argument(...),
+    tags: List[str] = typer.Argument(...),
+):
+    """Remove tag(s) from a memory."""
+    eng = Engine()
+    ev = eng.events.get_by_ulid(ulid)
+    if ev is None:
+        console.print(f"[red]No event with ULID[/] {ulid}")
+        raise typer.Exit(2)
+    meta = dict(ev.metadata or {})
+    drop = set(tags)
+    current = [t for t in (meta.get("tags") or []) if t not in drop]
+    meta["tags"] = current
+    eng.events.set_metadata(ulid, meta)
+    console.print(f"[yellow]Untagged[/] {ulid}  "
+                  f"[dim](now: {', '.join(esc(t) for t in current) or '-'})[/]")
+
+
+@app.command()
+def tags():
+    """List all tags in this workspace with counts."""
+    from collections import Counter
+    eng = Engine()
+    events = eng.events.list_active(eng.workspace.id, limit=_ALL_EVENTS)
+    counter: Counter = Counter()
+    for e in events:
+        for t in (e.metadata or {}).get("tags") or []:
+            counter[t] += 1
+    if not counter:
+        console.print("[yellow]No tags yet.[/] Add one: [cyan]pmb tag <ulid> work[/]")
+        return
+    t = Table(show_header=True, header_style="bold magenta", title="Tags")
+    t.add_column("Tag", style="cyan"); t.add_column("Memories", justify="right")
+    for name, n in counter.most_common():
+        t.add_row(esc(str(name)), str(n))
+    console.print(t)
+
+
+@app.command()
+def tagged(
+    tag_name: str = typer.Argument(..., help="Tag to filter by"),
+    limit: int = typer.Option(50, "-n", "--limit"),
+):
+    """List memories with a given tag (a local 'collection')."""
+    eng = Engine()
+    events = eng.events.list_active(eng.workspace.id, limit=_ALL_EVENTS)
+    hits = [e for e in events if tag_name in ((e.metadata or {}).get("tags") or [])]
+    if not hits:
+        console.print(f"[yellow]No memories tagged[/] '{esc(tag_name)}'.")
+        return
+    hits.sort(key=lambda e: -e.timestamp)
+    t = Table(show_header=True, header_style="bold magenta",
+              title=f"Tagged '{esc(tag_name)}' ({len(hits)})")
+    t.add_column("When", style="dim"); t.add_column("Type", style="cyan"); t.add_column("Content")
+    for e in hits[:limit]:
+        content = esc(e.content[:80]) + ("…" if len(e.content) > 80 else "")
+        t.add_row(_humanize_time(e.timestamp), e.event_type, content)
+    console.print(t)
+
+
+@app.command()
+def reminders(
+    within: float = typer.Option(7.0, "--within", "-w",
+                                 help="Flag goals due within N days as 'soon'"),
+    all_goals: bool = typer.Option(False, "--all",
+                                   help="Also list dated-later and undated open goals"),
+):
+    """Proactive reminders: goals that are overdue or due soon.
+
+      pmb reminders              # overdue + due within 7 days
+      pmb reminders --within 30  # look a month ahead
+      pmb reminders --all        # also show later / undated open goals
+
+    Reads your open goals (status pending / in_progress) and their due dates.
+    Set a due date when creating a goal via your agent, or with the MCP tools.
+    """
+    eng = Engine()
+    goals = eng.events.list_active(eng.workspace.id, limit=_ALL_EVENTS, event_type="goal")
+    open_goals = [g for g in goals
+                  if (g.metadata or {}).get("goal_status") not in ("done", "cancelled")]
+    now = time.time()
+    soon_cut = now + within * 86400
+    overdue, soon, later, undated = [], [], [], []
+    for g in open_goals:
+        due = (g.metadata or {}).get("due_at")
+        if not isinstance(due, (int, float)):
+            undated.append(g); continue
+        if due < now:
+            overdue.append((due, g))
+        elif due <= soon_cut:
+            soon.append((due, g))
+        else:
+            later.append((due, g))
+    overdue.sort(); soon.sort(); later.sort()
+
+    if not (overdue or soon or (all_goals and (later or undated))):
+        console.print("[green]Nothing due.[/] No overdue or upcoming goals.")
+        return
+    if overdue:
+        console.print(f"\n[bold red]Overdue ({len(overdue)})[/]")
+        for due, g in overdue:
+            ago = (now - due) / 86400.0
+            console.print(f"  [red]●[/] {esc(g.content[:80])}  "
+                          f"[dim](due {_humanize_time(due)}, {ago:.0f}d ago)[/]")
+    if soon:
+        console.print(f"\n[bold yellow]Due soon ({len(soon)})[/]")
+        for due, g in soon:
+            ind = (due - now) / 86400.0
+            console.print(f"  [yellow]●[/] {esc(g.content[:80])}  "
+                          f"[dim](due {_humanize_time(due)}, in {ind:.0f}d)[/]")
+    if all_goals and later:
+        console.print(f"\n[bold]Later ({len(later)})[/]")
+        for due, g in later:
+            console.print(f"  [dim]● {esc(g.content[:80])}  (due {_humanize_time(due)})[/]")
+    if all_goals and undated:
+        console.print(f"\n[bold]Open, no due date ({len(undated)})[/]")
+        for g in undated:
+            console.print(f"  [dim]○ {esc(g.content[:80])}[/]")
+
+
+# --- Local snapshots (offline backup, no cloud) ----------------------------
+
+snapshot_app = typer.Typer(help="Local, offline snapshots of your workspace (no cloud).")
+app.add_typer(snapshot_app, name="snapshot")
+
+
+def _snapshots_dir(ws) -> Path:
+    return ws.storage_dir / "snapshots"
+
+
+def _checkpoint_ws_sqlite(ws) -> None:
+    """Best-effort WAL checkpoint so the copied events.sqlite is complete."""
+    import sqlite3 as _sq
+    db = ws.db_path
+    if not db.exists():
+        return
+    try:
+        con = _sq.connect(str(db), timeout=2.0)
+        try:
+            con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            con.close()
+    except Exception:
+        pass
+
+
+@snapshot_app.command("create")
+def snapshot_create(
+    note: Optional[str] = typer.Option(None, "--note", "-m", help="Label for this snapshot"),
+):
+    """Copy the current workspace to a timestamped local snapshot."""
+    import shutil
+    ws = detect_workspace()
+    ws.ensure_dirs()
+    _checkpoint_ws_sqlite(ws)
+    snaps = _snapshots_dir(ws)
+    snaps.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime(time.time()))
+    dest = snaps / stamp
+    if dest.exists():
+        console.print(f"[red]Snapshot {stamp} already exists. Try again in a second.[/]")
+        raise typer.Exit(1)
+    shutil.copytree(ws.storage_dir, dest, ignore=shutil.ignore_patterns("snapshots"))
+    (dest / "snapshot.json").write_text(json.dumps({
+        "id": stamp, "created_at": _humanize_time(time.time()),
+        "note": note or "", "workspace": ws.id,
+    }, indent=2), encoding="utf-8")
+    size = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file())
+    console.print(f"[green]Snapshot[/] [cyan]{stamp}[/] created ({size/1024:.0f} KB)"
+                  + (f" - {esc(note)}" if note else ""))
+    console.print(f"[dim]{dest}[/]")
+
+
+@snapshot_app.command("list")
+def snapshot_list():
+    """List local snapshots."""
+    ws = detect_workspace()
+    snaps = _snapshots_dir(ws)
+    items = sorted([d for d in snaps.iterdir() if d.is_dir()], reverse=True) if snaps.exists() else []
+    if not items:
+        console.print("[yellow]No snapshots yet.[/] Create one: [cyan]pmb snapshot create[/]")
+        return
+    t = Table(show_header=True, header_style="bold magenta", title=f"Snapshots ({len(items)})")
+    t.add_column("ID", style="cyan"); t.add_column("Created", style="dim")
+    t.add_column("Size", justify="right"); t.add_column("Note")
+    for d in items:
+        man = {}
+        mf = d / "snapshot.json"
+        if mf.exists():
+            try:
+                man = json.loads(mf.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        size = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+        t.add_row(d.name, man.get("created_at", "?"), f"{size/1024:.0f} KB", esc(man.get("note", "")))
+    console.print(t)
+
+
+@snapshot_app.command("restore")
+def snapshot_restore(
+    snapshot_id: str = typer.Argument(..., help="Snapshot ID (see `pmb snapshot list`)"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+):
+    """Restore the workspace from a snapshot (current state is backed up first)."""
+    import shutil
+    ws = detect_workspace()
+    src = _snapshots_dir(ws) / snapshot_id
+    if not src.is_dir():
+        console.print(f"[red]No snapshot[/] {snapshot_id}. See `pmb snapshot list`.")
+        raise typer.Exit(2)
+    console.print(f"[yellow]This replaces current memory with snapshot {snapshot_id}.[/]")
+    if not yes and not typer.confirm("Continue? (current state is auto-backed-up)"):
+        console.print("[yellow]Cancelled.[/]")
+        return
+    _checkpoint_ws_sqlite(ws)
+    safety = _snapshots_dir(ws) / f"pre-restore-{time.strftime('%Y%m%d-%H%M%S', time.gmtime(time.time()))}"
+    shutil.copytree(ws.storage_dir, safety, ignore=shutil.ignore_patterns("snapshots"))
+    for item in src.iterdir():
+        if item.name == "snapshot.json":
+            continue
+        target = ws.storage_dir / item.name
+        if item.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(item, target)
+        else:
+            shutil.copy2(item, target)
+    console.print(f"[green]Restored[/] snapshot {snapshot_id}. "
+                  f"[dim](previous state saved as {safety.name})[/]")
+    console.print("[dim]Restart any running PMB/agent so it reopens the restored DB.[/]")
 
 
 @app.command()

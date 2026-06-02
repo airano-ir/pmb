@@ -58,7 +58,9 @@ log = logging.getLogger(__name__)
 
 READER_PROMPT = """\
 You are answering a question from a memory system. Use the provided
-context to answer.
+context to answer. The context is a list of numbered chunks [1], [2], ...;
+the answer may be in ANY of them, not just the first - read ALL chunks
+before answering (chunk [1] is often just a greeting).
 
 Output rules:
 - Answer in the SHORTEST possible form (1-10 words, often just a noun phrase
@@ -67,19 +69,27 @@ Output rules:
   give it. Inference from the dialogue is OK. Example: if the context says
   "she's researching adoption agencies and lawyers" then for "what did she
   research?" answer "adoption agencies".
-- Only output "I don't know." if the topic isn't mentioned in the context
-  AT ALL. Don't say "I don't know" just because the answer isn't a perfect
-  word-for-word quote.
+- Prefer your BEST supported answer over "I don't know". If the context
+  gives you anything to work with - a hint, a related statement, something
+  you can reasonably infer - answer it. Reserve "I don't know." only for
+  when the topic is genuinely absent from EVERY chunk (that is the correct
+  answer for truly unanswerable questions, but do not overuse it).
 - For LIST questions (e.g. "what activities does X do?"), list ALL items
   you can find in the context, comma-separated.
 - Do not add explanations, citations, or "the context says".
 
-Time questions ("when ...?"):
+Time questions ("when ...?", "how long ago ...?"):
 - Each chunk may start with "[Session date: ...]". USE that date to resolve
   relative references in the dialogue ("yesterday", "last week", "two days
   ago", "last Saturday") into an absolute date.
-- Output the absolute date (e.g. "7 May 2023" or "2022"), not the relative
-  phrase.
+- Compute the EXACT calendar date step by step, do not approximate:
+    * "the Sunday before <date>" -> find the actual Sunday in the week
+      before that date; check the day of week, do NOT be off by one day.
+    * "N years/months ago" -> subtract N from the session date's year/month.
+    * "how long ago was X?" -> answer the elapsed duration (e.g. "10 years
+      ago"), computed from the session date to X.
+- Output the absolute date or duration (e.g. "7 May 2023", "2022",
+  "10 years ago"), not the relative phrase.
 
 Examples of well-formed answers:
   Q: What is X's job?       A: software engineer
@@ -183,10 +193,17 @@ class LocomoJudge:
     """Reader-then-judge over LoCoMo QA. Both stages use pluggable LLM
     clients with a .complete(prompt: str) -> str method."""
 
-    def __init__(self, reader_llm, judge_llm=None, context_char_cap: int = 6000):
+    def __init__(self, reader_llm, judge_llm=None, context_char_cap: int = 20000,
+                 per_chunk_cap: int = 6000):
         self.reader = reader_llm
         self.judge = judge_llm or reader_llm
+        # Raised from 6000/1500: with session-chunking a single session is
+        # ~8000 chars, so the old 1500-per-chunk + 6000-total caps truncated
+        # the actual answer turn out of the reader's view, capping J-score far
+        # below retrieval recall. The reader (and modern LLMs generally)
+        # handle 20k chars trivially. Eval-only — does not touch recall.
         self.context_char_cap = context_char_cap
+        self.per_chunk_cap = per_chunk_cap
 
     def run_question(
         self, question: str, gold: str, retrieved_contents: list[str],
@@ -235,7 +252,7 @@ class LocomoJudge:
         if not chunks:
             return "(no context retrieved)"
         joined = "\n\n---\n\n".join(
-            f"[{i+1}] {c[:1500]}" for i, c in enumerate(chunks)
+            f"[{i+1}] {c[: self.per_chunk_cap]}" for i, c in enumerate(chunks)
         )
         return joined[: self.context_char_cap]
 
