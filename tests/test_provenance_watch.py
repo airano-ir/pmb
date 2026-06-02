@@ -31,6 +31,15 @@ def test_describe_cli_note():
     assert describe_source({"source": "cli-note"}) == "note (cli)"
 
 
+def test_describe_lesson():
+    assert describe_source({"source": "lesson", "kind": "lesson"}) == "lesson"
+    assert source_key({"source": "lesson"}) == "lesson"
+
+
+def test_describe_failure():
+    assert describe_source({"source": "lesson", "kind": "failure"}) == "failure"
+
+
 def test_describe_watch():
     assert describe_source({"source": "watch", "file": "journal.md"}) == "watch · journal.md"
 

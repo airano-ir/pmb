@@ -413,6 +413,24 @@ SCHEMA: dict[str, _Setting] = {
         "OpenAI embedding model (used only when backend=openai). Needs "
         "OPENAI_API_KEY in the environment. 1536-dim.",
     ),
+    "lessons.auto_distill_on_session_end": _Setting(
+        bool, False,
+        "On `pmb session end`, auto-distill durable lessons/failures from the "
+        "session via an LLM (zero-command memory growth). Off by default - "
+        "needs an LLM backend (claude CLI / Anthropic key / Ollama).",
+    ),
+    "recall.lesson_boost": _Setting(
+        bool, True,
+        "On how-to/convention queries, gently boost lesson & failure memories "
+        "so they surface. Only affects events with kind=lesson/failure, so it "
+        "cannot change recall on datasets without them (e.g. LoCoMo).",
+    ),
+    "recall.lesson_boost_factor": _Setting(
+        float, 1.3,
+        "Score multiplier applied to lesson/failure events on lesson-intent "
+        "queries (when recall.lesson_boost is on).",
+        min=1.0, max=3.0,
+    ),
     # Decay / forgetting
     "decay.factor_per_day": _Setting(
         float, 0.985, "Daily importance decay multiplier (0..1)",

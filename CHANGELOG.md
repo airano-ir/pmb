@@ -6,6 +6,22 @@ All notable changes to PMB are documented here.
 
 ### Added
 
+- **`pmb learn "..."` + `pmb lessons`** - procedural memory: teach PMB durable
+  lessons ("this repo uses pnpm, never npm") that surface via the hybrid +
+  predicate-aware ranker, and review them.
+- **`pmb learn --failed` / negative memory** - record failures ("numpy 2.x
+  broke lancedb") that recall flags with a warning so they're not repeated.
+- **`pmb distill` + auto-distill on session end** - LLM extracts durable
+  lessons/failures from a session's events automatically (zero-command when
+  `lessons.auto_distill_on_session_end` is on). Off the recall hot path.
+- **Lesson-intent boost** - on how-to/convention queries, lesson & failure
+  memories are gently boosted so the agent applies them. Scoped to
+  lesson/failure events only, so it cannot affect recall on datasets without
+  them (LoCoMo stays exactly 94.5%). Config: `recall.lesson_boost`.
+- **Trust signals in recall** - source attribution, source-derived confidence
+  (high/med/low), and a freshness/staleness flag, all display-only.
+- **`pmb audit` memory-health** - counts of lessons, failures, stale, low-
+  confidence, and conflicting memories.
 - **`pmb note "..."`** - instant memory capture from the terminal, no agent.
 - **`pmb audit`** - "what does PMB know about me?": a grouped, read-only view
   of everything stored, by type and by source.

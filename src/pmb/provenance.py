@@ -41,6 +41,12 @@ def describe_source(metadata: Optional[dict]) -> str:
     if src in ("cli-note", "note"):
         return "note (cli)"
 
+    if src == "lesson":
+        # distinguish a recorded failure ("don't do this") from a lesson
+        if (meta.get("kind") or "").lower() == "failure":
+            return "failure"
+        return "lesson"
+
     if src == "watch":
         f = meta.get("file")
         return f"watch · {f}" if f else "watch"

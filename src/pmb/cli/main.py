@@ -244,6 +244,124 @@ def note(
 
 
 @app.command()
+def learn(
+    lesson: str = typer.Argument(..., help="A reusable lesson, in quotes"),
+    importance: float = typer.Option(0.85, "--importance", "-i"),
+    failed: bool = typer.Option(
+        False, "--failed",
+        help="Record a FAILURE (negative memory): 'tried X, it didn't work'. "
+             "Surfaces with a warning so you/the agent don't repeat it.",
+    ),
+):
+    """Teach PMB a durable LESSON - a correction or technique to apply going
+    forward, not just a one-off fact.
+
+    Where `note` records what happened, `learn` records how to work better:
+      pmb learn "this repo uses pnpm, never npm"
+      pmb learn "always run `make fmt` before committing"
+      pmb learn --failed "tried bumping numpy to 2.x - broke lancedb, stay on 1.x"
+
+    Lessons/failures are stored at high importance (0.85) and tagged so
+    `pmb lessons`, `pmb audit`, and recall treat them specially. Unlike a
+    keyword-only store, they are retrieved by PMB's hybrid + predicate-aware
+    ranker - the right one surfaces, not a lookalike.
+    """
+    eng = Engine()
+    kind = "failure" if failed else "lesson"
+    ulid = eng.record_fact(
+        fact=lesson,
+        importance=importance,
+        metadata={"source": "lesson", "kind": kind},
+    )
+    word = "Recorded failure" if failed else "Learned"
+    console.print(f"[green]{word}[/] [cyan]{ulid}[/] [dim]({kind}, importance {importance})[/]")
+    console.print("[dim]Tip: `pmb lessons` to review · `pmb consolidate` to distill "
+                  "lessons from recent sessions via LLM.[/]")
+
+
+@app.command()
+def distill(
+    session: Optional[str] = typer.Option(
+        None, "--session",
+        help="Session id to distill (default: most recent session's events).",
+    ),
+    backend: str = typer.Option("auto", "--backend",
+                                help="auto | claude | anthropic | ollama"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview, don't store"),
+):
+    """Auto-distill durable LESSONS & FAILURES from a session via an LLM.
+
+    Reads what the agent did/decided/was-corrected-on in a session and extracts
+    reusable rules ("use pnpm, never npm") and failures ("numpy 2.x broke
+    lancedb") - so the agent works better next time. Zero-command version:
+    `pmb config set lessons.auto_distill_on_session_end true` runs this
+    automatically on `pmb session end`.
+
+    Needs an LLM backend (claude CLI / Anthropic key / Ollama). Off the recall
+    path - cannot affect recall quality or speed.
+    """
+    eng = Engine()
+    res = eng.distill_lessons(session_id=session, backend=backend, dry_run=dry_run)
+    if res.get("skipped") == "no_llm":
+        console.print("[yellow]No LLM backend available.[/] Install Claude CLI / "
+                      "Ollama, or set ANTHROPIC_API_KEY.")
+        if res.get("detail"):
+            console.print(f"[dim]{res['detail']}[/]")
+        return
+    if res.get("skipped") == "no_events":
+        console.print("[yellow]No session events to distill.[/]")
+        return
+    cands = res.get("candidates") or []
+    if not cands:
+        console.print("[dim]No durable lessons found in this session.[/]")
+        return
+    for c in cands:
+        mark = "[red]⚠[/]" if c["type"] == "failure" else "[magenta]★[/]"
+        console.print(f"  {mark} {c['content']}")
+    if dry_run:
+        console.print(f"[dim](dry-run) {len(cands)} candidate(s), nothing stored.[/]")
+    else:
+        console.print(f"[green]Distilled[/] {res.get('n_recorded', 0)} new "
+                      f"lesson(s)/failure(s) into memory.")
+
+
+@app.command()
+def lessons(
+    limit: int = typer.Option(50, "-n", "--limit"),
+):
+    """List the durable lessons PMB has learned (procedural memory).
+
+    These are the corrections and techniques that make the agent work better
+    over time - the 'don't repeat this mistake' layer.
+    """
+    eng = Engine()
+    events = eng.events.list_active(eng.workspace.id, limit=2000)
+    lessons = [
+        e for e in events
+        if (e.metadata or {}).get("kind") == "lesson"
+        or (e.metadata or {}).get("source") == "lesson"
+    ]
+    if not lessons:
+        console.print(
+            "[yellow]No lessons yet.[/] Teach one: "
+            "[cyan]pmb learn \"this repo uses pnpm, never npm\"[/]\n"
+            "[dim]Or distill from recent work: `pmb consolidate`.[/]"
+        )
+        return
+    lessons.sort(key=lambda e: (-e.importance, -e.timestamp))
+    t = Table(show_header=True, header_style="bold magenta",
+              title=f"Lessons & failures ({len(lessons)})")
+    t.add_column("", width=2); t.add_column("Lesson / failure")
+    t.add_column("When", style="dim")
+    for e in lessons[:limit]:
+        is_fail = (e.metadata or {}).get("kind") == "failure"
+        mark = "[red]⚠[/]" if is_fail else "[magenta]★[/]"
+        content = e.content[:90] + ("…" if len(e.content) > 90 else "")
+        t.add_row(mark, content, _humanize_time(e.timestamp))
+    console.print(t)
+
+
+@app.command()
 def audit(
     limit: int = typer.Option(2000, "-n", "--limit", help="Max events to scan"),
 ):
@@ -255,6 +373,7 @@ def audit(
     """
     from collections import Counter
     from pmb.provenance import source_key, describe_source
+    from pmb.memory_quality import is_stale, confidence_from
     eng = Engine()
     events = eng.events.list_active(eng.workspace.id, limit=limit)
 
@@ -294,9 +413,30 @@ def audit(
             t3.add_row(content, describe_source(e.metadata))
         console.print(t3)
 
+    # Memory health - hygiene signals (read-only, no ranking change)
+    now = time.time()
+    n_stale = sum(1 for e in events
+                  if is_stale(e.timestamp, now, access_count=e.access_count))
+    n_lessons = sum(1 for e in events if (e.metadata or {}).get("kind") == "lesson")
+    n_failures = sum(1 for e in events if (e.metadata or {}).get("kind") == "failure")
+    n_lowconf = sum(1 for e in events if confidence_from(e.metadata) < 0.6)
+    try:
+        n_conflicts = len(eng.detect_conflicts())
+    except Exception:
+        n_conflicts = 0
+    th = Table(show_header=True, header_style="bold magenta", title="Memory health")
+    th.add_column("Signal"); th.add_column("Count", justify="right")
+    th.add_row("Lessons (procedural)", str(n_lessons))
+    th.add_row("Failures (don't-repeat)", str(n_failures))
+    th.add_row("Possibly stale (>180d, rarely used)",
+               f"[yellow]{n_stale}[/]" if n_stale else "0")
+    th.add_row("Low-confidence (agent-inferred)", str(n_lowconf))
+    th.add_row("Conflicts detected", f"[yellow]{n_conflicts}[/]" if n_conflicts else "0")
+    console.print(th)
+
     console.print(
-        "[dim]Tip: `pmb recall \"<query>\"` to search · `pmb forget <ulid>` to archive "
-        "· `pmb export` (coming) for full dump.[/]"
+        "[dim]Tip: `pmb recall \"<query>\"` to search · `pmb lessons` for lessons · "
+        "`pmb forget <ulid>` to archive · `pmb health conflicts` to resolve.[/]"
     )
 
 
@@ -379,19 +519,29 @@ def recall(
         return
 
     from pmb.provenance import describe_source
+    from pmb.memory_quality import freshness_label, confidence_from, confidence_label
+    now = time.time()
     for i, r in enumerate(pack.results, 1):
         ts = _humanize_time(r.timestamp)
         sigs = (f"score={r.score:.2f} bm25={r.bm25_score:.2f} "
                 f"vec={r.vec_score:.2f} imp={r.importance:.2f}")
-        title = f"#{i}  [{r.event_type}]  {ts}  ({sigs})"
+        kind = (r.metadata or {}).get("kind", "")
+        marker = "[red]⚠ FAILURE[/] " if kind == "failure" else (
+                 "[magenta]★ LESSON[/] " if kind == "lesson" else "")
+        title = f"#{i}  {marker}[{r.event_type}]  {ts}  ({sigs})"
         content = r.content[:500] + "..." if len(r.content) > 500 else r.content
-        # Source attribution: show WHERE this memory came from (trust feature).
+        # Trust signals (display only - no effect on ranking):
         src = describe_source(r.metadata)
-        subtitle = f"[dim]{r.ulid}  ·  from: {src}[/]"
+        conf = confidence_from(r.metadata)
+        stale = freshness_label(r.timestamp, now,
+                                access_count=getattr(r, "access_count", 0) or 0)
+        sub = f"{r.ulid}  ·  from: {src}  ·  confidence: {confidence_label(conf)}"
+        if stale:
+            sub += f"  ·  [yellow]⚠ {stale}[/]"
         console.print(Panel(
             content,
             title=title,
-            subtitle=subtitle,
+            subtitle=f"[dim]{sub}[/]",
             title_align="left",
         ))
 

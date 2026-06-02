@@ -56,6 +56,14 @@ CALL record_batch(items=[…]) ONLY if user explicitly:
      → items with importance:0.7
   3. You (agent) made a meaningful decision/edit/fix on user's behalf
      → {"type":"activity","kind":"decision"/"edit"/"completed", ...}
+  4. User corrects you, or you find a reusable project gotcha/rule
+     → {"type":"lesson","content":"This repo uses pnpm, never npm"}
+       Lessons are procedural ("how to work here"), high-importance, and
+       surface automatically on later recalls. Record on "no, do it this
+       way", "we always/never …", "stop doing X".
+
+RECALL lessons before a non-trivial coding task in a known project:
+  recall("<task> conventions lessons") once; if a lesson returns, FOLLOW it.
 
 For general questions answered from your training — DO NOT call PMB.
 PMB is not a log of every interaction.
@@ -65,7 +73,7 @@ WHEN you do call record_batch:
   - Use pin:true field, NEVER separate pin()
   - NEVER recall after writing to verify
 
-Item types: fact / fact_tree / goal / activity / milestone.
+Item types: fact / fact_tree / goal / activity / milestone / lesson.
 
 STYLE:
 - Never say "в памяти / found in memory / согласно записям / я записал".
