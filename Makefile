@@ -1,4 +1,4 @@
-.PHONY: help install dev test test-core test-smoke test-all-WARN lint format clean bench bench-quick tui dashboard
+.PHONY: help install dev test test-core test-smoke test-all-WARN lint format clean bench bench-quick tui dashboard docker-build docker-shell docker-dashboard docker-mcp docker-test docker-stop docker-restart docker-down docker-build-gpu docker-shell-gpu docker-dashboard-gpu docker-down-gpu
 
 help:
 	@echo "PMB development targets:"
@@ -19,6 +19,18 @@ help:
 	@echo "  make bench-quick    - quick smoke benchmark (3 conversations, ~3 min)"
 	@echo "  make tui            - launch terminal UI"
 	@echo "  make dashboard      - launch web dashboard on :8765"
+	@echo ""
+	@echo "  Containerized mode (does not touch host Python or ~/.pmb):"
+	@echo "  make docker-build     - build the pmb:local image"
+	@echo "  make docker-shell     - dev sandbox (pip/python/pytest) in a container"
+	@echo "  make docker-dashboard - web dashboard on :8765 from a container"
+	@echo "  make docker-mcp       - print the MCP server command for agent config"
+	@echo "  make docker-test      - run the core test suite inside the container"
+	@echo "  make docker-stop      - stop containers without removing them"
+	@echo "  make docker-restart   - restart the dashboard (no rebuild)"
+	@echo "  make docker-down      - stop and remove containers"
+	@echo "  (CPU by default; add -gpu for the CUDA build: docker-build-gpu,"
+	@echo "   docker-shell-gpu, docker-dashboard-gpu — needs an NVIDIA GPU + toolkit)"
 
 install:
 	pip install -e .
@@ -74,3 +86,66 @@ tui:
 
 dashboard:
 	pmb dashboard
+
+# --------------------------------------------------------------------------
+# Containerized mode. Optional alternative to the host pip install above —
+# everything runs in the pmb:local image with data isolated in ./docker/data.
+# Pass UID/GID so bind-mounted data stays owned by you:
+#   make docker-build UID=$(id -u) GID=$(id -g)
+# --------------------------------------------------------------------------
+UID ?= $(shell id -u)
+GID ?= $(shell id -g)
+export UID
+export GID
+
+# Note: shell/dashboard/test do NOT depend on docker-build. compose builds the
+# image automatically the first time (when pmb:local is missing) and reuses it
+# afterwards, so these start instantly. Source is bind-mounted + installed
+# editable, so code edits are picked up live with no rebuild. Run
+# `make docker-build` explicitly only to force a rebuild (e.g. after changing
+# dependencies in pyproject.toml).
+docker-build:
+	docker compose build shell
+
+docker-shell:
+	docker compose run --rm shell
+
+docker-dashboard:
+	docker compose --profile dashboard up
+
+docker-mcp:
+	@echo "Wire this into your agent's MCP config as the server command:"
+	@echo "  docker compose run --rm -i mcp"
+
+docker-test:
+	docker compose run --rm shell make test-core
+
+# Stop containers but keep them (and their state) — fast to start again.
+docker-stop:
+	docker compose --profile dev --profile dashboard --profile mcp stop
+
+# Restart the dashboard without rebuilding. `--no-build` guarantees the
+# existing pmb:local image is reused; `up -d` (re)creates+starts it whether it
+# was stopped or removed. For a plain in-place restart of a running container
+# you can also use `docker compose --profile dashboard restart`.
+docker-restart:
+	docker compose --profile dashboard up -d --no-build
+
+docker-down:
+	docker compose --profile dev --profile dashboard --profile mcp down
+
+# GPU variant (opt-in). Needs an NVIDIA GPU + the NVIDIA Container Toolkit.
+# Builds the CUDA torch image (pmb:gpu) and passes the GPU into the container.
+GPU_COMPOSE = docker compose -f compose.yaml -f docker/compose.gpu.yaml
+
+docker-build-gpu:
+	$(GPU_COMPOSE) build shell
+
+docker-shell-gpu:
+	$(GPU_COMPOSE) run --rm shell
+
+docker-dashboard-gpu:
+	$(GPU_COMPOSE) --profile dashboard up
+
+docker-down-gpu:
+	$(GPU_COMPOSE) --profile dev --profile dashboard --profile mcp down
