@@ -62,7 +62,63 @@ All notable changes to PMB are documented here.
 - 57 new regression tests. The headline 94.5% LoCoMo recall@10 and 70ms p50
   are unchanged - the hardening suite verifies no recall regression.
 
-## [Unreleased]
+## [0.2.4]
+
+### LLM-as-judge (J-score) eval harness improvements
+
+The `--judge` mode of `scripts/benchmarks/benchmark_locomo.py` reports a
+J-score (LLM-as-judge) - the end-to-end metric mem0 / Zep / Letta publish,
+where a reader LLM answers from retrieved context and a judge LLM grades the
+answer against gold. This release makes that harness fair and debuggable:
+
+- **Full reader context.** Per-chunk cap raised 1500 -> 6000 and total
+  6000 -> 20000. Previously the answer turn could be truncated out of the
+  reader's view, capping the J-score far below retrieval recall@10.
+- **Reader prompt** now scans every numbered chunk (not just the first) and
+  resolves relative dates step by step.
+- **Per-question failure logging** (question / gold / prediction / verdict)
+  in the output JSON, so a miss can be attributed to reader vs retrieval vs
+  judge.
+
+EVAL-harness only - no product / recall code is touched, so recall@10 and
+latency are unchanged. The J figure is still measured on small samples; a
+full multi-conversation run (with a fast LLM backend) is needed for a
+publishable number.
+
+### Local-use & own-your-data commands
+
+New CLI surface for using PMB as a personal memory you fully own and organize
+offline. All of these are CLI + display + write-layer only - **none touch the
+recall hot path**, so the 94.5% LoCoMo recall@10 and ~70ms p50 are unchanged
+(verified: full hardening regression suite green).
+
+- **`pmb timeline`** - chronological, day-grouped view of your memory
+  (`--days`, `--type`, `--newest-first`).
+- **`pmb insights`** - personal analytics: totals, type breakdown, growth per
+  week, top topics (entity graph), and lessons/failures/goals/pinned counts.
+- **`pmb digest [today|week|month]`** - quick recap of recent memories
+  (`--days N`).
+- **`pmb export [--format markdown|json] [--out FILE]`** - dump all memory to
+  readable Markdown or JSON (`--include-archived`). Plain/unencrypted; for an
+  encrypted portable bundle use `pmb workspace export`.
+- **`pmb forget-topic <topic>`** - archive every memory about a topic in one
+  command (`--dry-run`, `--yes`, `--in content|tag|source`). Reversible
+  (archived, not deleted).
+- **TTL / expiry** - `pmb ttl <ulid> 30d` (or `clear`), a `--ttl` option on
+  `note` / `learn` / `fact`, and `pmb prune-expired` to sweep. Enforced only by
+  the explicit sweep, never inside recall.
+- **Tags / collections** - `pmb tag`, `pmb untag`, `pmb tags`, and
+  `pmb tagged <tag>` for local organization.
+- **`pmb reminders`** - surfaces open goals that are overdue or due soon
+  (`--within N`, `--all`).
+- **`pmb snapshot create|list|restore`** - local, offline, timestamped
+  workspace snapshots (WAL-checkpointed copy; restore auto-backs-up current
+  state first).
+
+New store helpers: `EventStore.set_metadata` (annotate an event without
+touching its content or embeddings) and `EventStore.list_all` (export /
+analytics, optionally including archived rows). 34 new tests in
+`tests/test_local_features.py`.
 
 ### Hardening pass 2 - lazy LanceDB + use-case clarity
 

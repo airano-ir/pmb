@@ -557,3 +557,42 @@ class EventStore:
                 "UPDATE events SET importance = ? WHERE ulid = ?",
                 (max(0.0, min(1.0, importance)), ulid),
             )
+
+    def set_metadata(self, ulid: str, metadata: dict) -> None:
+        """Replace an event's metadata_json wholesale.
+
+        Used by local-organization features (tags, TTL/expiry) that annotate
+        an existing memory. Read-modify-write is done by the caller (via
+        ``get_by_ulid``) so concurrent edits stay explicit. Does NOT touch
+        content, embeddings, or the recall path.
+        """
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE events SET metadata_json = ? WHERE ulid = ?",
+                (json.dumps(metadata, ensure_ascii=False), ulid),
+            )
+
+    def list_all(self, workspace_id: str, limit: int = 100_000,
+                 event_type: Optional[str] = None,
+                 include_archived: bool = True) -> list[Event]:
+        """Like ``list_active`` but can include archived rows.
+
+        For export / analytics / timeline where we want the complete picture,
+        not just the active set. Newest-first; pass a large ``limit`` to avoid
+        a silent truncation.
+        """
+        clauses = ["workspace_id = ?"]
+        params: list = [workspace_id]
+        if not include_archived:
+            clauses.append("archived_at IS NULL")
+        if event_type:
+            clauses.append("event_type = ?")
+            params.append(event_type)
+        params.append(limit)
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM events WHERE {' AND '.join(clauses)} "
+                f"ORDER BY timestamp DESC LIMIT ?",
+                params,
+            ).fetchall()
+            return [Event.from_db_row(r) for r in rows]

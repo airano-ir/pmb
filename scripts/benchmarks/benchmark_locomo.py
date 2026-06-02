@@ -396,6 +396,14 @@ def main():
                 judge_seconds = time.time() - t_judge
                 result["judge"] = run.to_summary()
                 result["judge"]["wall_seconds"] = round(judge_seconds, 1)
+                # Per-question detail so we can see WHY answers failed
+                # (reader wrong vs judge strict vs date-resolution) instead of
+                # iterating blind. Diagnostic only.
+                result["judge"]["details"] = [
+                    {"cat": r.category, "q": r.question, "gold": r.gold,
+                     "pred": r.prediction, "correct": r.correct, "why": r.reasoning}
+                    for r in run.results
+                ]
                 print(f"  J-score                    = {run.j_score:.2%}  "
                       f"({run.n_correct}/{run.n_total})")
                 print(f"  per-category J:",

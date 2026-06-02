@@ -84,6 +84,9 @@ jobs:
           pytest tests/test_provenance_watch.py tests/test_memory_quality.py
           tests/test_distill.py -q --tb=short
 
+      - name: Local-use feature commands suite
+        run: pytest tests/test_local_features.py -q --tb=short
+
       - name: Lightweight tests (no heavy ML)
         run: pytest tests/test_config.py tests/test_redact.py -q --tb=short
 
