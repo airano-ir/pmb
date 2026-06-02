@@ -116,3 +116,10 @@ scripts/**/_scratch_*
 *.key
 secrets.yaml
 credentials.json
+
+# --------------------------------------------------------------
+# Private founder notes — local only, not for the public repo
+# --------------------------------------------------------------
+LOCAL_IDEAS.md
+NOTES.md
+.notes/

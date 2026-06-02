@@ -2247,7 +2247,30 @@ class Engine:
                 t = (item.get("type") or "").lower().strip()
                 pin_after = bool(item.get("pin", False))
                 try:
-                    if t == "fact":
+                    if t in ("lesson", "failure"):
+                        # Procedural memory. "lesson" = a reusable
+                        # correction/technique to apply going forward.
+                        # "failure" = negative memory ("tried X, it did NOT
+                        # work, do Y instead") - surfaced with a warning so
+                        # the agent doesn't repeat it. Both stored as
+                        # high-importance facts tagged with kind so recall,
+                        # `pmb lessons`, and the audit can treat them specially.
+                        content_in = item.get("content") or item.get(t) or ""
+                        meta = dict(item.get("metadata") or {})
+                        meta.setdefault("source", "lesson")
+                        meta["kind"] = t
+                        ulid = self.record_fact(
+                            content_in,
+                            importance=float(item.get("importance", 0.85)),
+                            metadata=meta,
+                        )
+                        if pin_after:
+                            try: self.pin(ulid)
+                            except Exception: pass
+                        results.append({"type": t, "ulid": ulid,
+                                        "pinned": pin_after})
+                        n_ok += 1
+                    elif t == "fact":
                         content_in = item.get("content") or item.get("fact") or ""
                         ulid = self.record_fact(
                             content_in,
@@ -3517,6 +3540,23 @@ class Engine:
         if self.config.get("recall.collapse_reflections"):
             scored = _collapse_reflections(scored, self.events, self.workspace.id)
 
+        # Lesson-intent boost (#1): on how-to/convention queries, gently lift
+        # lesson & failure memories so the agent applies them / avoids repeats.
+        # SCOPED to events with kind=lesson/failure ONLY - datasets without
+        # such events (LoCoMo) are provably unaffected. Config-gated.
+        if self.config.get("recall.lesson_boost"):
+            try:
+                from pmb.memory_quality import is_lesson_intent
+                if is_lesson_intent(query):
+                    lf = float(self.config.get("recall.lesson_boost_factor") or 1.3)
+                    scored = [
+                        (h, ev, (base * lf if (ev.metadata or {}).get("kind")
+                                 in ("lesson", "failure") else base), recency)
+                        for (h, ev, base, recency) in scored
+                    ]
+            except Exception:
+                pass  # never let a boost crash recall
+
         scored.sort(key=lambda t: -t[2])
 
         # Stage 3.5: optional cross-encoder reranker over top-N candidates.
@@ -3768,7 +3808,25 @@ class Engine:
 
     def session_end(self) -> Optional[dict]:
         sess = self.session_tracker.end()
-        return sess.to_dict() if sess else None
+        out = sess.to_dict() if sess else None
+        # Zero-command auto-distill: if enabled, distill durable lessons from
+        # the session that just ended. Off the recall path; never crashes end.
+        if out and self.config.get("lessons.auto_distill_on_session_end"):
+            try:
+                d = self.distill_lessons(session_id=out.get("id"))
+                out["distilled_lessons"] = d.get("n_recorded", 0)
+            except Exception:
+                pass
+        return out
+
+    def distill_lessons(self, *, session_id: Optional[str] = None,
+                        backend: str = "auto", model: Optional[str] = None,
+                        dry_run: bool = False, llm=None) -> dict:
+        """Auto-distill durable lessons/failures from a session's events via
+        an LLM. Off the recall hot path. See pmb.health.distill_lessons."""
+        from pmb.health.distill_lessons import distill_lessons as _distill
+        return _distill(self, session_id=session_id, backend=backend,
+                        model=model, dry_run=dry_run, llm=llm)
 
     def session_current(self) -> Optional[dict]:
         sess = self.session_tracker.current(auto_create=False)
