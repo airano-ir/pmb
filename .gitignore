@@ -123,3 +123,12 @@ credentials.json
 LOCAL_IDEAS.md
 NOTES.md
 .notes/
+
+# --------------------------------------------------------------
+# Docker runtime data (PMB_HOME inside the container)
+# --------------------------------------------------------------
+# Ignore the *contents* (not the dir itself) so .gitkeep stays tracked and
+# the directory exists after a fresh clone — otherwise Docker creates the
+# bind-mount source as root and the non-root container user can't write to it.
+/docker/data/*
+!/docker/data/.gitkeep

@@ -1,0 +1,35 @@
+# GPU overlay. Use ON TOP of the base compose.yaml:
+#
+#   docker compose -f compose.yaml -f docker/compose.gpu.yaml --profile dashboard up
+#   docker compose -f compose.yaml -f docker/compose.gpu.yaml run --rm shell
+#
+# or via the Makefile: make docker-build-gpu / docker-shell-gpu / docker-dashboard-gpu
+#
+# Requirements on the host:
+#   * NVIDIA GPU + driver
+#   * NVIDIA Container Toolkit (so Docker can pass the GPU into the container)
+#
+# This overlay does two things: builds the CUDA torch wheel (TORCH_VARIANT=cuda,
+# tagged pmb:gpu so it doesn't clobber the CPU image) and reserves the GPU at
+# run time. Without the NVIDIA runtime, `run`/`up` will fail to start.
+
+x-pmb-gpu: &pmb-gpu
+  image: pmb:gpu
+  build:
+    args:
+      TORCH_VARIANT: cuda
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  shell:
+    <<: *pmb-gpu
+  dashboard:
+    <<: *pmb-gpu
+  mcp:
+    <<: *pmb-gpu
