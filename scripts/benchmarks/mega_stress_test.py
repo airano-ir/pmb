@@ -33,6 +33,10 @@ import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+from _bench_data import data_path
 
 _here = Path(__file__).resolve()
 sys.path.insert(0, str(_here.parent.parent.parent / "src"))
@@ -594,7 +598,7 @@ def main():
     ap.add_argument("--n-paraphrases", type=int, default=100,
                     help="Paraphrases per base query (default 100)")
     ap.add_argument("--out",
-                    default="C:/Users/alexb/AppData/Local/Temp/pmb_mega.json")
+                    default=data_path("pmb_mega.json"))
     args = ap.parse_args()
     phases = set(args.phases.split(","))
     out: dict = {"n_paraphrases": args.n_paraphrases}

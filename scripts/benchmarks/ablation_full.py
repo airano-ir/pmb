@@ -27,6 +27,10 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+from _bench_data import data_path
 
 _here = Path(__file__).resolve()
 sys.path.insert(0, str(_here.parent.parent.parent / "src"))
@@ -213,10 +217,10 @@ def run_one(conversations: list[dict], overrides: dict, top_k: int,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dataset", default="C:/Users/alexb/AppData/Local/Temp/locomo10.json")
+    ap.add_argument("--dataset", default=data_path("locomo10.json"))
     ap.add_argument("--n-conversations", type=int, default=3)
     ap.add_argument("--top-k", type=int, default=10)
-    ap.add_argument("--out", default="C:/Users/alexb/AppData/Local/Temp/pmb_ablation_full.json")
+    ap.add_argument("--out", default=data_path("pmb_ablation_full.json"))
     args = ap.parse_args()
 
     _capture_tier_originals()

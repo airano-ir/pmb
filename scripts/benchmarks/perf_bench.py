@@ -31,6 +31,10 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+from _bench_data import data_path
 
 _here = Path(__file__).resolve()
 sys.path.insert(0, str(_here.parent.parent.parent / "src"))
@@ -352,7 +356,7 @@ def bench_concurrent(n_workers: int = 8, n_queries: int = 80) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="C:/Users/alexb/AppData/Local/Temp/pmb_perf.json")
+    ap.add_argument("--out", default=data_path("pmb_perf.json"))
     ap.add_argument("--max-size", type=int, default=2000,
                     help="Top scaling tier (smaller = faster run)")
     ap.add_argument("--no-concurrent", action="store_true",

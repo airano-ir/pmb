@@ -11,6 +11,10 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+from _bench_data import data_path
 
 _here = Path(__file__).resolve()
 sys.path.insert(0, str(_here.parent.parent.parent / "src"))
@@ -18,7 +22,7 @@ sys.path.insert(0, str(_here.parent))
 
 from benchmark_locomo import ingest_conversation, evaluate  # type: ignore
 
-DEFAULT_LOCOMO_JSON = "C:/Users/alexb/AppData/Local/Temp/locomo10.json"
+DEFAULT_LOCOMO_JSON = data_path("locomo10.json")
 
 def _load(p):
     with open(p, "r", encoding="utf-8") as f:
