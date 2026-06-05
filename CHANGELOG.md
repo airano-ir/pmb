@@ -62,6 +62,90 @@ All notable changes to PMB are documented here.
 - 57 new regression tests. The headline 94.5% LoCoMo recall@10 and 70ms p50
   are unchanged - the hardening suite verifies no recall regression.
 
+## [0.2.5]
+
+### Onboarding, agent logging, cross-platform & docs
+
+- **`pmb setup`** - guided first-time setup: detects your agent, asks active vs
+  conservative logging, and wires PMB in one go (`--yes` for non-interactive).
+- **`pmb connect <agent> --active`** - proactive-logging rules: the agent records
+  its own decisions / done / lessons / failures / goals during coding, not just
+  on "remember". Recall stays lazy; the conservative default is unchanged.
+  - **Pro config:** `agent.log_decisions` / `.log_completed` / `.log_lessons` /
+    `.log_failures` / `.log_goals` toggle exactly what gets logged, and
+    `agent.apply_lessons` enables the **self-improvement loop** - recall + apply
+    past lessons/failures before a task so the agent gets better at the project
+    over time. Set via `pmb config set` / `pmb tune`, then re-run
+    `pmb connect <agent> --active` to regenerate the rules.
+- **`pmb overview "<topic>"` + MCP `overview` tool** - a structured "what do I
+  know about X?" synthesis (key facts & decisions, lessons, failures, goals, a
+  timeline, related topics) from memory, no LLM, fully local. The MCP tool lets
+  an agent get up to speed on a project/feature in ONE call instead of several
+  recalls. Config: `overview.max_events`.
+- **`agent.active_mode`** - auto-logging switch: when on, `pmb connect` /
+  `pmb setup` install the proactive rules by default (no `--active` needed).
+- **Session continuity (`pmb session brief` + MCP `session_brief`)** - a digest
+  of what was decided / done / learned **this session**, so an agent can
+  re-orient after its OWN context window compacts in a long session instead of
+  re-asking the user what it already did. Active-mode rules tell the agent to
+  use it (`agent.context_continuity`); fallback window `session.brief_minutes`.
+- **`docs/COMMANDS.md`** - full command reference grouped by task, with examples
+  and a clear mark of which commands run fully offline vs need an LLM backend.
+- **macOS in CI** - a macOS (arm64) job added to the test matrix so the
+  "runs on macOS" claim is tested, not just asserted.
+- New tests: `tests/test_connect_active.py` (10: active rules + agent detection).
+
+### MCP correctness: new tools exposed + `session_brief` fixes
+
+End-to-end MCP tests (`tests/test_mcp_e2e.py`, via the fastmcp in-memory client)
+drive the real tool routing for the new features on a long-chat scenario, and
+caught three bugs that made `session_brief` / `overview` unusable from an agent:
+
+- **`session_brief` and `overview` are now actually exposed.** The post-
+  registration tool-profile filter (minimal / default whitelists) was silently
+  dropping both new tools, so an agent that called them got *"Unknown tool"*.
+  Added `session_brief` to the minimal profile and `overview` to the default.
+- **`session_brief` now covers the whole session, not just activities.** Only
+  `record_activity` auto-binds an event to the session; facts / goals / lessons
+  do not, so the old tag-only scope dropped them once a session existed. It now
+  scopes as a union: tagged with the session **or** recorded since the session
+  began. (This is why a long chat's lessons/goals went missing from the brief.)
+- **`session_brief` classifies decisions / done correctly.** It keyed off
+  `metadata.kind`, but `record_activity` stores the kind under `activity_kind`,
+  so every decision / completed item fell into "other". It now reads both.
+- **Tool-profile filter is event-loop-safe.** It used `asyncio.run(list_tools())`,
+  which raised (and left an un-awaited coroutine) when the server was built
+  inside a running loop (in-memory client / embedded host). It now detects a
+  running loop and skips the introspection cleanly; the stdio server path —
+  where gating actually matters — is unchanged.
+
+Tests: `tests/test_mcp_e2e.py` (3: tool exposure, long-chat `session_brief`,
+recall answer-quality + lessons + `overview`).
+
+### Answer-ready recall output + temporal validity windows
+
+Three product-code levers targeting end-to-end answer quality (the gap between
+strong retrieval and the final answer), informed by per-question J-score
+failure analysis. All additive / out of the recall ranking hot path - retrieval
+recall@10 and latency are unchanged.
+
+- **Resolved date in every recall result.** `RecallResult.to_dict()` now
+  includes a human-readable `date`, resolved as event_time (the date the
+  content refers to) -> session date -> creation time. An agent can answer
+  "when …?" without epoch math and anchors relative dates to the EVENT, not to
+  "today". `to_text()` (prompt injection) uses it too.
+- **More write-time atomic-fact patterns** (no-LLM regex): relationship status
+  ("X is single") and origin ("X moved from Y"). Still opt-in via
+  `consolidate.write_atomic_facts` (default off); turning it on by default is
+  gated on a LoCoMo regression run.
+- **Temporal validity windows + as-of query.** `record_keyed_fact` now stamps
+  `valid_from` on the new value and `valid_to` on each superseded value, and
+  `Engine.keyed_fact_as_of(subject, attribute, at_time)` returns the value that
+  was current at a past time (Zep-style "what was true in March") - prior
+  values stay queryable instead of just being archived.
+
+Tests: `tests/test_jscore_levers.py` (10).
+
 ## [0.2.4]
 
 ### LLM-as-judge (J-score) eval harness improvements

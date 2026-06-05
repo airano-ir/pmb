@@ -123,3 +123,9 @@ credentials.json
 LOCAL_IDEAS.md
 NOTES.md
 .notes/
+
+# Per-machine agent MCP wiring written by `pmb connect` (absolute local paths)
+# --------------------------------------------------------------
+.mcp.json
+.cursor/mcp.json
+.vscode/mcp.json
