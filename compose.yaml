@@ -20,6 +20,7 @@ x-pmb-common: &pmb-common
       GID: ${GID:-1000}
       TORCH_VARIANT: ${TORCH_VARIANT:-cpu}   # cpu (default) — GPU via docker/compose.gpu.yaml
   image: pmb:local
+  user: "${UID:-1000}:${GID:-1000}"
   environment:
     PMB_HOME: /data
     HF_HOME: /hf-cache
