@@ -108,6 +108,13 @@ machine restarts. Nothing leaves your disk.
 > python -m venv .venv && source .venv/bin/activate
 > pip install -e .
 > ```
+>
+> Or run it fully containerized (no host Python, data isolated in `./docker/data`):
+> ```bash
+> make docker-shell        # dev sandbox  ·  make docker-dashboard for the web UI
+> ```
+> The first run builds the image (a few minutes). CPU by default (~1.9 GB);
+> GPU is opt-in. See [docker/README.md](docker/README.md).
 
 ### Detailed
 

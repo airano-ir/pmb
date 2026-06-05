@@ -1,0 +1,23 @@
+.git
+.github
+.idea
+.venv
+venv
+env
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+build/
+dist/
+*.egg-info
+src/*.egg-info
+docker/data
+# Not copied by the Dockerfile (only pyproject.toml, README.md, src/ are).
+# At runtime compose bind-mounts the repo, so `make docker-test` still sees these.
+tests
+scripts
+docs
+*.pmb-backup
+.env
+.env.*
