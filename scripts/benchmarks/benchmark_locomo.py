@@ -45,6 +45,10 @@ import time
 from collections import Counter
 from pathlib import Path
 from typing import Iterable, Optional
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+from _bench_data import data_path
 
 _here = Path(__file__).resolve()
 sys.path.insert(0, str(_here.parent.parent / "src"))
@@ -223,7 +227,7 @@ def evaluate(eng, qa_list: list[dict], top_k: int = 10, rerank: bool = False) ->
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dataset", default="C:/Users/alexb/AppData/Local/Temp/locomo10.json")
+    ap.add_argument("--dataset", default=data_path("locomo10.json"))
     ap.add_argument("--n-conversations", type=int, default=1,
                     help="How many conversations to evaluate (max 10)")
     ap.add_argument("--top-k", type=int, default=10)
@@ -254,7 +258,7 @@ def main():
                     help="LLM backend for reader+judge (auto / claude / anthropic / ollama)")
     ap.add_argument("--judge-limit", type=int, default=None,
                     help="Only judge first N questions per conversation (for fast smoke)")
-    ap.add_argument("--out", default="C:/Users/alexb/AppData/Local/Temp/pmb_locomo.json")
+    ap.add_argument("--out", default=data_path("pmb_locomo.json"))
     args = ap.parse_args()
 
     with open(args.dataset, "r", encoding="utf-8") as f:
@@ -396,6 +400,14 @@ def main():
                 judge_seconds = time.time() - t_judge
                 result["judge"] = run.to_summary()
                 result["judge"]["wall_seconds"] = round(judge_seconds, 1)
+                # Per-question detail so we can see WHY answers failed
+                # (reader wrong vs judge strict vs date-resolution) instead of
+                # iterating blind. Diagnostic only.
+                result["judge"]["details"] = [
+                    {"cat": r.category, "q": r.question, "gold": r.gold,
+                     "pred": r.prediction, "correct": r.correct, "why": r.reasoning}
+                    for r in run.results
+                ]
                 print(f"  J-score                    = {run.j_score:.2%}  "
                       f"({run.n_correct}/{run.n_total})")
                 print(f"  per-category J:",

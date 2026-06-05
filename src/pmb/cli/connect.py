@@ -123,19 +123,104 @@ PMB is local-only.
 """
 
 
-def _build_agent_rules_block() -> str:
-    """The full rules block including markers, ready to inject into an
-    AGENTS.md / CLAUDE.md file."""
-    return f"\n{PMB_AGENT_RULES_START}\n{PMB_AGENT_RULES_BODY}\n{PMB_AGENT_RULES_END}\n"
+# Active-mode rules are BUILT from per-category toggles (config `agent.log_*`)
+# so pro users control exactly what the agent logs. Opt-in via
+# `pmb connect <agent> --active`. The recall side stays LAZY (no recall on
+# general questions = the speed win); only the WRITE side becomes proactive.
+
+_ACTIVE_CATEGORY_LINES: dict[str, str] = {
+    "decisions": (
+        '- **Decision** - chose a library / pattern / schema / config:\n'
+        '  `{"type":"activity","kind":"decision","content":"Chose Postgres over Mongo for JSONB"}`'
+    ),
+    "completed": (
+        '- **Done** - shipped a feature, fixed a bug, refactored:\n'
+        '  `{"type":"activity","kind":"completed","content":"Fixed JWT 24h-expiry bug in auth.py"}`'
+    ),
+    "lessons": (
+        '- **Lesson** - found a project convention / gotcha, or the user corrected you:\n'
+        '  `{"type":"lesson","content":"This repo uses pnpm, never npm"}`'
+    ),
+    "failures": (
+        '- **Failure** - something you tried did NOT work (so it is not repeated):\n'
+        '  `{"type":"failure","content":"Bumping numpy to 2.x broke lancedb - stay on 1.x"}`'
+    ),
+    "goals": (
+        '- **Goal** - the user states an intent / plan:\n'
+        '  `{"type":"goal","title":"Ship v1 by June","status":"in_progress"}`'
+    ),
+}
+
+_ACTIVE_DEFAULT_TOGGLES = {
+    "log_decisions": True, "log_completed": True, "log_lessons": True,
+    "log_failures": True, "log_goals": True, "apply_lessons": True,
+    "context_continuity": True,
+}
 
 
-def install_agent_rules(path: Path) -> str:
+def build_active_addendum(toggles: Optional[dict] = None) -> str:
+    """Build the proactive-logging addendum from per-category toggles.
+
+    Keys (all bool): log_decisions / log_completed / log_lessons /
+    log_failures / log_goals / apply_lessons. None -> all enabled.
+    """
+    t = {**_ACTIVE_DEFAULT_TOGGLES, **(toggles or {})}
+    cats = [c for c in ("decisions", "completed", "lessons", "failures", "goals")
+            if t.get(f"log_{c}")]
+    cat_block = "\n".join(_ACTIVE_CATEGORY_LINES[c] for c in cats) or \
+        "- (all logging categories are disabled in config)"
+
+    loop = ""
+    if t.get("apply_lessons"):
+        loop = (
+            "\n\n### Self-improvement loop (use what you learned - don't repeat mistakes)\n\n"
+            'At the START of a non-trivial task, call `recall("<task topic> '
+            'lessons failures")` ONCE. If a ★lesson or ⚠failure comes back, '
+            "FOLLOW it. When the user corrects you or something fails, record it "
+            "(above) so the NEXT session is smarter - the agent should get better "
+            "at THIS project over time."
+        )
+
+    cont = ""
+    if t.get("context_continuity"):
+        cont = (
+            "\n\n### Don't lose the thread (long sessions)\n\n"
+            "In a long session your own context window compacts and you lose "
+            "detail. PMB is your durable session memory - the logging above keeps "
+            "the record. If you've lost track (after a compaction, or many turns "
+            "in), call `session_brief` ONCE to re-orient on what was decided/done "
+            "this session, then continue. Don't re-ask the user what you already did."
+        )
+
+    return (
+        "\n\n### AI-AGENT ACTIVE MODE (this connection was set up with --active)\n\n"
+        'When YOU do real work, LOG IT proactively - do not wait for "remember" '
+        "(still exactly ONE `record_batch` per turn):\n\n"
+        f"{cat_block}\n\n"
+        "Still skip general Q&A and trivial steps. Recall stays lazy on general "
+        "and technical questions."
+        f"{loop}{cont}\n"
+    )
+
+
+def _build_agent_rules_block(active: bool = False,
+                             active_toggles: Optional[dict] = None) -> str:
+    """The full rules block including markers. When `active`, append the
+    proactive-logging addendum built from `active_toggles` (config-driven;
+    None = all categories on)."""
+    body = PMB_AGENT_RULES_BODY + (build_active_addendum(active_toggles) if active else "")
+    return f"\n{PMB_AGENT_RULES_START}\n{body}\n{PMB_AGENT_RULES_END}\n"
+
+
+def install_agent_rules(path: Path, active: bool = False,
+                        active_toggles: Optional[dict] = None) -> str:
     """Append (or update) the PMB rules block in the agent's markdown
     instructions file. Returns one of: 'created', 'updated', 'added'.
 
     Uses BEGIN/END markers so repeated `pmb connect` calls don't duplicate.
+    `active` installs the proactive-logging variant (built from `active_toggles`).
     """
-    block = _build_agent_rules_block()
+    block = _build_agent_rules_block(active=active, active_toggles=active_toggles)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if not path.exists():
@@ -448,6 +533,37 @@ def supported_agents() -> list[str]:
     return ["claude-code", "cursor", "codex", *sorted(JSON_AGENT_SPECS)]
 
 
+def detect_installed_agents(
+    home: Optional[Path] = None, cwd: Optional[Path] = None,
+) -> list[str]:
+    """Best-effort: which supported agents already have a config file on disk.
+
+    Used by `pmb setup` to suggest what to wire without making the user guess.
+    Read-only. `home`/`cwd` are injectable for testing.
+    """
+    home = home or Path.home()
+    cwd = cwd or Path.cwd()
+    checks: dict[str, list[Path]] = {
+        "claude-code": [home / ".claude.json", cwd / ".mcp.json",
+                        home / ".claude" / "CLAUDE.md"],
+        "cursor": [cwd / ".cursor" / "mcp.json", home / ".cursor" / "mcp.json"],
+        "codex": [home / ".codex" / "config.toml", home / ".codex" / "AGENTS.md"],
+    }
+    for aid, spec in JSON_AGENT_SPECS.items():
+        paths: list[Path] = []
+        if spec.global_path:
+            if spec.global_path.startswith(".config/"):
+                base = Path(os.environ.get("XDG_CONFIG_HOME") or (home / ".config"))
+                paths.append(base / spec.global_path[len(".config/"):])
+            else:
+                paths.append(home / spec.global_path)
+        if spec.project_path:
+            paths.append(cwd / spec.project_path)
+        checks[aid] = paths
+    found = {aid for aid, paths in checks.items() if any(p.exists() for p in paths)}
+    return [a for a in supported_agents() if a in found]
+
+
 def _xdg_config_home() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
 
@@ -571,6 +687,8 @@ def connect_extended_agent(
     workspace_id: Optional[str],
     pmb_home: Optional[Path],
     config_path: Optional[str] = None,
+    active: bool = False,
+    active_toggles: Optional[dict] = None,
 ) -> dict:
     """Wire one of the JSON_AGENT_SPECS agents. Returns the same dict shape
     as `connect()` so the CLI layer renders both paths identically."""
@@ -604,7 +722,8 @@ def connect_extended_agent(
                 inst_path = Path.home() / spec.instruction_file
             else:
                 inst_path = cwd / spec.instruction_file
-            written = install_agent_rules(inst_path)
+            written = install_agent_rules(inst_path, active=active,
+                                          active_toggles=active_toggles)
             rules_written.append({"path": str(inst_path), "action": written})
         except Exception as e:  # noqa: BLE001 - surface to caller, never crash connect
             rules_written.append({"error": str(e)})
@@ -689,6 +808,8 @@ def connect(
     workspace_id: Optional[str] = None,
     pmb_home: Optional[Path] = None,
     config_path: Optional[str] = None,
+    active: bool = False,
+    active_toggles: Optional[dict] = None,
 ) -> dict:
     """Write the MCP entry into the right config file.
 
@@ -703,7 +824,8 @@ def connect(
         return connect_extended_agent(
             agent, cwd=cwd, scope=scope, remote=remote,
             name_override=name_override, workspace_id=workspace_id,
-            pmb_home=pmb_home, config_path=config_path,
+            pmb_home=pmb_home, config_path=config_path, active=active,
+            active_toggles=active_toggles,
         )
 
     if agent == "claude-code":
@@ -750,7 +872,8 @@ def connect(
             is_global = str(inst_path.parent) == str(Path.home() / f".{agent.replace('-code', '').replace('codex', 'codex')}")
             # Simpler: just write to the first path (global) - most agents
             # read both, global is safer (works across all projects).
-            written = install_agent_rules(inst_path)
+            written = install_agent_rules(inst_path, active=active,
+                                          active_toggles=active_toggles)
             rules_written.append({
                 "path": str(inst_path),
                 "action": written,

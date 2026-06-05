@@ -101,6 +101,19 @@ _PATTERNS: list[tuple[re.Pattern, str, str]] = [
         r"\b(?P<subj>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+is\s+(?P<n>\d+)\s+years?\s+old",
         re.IGNORECASE), "attribute_age", "{subj} is {n} years old"),
 
+    # Relationship status: "X is single / married / divorced / engaged".
+    # No IGNORECASE so the subject must be a real proper noun / pronoun
+    # (avoids matching "the file is single-..."). Closed status set.
+    (re.compile(
+        r"(?:^|(?<=[.,])\s+|\band\s+)(?P<subj>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?|[Hh]e|[Ss]he|[Tt]hey|[Ii])\s+(?:is|am|are)\s+(?P<status>single|married|divorced|engaged|widowed)\b"),
+     "relationship_status", "{subj} is {status}"),
+
+    # Origin: "X moved from Y" / "X is from Y" / "X came from Y". Captures
+    # where someone is originally from (distinct from current "lives in").
+    (re.compile(
+        r"(?:^|(?<=[.,])\s+|\band\s+)(?P<subj>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?|[Hh]e|[Ss]he|[Tt]hey|[Ii])\s+(?:moved\s+(?:from|away\s+from)|is\s+from|came\s+from|originally\s+from)\s+(?P<place>[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)\b"),
+     "origin", "{subj} is from {place}"),
+
     # ==================================================================
     # RUSSIAN patterns (P0-1 hardening)
     # ==================================================================
@@ -206,7 +219,7 @@ def _atomic_from_match(m: re.Match, kind: str, template: str) -> Optional[Atomic
         d["for_purpose"] = (" for " + d["purpose"]) if d.get("purpose") else ""
         text = template.format(**{**{k: "" for k in (
             "subj", "role", "org", "place", "obj", "tool", "purpose",
-            "a", "b", "n", "at_org", "for_purpose",
+            "a", "b", "n", "at_org", "for_purpose", "status",
             # RU/UK named groups
             "name", "date", "thing", "rel",
         )}, **d}).strip()

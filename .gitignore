@@ -123,3 +123,23 @@ credentials.json
 LOCAL_IDEAS.md
 NOTES.md
 .notes/
+
+# Per-machine agent MCP wiring written by `pmb connect` (absolute local paths)
+# --------------------------------------------------------------
+.mcp.json
+.cursor/mcp.json
+.vscode/mcp.json
+# --------------------------------------------------------------
+# Docker runtime data (PMB_HOME inside the container)
+# --------------------------------------------------------------
+# Ignore the *contents* (not the dir itself) so .gitkeep stays tracked and
+# the directory exists after a fresh clone — otherwise Docker creates the
+# bind-mount source as root and the non-root container user can't write to it.
+/docker/data/*
+!/docker/data/.gitkeep
+
+# --------------------------------------------------------------
+# Benchmark data (inputs like locomo10.json + pmb_*.json outputs).
+# Created on demand by scripts/_bench_data.py; never committed.
+# --------------------------------------------------------------
+/scripts/data/
