@@ -4,8 +4,9 @@
 
 # PMB · Personal Memory Brain
 
-### Local-first persistent memory for AI agents - Claude Code, Cursor, Codex.
-### 94.5% LoCoMo recall@10 · 70ms p50 · multilingual · Apache 2.0 · zero API keys.
+### Persistent memory for AI coding agents - Claude Code, Cursor, Codex - that runs 100% on your machine.
+### No cloud. No API keys. No LLM in the hot path. Apache 2.0.
+### Retrieval recall@10 ≈ 94.5% on LoCoMo · ~70 ms p50 · 50+ languages.
 
 [![PyPI version](https://img.shields.io/pypi/v/pmb-ai.svg?logo=pypi&logoColor=white&label=pypi&color=blue)](https://pypi.org/project/pmb-ai/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/pmb-ai.svg?logo=pypi&logoColor=white&label=downloads)](https://pypi.org/project/pmb-ai/)
@@ -13,13 +14,13 @@
 [![CI](https://github.com/oleksiijko/pmb/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/oleksiijko/pmb/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-MCP-purple.svg)](https://modelcontextprotocol.io)
-[![LoCoMo Recall](https://img.shields.io/badge/LoCoMo%20recall%4010-94.5%25-success.svg)](#-benchmarks)
+[![LoCoMo retrieval recall@10](https://img.shields.io/badge/LoCoMo%20retrieval%20recall%4010-94.5%25-success.svg)](#-benchmarks)
 [![Latency](https://img.shields.io/badge/p50%20warm%20recall-70ms-success.svg)](#-benchmarks)
 [![Top-10 stress](https://img.shields.io/badge/top--10%20stress%20(900%20q)-99.2%25-success.svg)](#-benchmarks)
 [![Multilingual](https://img.shields.io/badge/multilingual-50%2B%20langs-blueviolet.svg)](#-multilingual)
 [![Local first](https://img.shields.io/badge/local--first-✓-success.svg)](#-privacy--security)
 
-[Quickstart](#-quickstart) · [Screenshots](#-screenshots--every-claim-above-captured-from-a-real-run) · [Benchmarks](#-benchmarks) · [Multilingual](#-multilingual) · [Architecture](#-architecture) · [FAQ](#-faq)
+[Quickstart](#-quickstart) · [Commands](docs/COMMANDS.md) · [Screenshots](#-screenshots--every-claim-above-captured-from-a-real-run) · [Benchmarks](#-benchmarks) · [Multilingual](#-multilingual) · [Architecture](#-architecture) · [FAQ](#-faq)
 
 </div>
 
@@ -33,7 +34,7 @@
 <sub>One command. Both Claude Code and Codex now share the same workspace.</sub>
 
 <img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/05_locomo.png" width="780" alt="LoCoMo benchmark: 94.5% recall@10"><br>
-<sub>Reproducible LoCoMo: <code>python scripts/benchmarks/benchmark_locomo.py --n-conversations 10</code> → 94.5%.</sub>
+<sub>Reproducible LoCoMo <em>retrieval</em> recall@10: <code>python scripts/benchmarks/benchmark_locomo.py --n-conversations 10</code> → 94.5%.</sub>
 
 <img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/06_multilingual.png" width="780" alt="Multilingual atomic extraction across English, Spanish, German"><br>
 <sub>25+ regex patterns + multilingual embedder cover 50+ languages out of the box.</sub>
@@ -63,7 +64,7 @@ machine restarts. Nothing leaves your disk.
 
 |                              | **PMB**               | mem0       | Letta      | Zep        |
 | :--------------------------- | :-------------------: | :--------: | :--------: | :--------: |
-| **LoCoMo recall@10**         | **94.5 %** *(reproducible, [see below](#-benchmarks))* | ~67-70 %   | ~76-80 %   | ~80 %      |
+| **LoCoMo retrieval recall@10** *(did the right memory surface?)* | **94.5 %** *(reproducible)* | n/a † | n/a † | n/a † |
 | **p50 warm recall**          | **70 ms**             | 1-3 s      | 1-3 s      | 1-3 s      |
 | **MCP cold start (boot)**    | **~3.7 s**            | n/a        | n/a        | n/a        |
 | **First recall on empty ws** | **~0 ms** *(skips LanceDB import)* | n/a | n/a | n/a |
@@ -77,10 +78,17 @@ machine restarts. Nothing leaves your disk.
 | **Portable** (USB / Dropbox) | **✅ just copy `~/.pmb/`** | ❌ | partial | partial |
 | **License**                  | Apache 2.0            | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 
-> Numbers for mem0/Letta/Zep are from their own published LoCoMo benchmarks
-> - we have not reproduced them locally. PMB numbers reproduce in one
-> command: `python scripts/benchmarks/benchmark_locomo.py --n-conversations 10`
-> (~6 min, no graders, no LLM, just retrieval scoring).
+> † **Honest benchmarking note.** 94.5% is PMB's *retrieval* recall@10 - did the
+> gold evidence land in the top-10 - reproducible in one command:
+> `python scripts/benchmarks/benchmark_locomo.py --n-conversations 10`. mem0 /
+> Letta / Zep headline an *end-to-end LLM-as-judge score (J)*: a different,
+> stricter metric (did the generated answer match the gold). The two are **not
+> directly comparable**, so this table does not put their J next to our
+> recall@10. Measured apples-to-apples (`--judge`), PMB's J lands **in the same
+> range as mem0's published ~67** on the questions we've run - we make **no claim
+> of beating them on J**. Strong retrieval is real; end-to-end answer quality is
+> competitive, not a podium claim. PMB's actual edge is the rest of this table:
+> local, offline, no API key, no LLM in the hot path.
 
 ---
 
@@ -88,9 +96,10 @@ machine restarts. Nothing leaves your disk.
 
 > **TL;DR**
 > ```bash
-> pip install pmb-ai                    # CLI command remains `pmb`
-> pmb connect codex                     # or claude-code / cursor
-> # restart your agent and say "remember - I prefer Postgres"
+> pip install pmb-ai
+> pmb setup                             # detects your agent, wires PMB in
+> # or:  pmb connect codex --active     # agent also logs its own work as it goes
+> # restart your agent
 > ```
 >
 > Or install from source for the latest unreleased changes:
@@ -149,6 +158,13 @@ pmb connect --list        # show every agent + its config path
 This writes an MCP server entry into the agent's config (e.g. `~/.codex/config.toml`)
 and appends a tiny rule block to `AGENTS.md` / `CLAUDE.md`. Point several agents at
 one shared workspace with `--workspace personal` so they all see the same memory.
+
+**Even simpler:** `pmb setup` auto-detects your agent and walks you through it.
+Add `--active` to `connect`/`setup` and the agent **logs its own decisions,
+lessons and progress** as it works (not just on "remember"), **applies past
+lessons** before a task, and calls **`session_brief`** to re-orient after a long
+session compacts its context. Tune exactly what it logs via the `agent.*`
+settings (`pmb config` / `pmb tune`).
 
 **3. Use your agent normally.** PMB activates only on explicit memory triggers:
 
@@ -250,7 +266,7 @@ or re-embed. Use `pmb why` and the LoCoMo bench to verify recall holds on yours.
 
 ## 📊 Benchmarks
 
-### 1. LoCoMo (the standard) - 94.5% recall@10
+### 1. LoCoMo (the standard) - 94.5% retrieval recall@10
 
 LoCoMo is the multi-session benchmark from Snap Research: 10 conversations × ~199 QA pairs each, cited by mem0, Letta, and Zep in their papers.
 
@@ -271,6 +287,15 @@ python scripts/benchmarks/benchmark_locomo.py --n-conversations 10
 ```
 
 Latency: p50 ranges 65-95 ms across conversations, p95 96-142 ms.
+
+> **Retrieval vs end-to-end - read before comparing to mem0/Zep.** The 94.5%
+> above is `evidence_recall@10`: a *retrieval* metric (did the gold evidence
+> surface in the top-10). mem0 / Letta / Zep headline an *LLM-as-judge J-score*
+> (did the generated answer match the gold) - a different, stricter metric.
+> They are not interchangeable. Measured apples-to-apples with `--judge`, PMB's
+> J lands in the **same range as mem0's published ~67** on the questions we've
+> run; we don't claim to beat them on J. Retrieval is where PMB is genuinely
+> strong; end-to-end answer quality is competitive.
 
 ### 2. Mega stress test - 900 queries, multi-language, all features on
 
@@ -644,11 +669,23 @@ pmb pin <ulid>             pin a memory (max importance, no decay)
 pmb forget <ulid>          archive (reversible)
 pmb feedback <ulid> useful|wrong   tune importance based on real outcomes
 
+pmb overview "<topic>"     structured "what do I know about X" (also an MCP tool)
+pmb session brief          digest of THIS session (re-orient after context loss)
+pmb timeline               chronological memory, grouped by day
+pmb insights               analytics: growth, top topics, lessons/goals
+pmb digest [today|week]    recap of recent memories
+pmb forget-topic "<topic>" archive everything about a topic (reversible)
+pmb export --format json   dump all memory to readable markdown/json
+pmb snapshot create|list   local, offline workspace snapshots
+pmb reminders              overdue / due-soon goals
+
 pmb tui                    full TUI: Memory · Recall · Stats · Dedup · Tune
 pmb dashboard              web UI on :8765
 pmb tune                   settings-only TUI (67 knobs)
 
+pmb setup                          guided first-time setup (detect agent + wire)
 pmb connect <agent>               auto-wire MCP (9 agents; --list to see all)
+pmb connect <agent> --active      agent logs its own work + self-improves
 pmb ollama status|use|test         local LLM integration
 
 pmb workspace push|pull            sync memory to/from any git remote
@@ -666,6 +703,9 @@ pmb arcs cluster|list|show narrative arcs
 pmb config get|set|list    flat-key tuning from the shell
 pmb doctor                 health check (model, DB, MCP, …)
 ```
+
+> Full command reference with examples (and which commands need an LLM):
+> **[docs/COMMANDS.md](docs/COMMANDS.md)**.
 
 ---
 
@@ -760,17 +800,18 @@ See [`SECURITY.md`](SECURITY.md) for the full threat model and vulnerability rep
 - [x] LoCoMo evidence-recall@10: **94.5%** on the full 10-conversation run with default settings (up from 91.6% under previous defaults)
 - [x] Lazy package imports - `import pmb` takes 48 ms (was ~14 s)
 - [x] **Lazy LanceDB import** - `Engine()` no longer pays the 22 s `import lancedb` cost up front; CLI commands `pmb stats / list / config / pin / forget` now run in ~1 s end-to-end (was ~14 s)
+- [x] **PyPI publication** - `pip install pmb-ai` (the version badge above tracks the latest release)
+- [x] **macOS + Linux in CI** - the test matrix now runs ubuntu + windows + macOS, not Windows-only
+- [x] **Agent self-logging + session continuity** - `pmb connect --active` (proactive decision/lesson logging) and `session_brief` (re-orient after a long session's context compacts)
 
 ### Known issues / on the roadmap for v0.2
 - [ ] **Sync `record_batch(100)` still takes ~11 s** even with batched embedding. The per-item cost is graph indexing + temporal/causation edge inserts + L1 dedup, not embedding (already batched). Fix: a `record_batch_bulk` mode that defers graph work. Affects bulk imports, not agent traffic (MCP returns in 2 ms).
 - [ ] **Long-term ablation untested.** The tier / decay / arc / causation features are designed for multi-session dynamics but PMB has no benchmark for that scenario yet. Either build one or be more conservative about claims.
 - [ ] **Reranker regression on LoCoMo.** Cross-encoder is off by default after ablation; investigate which workloads (if any) it actually helps.
 - [ ] Persistent daemon mode - `pmb daemon start`, every Codex session connects to a hot process (no cold start)
-- [ ] PyPI publication - `pip install pmb`
 - [ ] Web dashboard: workspace switcher, settings tab
 - [ ] LLM-judge benchmark wired into CI for regression catching
-- [ ] Auto-backup / export-import commands
-- [ ] First-class macOS / Linux testing (Windows is the primary CI target today)
+- [ ] Auto-backup (scheduled snapshots) - manual `pmb export` / `pmb snapshot` / `pmb workspace export` already ship
 
 ### Not planned
 - Multi-user, multi-device, cloud sync. PMB is single-machine on purpose.
@@ -807,7 +848,7 @@ If their trade-offs are fine for your use case, use them. PMB exists for people 
 - The agent's own LLM thinking is the dominant latency in any chat turn, by 10-100×.
 
 **Cold path (every short-lived CLI invocation):**
-- `Engine()` construction takes ~14 s the first time per process. The MCP server pays this once at boot, then keeps it. The CLI (`pmb stats`, `pmb recall ...`) pays it every invocation - this is on the v0.2 roadmap to fix.
+- Commands that don't touch vectors (`pmb stats / list / config / pin / forget`) now return in ~1 s thanks to lazy LanceDB loading. A command that runs a `recall` still pays a one-time model load (~14 s cold) per CLI process; the MCP server pays it once at boot and then stays warm. A persistent daemon mode (so even short CLI calls reuse a hot process) is on the roadmap.
 
 If you suspect PMB specifically is slow, open `pmb tui` → tab [3] Stats. It shows the actual per-call timings from the `mcp_calls` table.
 </details>

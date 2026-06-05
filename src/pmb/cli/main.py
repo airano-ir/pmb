@@ -621,6 +621,55 @@ def why(
 
 
 @app.command()
+def overview(
+    topic: str = typer.Argument(..., help="Topic to summarize, in quotes"),
+    max_events: Optional[int] = typer.Option(
+        None, "-n", "--max-events",
+        help="How many memories to synthesize (default: config overview.max_events)."),
+):
+    """'What do I know about <topic>?' - a structured overview from memory.
+
+    Aggregates the relevant memories into key facts & decisions, lessons,
+    failures, open goals, a timeline and related topics. No LLM, fully local -
+    great for getting up to speed on a project/feature before you start.
+
+      pmb overview "authentication"
+    """
+    eng = Engine()
+    if max_events is None:
+        try:
+            max_events = int(eng.config.get("overview.max_events"))
+        except Exception:
+            max_events = 40
+    ov = eng.topic_overview(topic, max_events=max_events)
+    if ov.get("empty"):
+        console.print(f"[yellow]No memories about[/] '{esc(topic)}'.")
+        return
+    span = ov.get("span") or {}
+    console.print(Panel.fit(
+        f"[bold]{ov['n_memories']}[/] memories about [cyan]{esc(topic)}[/]"
+        + (f"  ·  {span.get('from')} -> {span.get('to')}" if span else ""),
+        title="PMB overview",
+    ))
+
+    def _sect(title, items, marker=""):
+        if not items:
+            return
+        console.print(f"\n[bold magenta]{title}[/] ({len(items)})")
+        for it in items:
+            d = f"[dim]{it.get('date')}[/] " if it.get("date") else ""
+            console.print(f"  {marker}{d}{esc(it['content'])}")
+
+    _sect("Facts & decisions", ov["facts"])
+    _sect("Lessons", ov["lessons"], "[magenta]★[/] ")
+    _sect("Failures", ov["failures"], "[red]⚠[/] ")
+    _sect("Goals", ov["goals"])
+    if ov.get("related_topics"):
+        console.print("\n[bold magenta]Related topics:[/] "
+                      + ", ".join(esc(t) for t in ov["related_topics"]))
+
+
+@app.command()
 def pin(ulid: str = typer.Argument(...)):
     """Закрепить событие - высокая importance, не архивируется автоматом."""
     eng = Engine()
@@ -664,10 +713,11 @@ def sync(
 
 @app.command()
 def session(
-    action: str = typer.Argument(..., help="start | end | current"),
+    action: str = typer.Argument(..., help="start | end | current | brief"),
     name: Optional[str] = typer.Argument(None, help="Session name (for start)"),
 ):
-    """Управление сессиями."""
+    """Управление сессиями. `brief` = digest of what was decided/done this
+    session (re-orient after a long session / context loss)."""
     eng = Engine()
     if action == "start":
         s = eng.session_start(name)
@@ -688,6 +738,29 @@ def session(
             )
         else:
             console.print("[dim]No active session.[/]")
+    elif action == "brief":
+        b = eng.session_brief()
+        if b.get("empty"):
+            console.print(f"[yellow]Nothing recorded in {esc(str(b['scope']))}.[/]")
+            return
+        hdr = f"[bold]{b['n_events']}[/] memories · {esc(str(b['scope']))}"
+        if b.get("duration_min") is not None:
+            hdr += (f" · {esc(str(b.get('session_name') or 'session'))} "
+                    f"({b['duration_min']} min)")
+        console.print(Panel.fit(hdr, title="Session brief"))
+
+        def _sb(title, items, marker=""):
+            if not items:
+                return
+            console.print(f"\n[bold magenta]{title}[/] ({len(items)})")
+            for it in items:
+                console.print(f"  {marker}[dim]{it['when']}[/] {esc(it['content'])}")
+
+        _sb("Decisions", b["decisions"])
+        _sb("Done", b["done"])
+        _sb("Lessons", b["lessons"], "[magenta]★[/] ")
+        _sb("Failures", b["failures"], "[red]⚠[/] ")
+        _sb("Goals", b["goals"])
     else:
         console.print(f"[red]Unknown action: {action}[/]")
 
@@ -1541,6 +1614,19 @@ def _open_config():
     return Config(workspace_dir=ws.storage_dir, pmb_home=ws.pmb_home), ws
 
 
+def _agent_toggles_from_config() -> Optional[dict]:
+    """Read the agent.* proactive-logging toggles from config (for
+    `pmb connect --active` / `pmb setup`). Returns None on any error so the
+    rules just fall back to all-categories-on."""
+    try:
+        cfg, _ = _open_config()
+        keys = ("active_mode", "log_decisions", "log_completed", "log_lessons",
+                "log_failures", "log_goals", "apply_lessons", "context_continuity")
+        return {k: cfg.get(f"agent.{k}") for k in keys}
+    except Exception:
+        return None
+
+
 @config_app.command("list")
 def config_list(
     only_overridden: bool = typer.Option(
@@ -1678,6 +1764,12 @@ def connect(
     list_agents: bool = typer.Option(
         False, "--list", help="List every supported agent and its config file, then exit.",
     ),
+    active: bool = typer.Option(
+        False, "--active",
+        help="Proactive logging: the agent records its own decisions / lessons / "
+             "what it did during coding, without waiting for 'remember'. Recall "
+             "stays lazy. Default rules are conservative (PMB off until a trigger).",
+    ),
     probe: bool = typer.Option(False, "--probe", help="Spawn pmb-mcp briefly to verify it starts"),
 ):
     """Add a `pmb` entry to your agent's MCP config without touching other entries.
@@ -1715,10 +1807,14 @@ def connect(
         console.print("[red]Missing AGENT.[/] Run [cyan]pmb connect --list[/] to see options.")
         raise typer.Exit(code=2)
 
+    _toggles = _agent_toggles_from_config()
+    effective_active = active or bool((_toggles or {}).get("active_mode"))
     try:
         result = do_connect(
             agent, cwd=Path.cwd(), scope=scope, remote=remote, name_override=name,
             workspace_id=workspace, pmb_home=pmb_home, config_path=config_path,
+            active=effective_active,
+            active_toggles=(_toggles if effective_active else None),
         )
     except ValueError as e:
         console.print(f"[red]{e}[/]")
@@ -1763,6 +1859,86 @@ def connect(
         "in <100ms. To pre-warm before connecting, run [bold]pmb warmup[/] "
         "first.[/]"
     )
+
+
+@app.command()
+def setup(
+    agent: Optional[str] = typer.Argument(
+        None, help="Agent to wire (claude-code / codex / cursor / ...). Omit to auto-detect."),
+    active: bool = typer.Option(
+        False, "--active",
+        help="Install proactive-logging rules (agent records its own decisions/lessons)."),
+    yes: bool = typer.Option(
+        False, "--yes", "-y",
+        help="Non-interactive: take the recommended defaults, no prompts."),
+):
+    """Guided first-time setup - detect your agent and wire PMB in one go.
+
+      pmb setup                       # detect your agent, ask a couple questions
+      pmb setup codex --active --yes  # non-interactive
+
+    Defaults are already the effective ones (ablation-tuned) - you only need
+    `pmb tune` if you want to change them. Full command list: `docs/COMMANDS.md`.
+    """
+    import shutil as _shutil
+    from pmb.cli.connect import (
+        detect_installed_agents, connect as do_connect, supported_agents,
+    )
+    detected = detect_installed_agents()
+    ollama_ok = _shutil.which("ollama") is not None
+
+    console.print(Panel.fit(
+        f"Detected agents: [cyan]{', '.join(detected) or 'none found yet'}[/]\n"
+        f"Ollama (optional local LLM): "
+        + ("[green]installed[/]" if ollama_ok
+           else "[dim]not installed - fine, PMB works fully offline without it[/]") + "\n"
+        f"Defaults: ablation-tuned (BM25-heavy fusion, reranker off) - ready to use.",
+        title="PMB setup",
+    ))
+
+    chosen = agent or (detected[0] if detected else None)
+    if not chosen:
+        if yes:
+            console.print("[yellow]No known agent config found.[/] Run your agent "
+                          "once, then [cyan]pmb connect --list[/].")
+            return
+        chosen = typer.prompt("Which agent to connect?", default="claude-code")
+    if chosen not in supported_agents():
+        console.print(f"[red]Unknown agent:[/] {chosen}. "
+                      f"Options: {', '.join(supported_agents())}")
+        raise typer.Exit(2)
+
+    if not active and not yes:
+        active = typer.confirm(
+            "Proactive logging - should the agent record its own decisions/lessons "
+            "as it works (not just on 'remember')?",
+            default=False,
+        )
+
+    _toggles = _agent_toggles_from_config()
+    eff_active = active or bool((_toggles or {}).get("active_mode"))
+    try:
+        result = do_connect(
+            chosen, cwd=Path.cwd(), active=eff_active,
+            active_toggles=(_toggles if eff_active else None),
+        )
+    except ValueError as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(2)
+
+    console.print(
+        f"[green]Connected[/] [bold]{chosen}[/] "
+        f"({'active logging' if eff_active else 'conservative rules'}).  "
+        f"[dim]{result['config_path']}[/]"
+    )
+    console.print(Panel.fit(
+        "[bold]Next:[/]\n"
+        "  1. Restart your agent so it loads PMB.\n"
+        "  2. [cyan]pmb warmup[/]  - pre-load so the first recall is fast (optional).\n"
+        "  3. [cyan]pmb ollama status[/]  - only if you want a fully-local LLM.\n"
+        "  4. Commands: [cyan]docs/COMMANDS.md[/] or [cyan]pmb --help[/].",
+        title="Done",
+    ))
 
 
 workspace_app = typer.Typer(
