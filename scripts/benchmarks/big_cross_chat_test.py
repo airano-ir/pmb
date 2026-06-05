@@ -26,6 +26,10 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+from _bench_data import data_path
 
 _here = Path(__file__).resolve()
 sys.path.insert(0, str(_here.parent.parent.parent / "src"))
@@ -630,7 +634,7 @@ def main():
     ap.add_argument("--quick", action="store_true",
                     help="Fewer sessions, 300 queries instead of 1000")
     ap.add_argument("--out",
-                    default="C:/Users/alexb/AppData/Local/Temp/pmb_big_cross_chat.json")
+                    default=data_path("pmb_big_cross_chat.json"))
     args = ap.parse_args()
 
     from pmb.core.engine import Engine

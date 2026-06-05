@@ -137,3 +137,9 @@ NOTES.md
 # bind-mount source as root and the non-root container user can't write to it.
 /docker/data/*
 !/docker/data/.gitkeep
+
+# --------------------------------------------------------------
+# Benchmark data (inputs like locomo10.json + pmb_*.json outputs).
+# Created on demand by scripts/_bench_data.py; never committed.
+# --------------------------------------------------------------
+/scripts/data/

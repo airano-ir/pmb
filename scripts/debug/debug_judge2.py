@@ -6,12 +6,16 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+from _bench_data import data_path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 
 def main():
-    DATASET = "C:/Users/alexb/AppData/Local/Temp/locomo10.json"
+    DATASET = data_path("locomo10.json")
     with open(DATASET, "r", encoding="utf-8") as f:
         dataset = json.load(f)
     conv = dataset[0]
