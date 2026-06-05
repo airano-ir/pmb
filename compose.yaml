@@ -1,0 +1,60 @@
+# PMB containerized runtime.
+#
+# One image, three run profiles over a single data volume. The host install
+# is never touched: PMB_HOME points at ./docker/data (not ~/.pmb) and the
+# heavy HuggingFace model cache lives in a named volume so rebuilds don't
+# re-download it.
+#
+# Usage:
+#   docker compose run --rm shell                 # dev sandbox (pip/python/pytest)
+#   docker compose --profile dashboard up         # web dashboard on :8765
+#   docker compose run --rm -i mcp                # MCP server over stdio (for agents)
+# Or via the Makefile: make docker-shell / docker-dashboard / docker-mcp
+
+x-pmb-common: &pmb-common
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      UID: ${UID:-1000}
+      GID: ${GID:-1000}
+      TORCH_VARIANT: ${TORCH_VARIANT:-cpu}   # cpu (default) — GPU via docker/compose.gpu.yaml
+  image: pmb:local
+  environment:
+    PMB_HOME: /data
+    HF_HOME: /hf-cache
+    SENTENCE_TRANSFORMERS_HOME: /hf-cache
+  volumes:
+    - ./docker/data:/data        # PMB_HOME — SQLite + LanceDB + BM25 live here
+    - pmb_hf_cache:/hf-cache      # embedding models (downloaded once)
+    - .:/app                      # live source for editable installs
+  working_dir: /app
+
+services:
+  # Interactive development sandbox: run pmb commands, pip, pytest, ruff.
+  shell:
+    <<: *pmb-common
+    profiles: ["dev"]
+    stdin_open: true
+    tty: true
+    command: ["bash"]
+
+  # Web dashboard. Bound to localhost on the host side only.
+  dashboard:
+    <<: *pmb-common
+    profiles: ["dashboard"]
+    command: ["pmb", "dashboard", "--host", "0.0.0.0", "--port", "8765"]
+    ports:
+      - "127.0.0.1:8765:8765"
+
+  # MCP server over stdio. Intended for `docker compose run --rm -i mcp`
+  # wired into an agent's MCP config (see docker/README.md).
+  mcp:
+    <<: *pmb-common
+    profiles: ["mcp"]
+    stdin_open: true
+    tty: false
+    command: ["pmb-mcp"]
+
+volumes:
+  pmb_hf_cache:

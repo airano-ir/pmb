@@ -311,9 +311,11 @@ _MINIMAL_TOOLS = {
     "recent_activity", "list_goals", "update_goal", "workspace_info",
     "record_fact",          # one-off (when batch overkill)
     "record_fact_tree",     # one-off (event + subfacts)
+    "session_brief",        # re-orient after context compaction (long sessions)
 }
 _DEFAULT_TOOLS = _MINIMAL_TOOLS | {
     "recall_smart",         # important queries with escalation
+    "overview",             # structured "what do I know about <topic>"
     "record_goal",          # one-off goal
     "record_activity",      # one-off activity
     "record_milestone",     # one-off milestone
@@ -477,6 +479,31 @@ def build_server(
         """
         pack = engine.recall(query=query, top_k=top_k)
         return pack.to_dict()
+
+    @mcp.tool()
+    def overview(topic: str, max_events: int = 20) -> dict:
+        """Get a structured OVERVIEW of everything memory knows about a topic.
+
+        Call this when (re)starting work on a project, feature, person, or
+        decision area to get the big picture in ONE call - instead of several
+        recall() calls. Returns key facts & decisions, lessons, failures, open
+        goals, a timeline, and related topics, all from stored memory. Use it
+        at the start of a task to get up to speed on prior context.
+        """
+        return engine.topic_overview(topic, max_events=max_events)
+
+    @mcp.tool()
+    def session_brief(minutes: Optional[int] = None) -> dict:
+        """Re-orient in a long session: a digest of what was decided / done /
+        learned so far THIS session.
+
+        Call this when you've lost the thread - after your own context window
+        compacts, or many turns into a long task - instead of re-asking the
+        user what you already did. Returns decisions, completed work, lessons,
+        failures and goals from the current session (or the last `minutes`).
+        PMB is your durable memory across your own context limits.
+        """
+        return engine.session_brief(minutes=minutes)
 
     @mcp.tool()
     def remember(query: str, response: str, importance: float = 0.5,
@@ -1165,19 +1192,30 @@ def build_server(
         allowed = _MINIMAL_TOOLS if _TOOL_PROFILE == "minimal" else _DEFAULT_TOOLS
         try:
             import asyncio
-            current = asyncio.run(mcp.list_tools())
-            current_names = {t.name for t in current}
-            remover = (
-                mcp.local_provider.remove_tool
-                if hasattr(mcp, "local_provider") and hasattr(mcp.local_provider, "remove_tool")
-                else mcp.remove_tool
-            )
-            for tname in current_names:
-                if tname not in allowed:
-                    try:
-                        remover(tname)
-                    except Exception:
-                        pass
+            # list_tools() is async. The stdio server path builds the server
+            # before any event loop exists, so asyncio.run() works there and
+            # gating applies. If we're already inside a running loop (in-memory
+            # client / embedded host), asyncio.run() would raise and leave an
+            # un-awaited coroutine — skip cleanly instead.
+            try:
+                asyncio.get_running_loop()
+                in_loop = True
+            except RuntimeError:
+                in_loop = False
+            if not in_loop:
+                current = asyncio.run(mcp.list_tools())
+                current_names = {t.name for t in current}
+                remover = (
+                    mcp.local_provider.remove_tool
+                    if hasattr(mcp, "local_provider") and hasattr(mcp.local_provider, "remove_tool")
+                    else mcp.remove_tool
+                )
+                for tname in current_names:
+                    if tname not in allowed:
+                        try:
+                            remover(tname)
+                        except Exception:
+                            pass
         except Exception:
             pass  # filter best-effort; if FastMCP API changes, all tools stay
 

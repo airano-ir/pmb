@@ -59,6 +59,36 @@ SCHEMA: dict[str, _Setting] = {
         min=0.0, max=1.0,
     ),
     "recall.top_k": _Setting(int, 5, "Default top-K returned by recall", min=1, max=100),
+    # Agent proactive-logging (consumed by `pmb connect --active` to build the
+    # rules the agent follows). Toggle WHAT the agent records about its own
+    # work, and whether it applies past lessons. Pro users tweak these, then
+    # re-run `pmb connect <agent> --active` to regenerate the agent's rules.
+    "agent.active_mode": _Setting(
+        bool, False,
+        "Auto-logging switch: when True, `pmb connect` / `pmb setup` install "
+        "the proactive-logging rules by default (no --active flag needed)."),
+    "agent.log_decisions": _Setting(bool, True, "Active mode: log design/code decisions"),
+    "agent.log_completed": _Setting(bool, True, "Active mode: log what was done (features/fixes)"),
+    "agent.log_lessons": _Setting(bool, True, "Active mode: log lessons / project conventions"),
+    "agent.log_failures": _Setting(bool, True, "Active mode: log failures (don't-repeat)"),
+    "agent.log_goals": _Setting(bool, True, "Active mode: log user goals / intents"),
+    "agent.apply_lessons": _Setting(
+        bool, True,
+        "Active mode: recall + apply past lessons/failures before a task "
+        "(the self-improvement loop - agent gets better at the project over time)",
+    ),
+    "agent.context_continuity": _Setting(
+        bool, True,
+        "Active mode: tell the agent to call session_brief to re-orient after "
+        "its OWN context compacts in a long session (PMB as durable session memory)"),
+    "overview.max_events": _Setting(
+        int, 40,
+        "How many memories `pmb overview` / the MCP overview tool synthesize "
+        "for a topic", min=5, max=500),
+    "session.brief_minutes": _Setting(
+        int, 180,
+        "Fallback window (minutes) for `pmb session brief` / the session_brief "
+        "MCP tool when no session is active", min=5, max=10080),
     "recall.recency_half_life_days": _Setting(
         float, 30.0, "Half-life for recency boost in days", min=0.5, max=3650.0,
     ),

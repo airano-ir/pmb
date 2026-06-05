@@ -41,6 +41,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ["3.11", "3.12", "3.13"]
+        include:
+          # One macOS (arm64) job so the "runs on macOS" claim is tested,
+          # without tripling runner minutes across every Python version.
+          - os: macos-latest
+            python: "3.12"
 
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +77,7 @@ jobs:
         run: >
           pytest tests/test_connect.py tests/test_connect_codex.py
           tests/test_connect_rules.py tests/test_connect_extended.py
+          tests/test_connect_active.py
           tests/test_git_sync.py tests/test_encryption.py -q --tb=short
 
       - name: Import + explain + embedder-backend suite
@@ -83,6 +89,15 @@ jobs:
         run: >
           pytest tests/test_provenance_watch.py tests/test_memory_quality.py
           tests/test_distill.py -q --tb=short
+
+      - name: Local-use feature commands suite
+        run: pytest tests/test_local_features.py -q --tb=short
+
+      - name: J-score levers suite (resolved date / atomic patterns / validity windows)
+        run: pytest tests/test_jscore_levers.py -q --tb=short
+
+      - name: MCP end-to-end suite (tool exposure / session_brief / recall via in-memory client)
+        run: pytest tests/test_mcp_e2e.py -q --tb=short
 
       - name: Lightweight tests (no heavy ML)
         run: pytest tests/test_config.py tests/test_redact.py -q --tb=short

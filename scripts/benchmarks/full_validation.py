@@ -31,6 +31,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+from _bench_data import data_path
 
 _here = Path(__file__).resolve()
 sys.path.insert(0, str(_here.parent.parent.parent / "src"))
@@ -762,7 +766,7 @@ def main():
     ap.add_argument("--skip-stress", action="store_true",
                     help="Skip stress section")
     ap.add_argument("--out",
-                    default="C:/Users/alexb/AppData/Local/Temp/pmb_full_validation.json")
+                    default=data_path("pmb_full_validation.json"))
     args = ap.parse_args()
 
     quick = args.quick

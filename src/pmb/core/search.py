@@ -803,17 +803,8 @@ class HybridSearch:
         hybrid *= importance_factor
 
         # Recency boost
-        recency_arr = np.zeros(len(ulid_list), dtype=np.float32)
-        if timestamp_map:
-            now = time.time()
-            half_life_sec = recency_half_life_days * 86400.0
-            for i, u in enumerate(ulid_list):
-                ts = timestamp_map.get(u)
-                if ts is not None:
-                    age_sec = max(0.0, now - ts)
-                    recency_arr[i] = float(np.exp(-age_sec * np.log(2) / half_life_sec))
-            # Add 0..0.2 boost for recent items
-            hybrid = hybrid * (1.0 + 0.2 * recency_arr)
+        recency_arr = self._compute_recency(ulid_list, timestamp_map, recency_half_life_days)
+        hybrid = hybrid * (1.0 + 0.2 * recency_arr)
 
         order = np.argsort(hybrid)[::-1][:top_k]
         return [
@@ -827,6 +818,28 @@ class HybridSearch:
             )
             for i in order
         ]
+
+    def _compute_recency(
+        self,
+        ulid_list: list[str],
+        timestamp_map: Optional[dict[str, float]],
+        recency_half_life_days: float,
+    ) -> np.ndarray:
+        recency_arr = np.zeros(len(ulid_list), dtype=np.float32)
+        if not timestamp_map or not ulid_list:
+            return recency_arr
+        now = time.time()
+        half_life_sec = recency_half_life_days * 86400.0
+        ts_vals = np.array(
+            [timestamp_map.get(u, float("nan")) for u in ulid_list], dtype=np.float64,
+        )
+        mask = ~np.isnan(ts_vals)
+        if mask.any():
+            age_sec = np.maximum(0.0, now - ts_vals[mask])
+            recency_arr[mask] = np.exp(
+                -age_sec * np.log(2) / half_life_sec
+            ).astype(np.float32)
+        return recency_arr
 
     def _search_bm25_only(
         self,
@@ -864,16 +877,8 @@ class HybridSearch:
         hybrid = norm * importance_factor
 
         # Recency boost
-        recency_arr = np.zeros(len(ulid_list), dtype=np.float32)
-        if timestamp_map:
-            now = time.time()
-            half_life_sec = recency_half_life_days * 86400.0
-            for i, u in enumerate(ulid_list):
-                ts = timestamp_map.get(u)
-                if ts is not None:
-                    age_sec = max(0.0, now - ts)
-                    recency_arr[i] = float(np.exp(-age_sec * np.log(2) / half_life_sec))
-            hybrid = hybrid * (1.0 + 0.2 * recency_arr)
+        recency_arr = self._compute_recency(ulid_list, timestamp_map, recency_half_life_days)
+        hybrid = hybrid * (1.0 + 0.2 * recency_arr)
 
         order = np.argsort(hybrid)[::-1][:top_k]
         return [
