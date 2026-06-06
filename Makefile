@@ -1,4 +1,4 @@
-.PHONY: help install dev test test-core test-smoke test-all-WARN lint format clean bench bench-quick tui dashboard docker-build docker-shell docker-dashboard docker-mcp docker-test docker-bench-data docker-bench-write docker-bench-locomo docker-stop docker-restart docker-down docker-build-gpu docker-shell-gpu docker-dashboard-gpu docker-down-gpu
+.PHONY: help install dev test test-core test-smoke test-all-WARN lint format clean bench bench-quick tui dashboard docker-build docker-shell docker-dashboard docker-mcp docker-test docker-bench-data docker-bench-write docker-bench-locomo docker-stop docker-restart docker-down docker-fix-perms docker-build-gpu docker-shell-gpu docker-dashboard-gpu docker-down-gpu
 
 help:
 	@echo "PMB development targets:"
@@ -32,6 +32,7 @@ help:
 	@echo "  make docker-stop      - stop containers without removing them"
 	@echo "  make docker-restart   - restart the dashboard (no rebuild)"
 	@echo "  make docker-down      - stop and remove containers"
+	@echo "  make docker-fix-perms - repair model-cache/data ownership to your user"
 	@echo "  (CPU by default; add -gpu for the CUDA build: docker-build-gpu,"
 	@echo "   docker-shell-gpu, docker-dashboard-gpu — needs an NVIDIA GPU + toolkit)"
 
@@ -143,6 +144,15 @@ docker-restart:
 
 docker-down:
 	docker compose --profile dev --profile dashboard --profile mcp down
+
+# Repair ownership of the model-cache volume(s) and ./docker/data to your user.
+docker-fix-perms:
+	@for vol in $$(docker volume ls -q | grep hf_cache); do \
+	  docker run --rm -u 0 -v $$vol:/c alpine chown -R $(UID):$(GID) /c \
+	    && echo "chowned volume $$vol -> $(UID):$(GID)"; \
+	done
+	-chown -R $(UID):$(GID) docker/data
+	@echo "perms fixed for UID:GID = $(UID):$(GID)"
 
 # GPU variant (opt-in). Needs an NVIDIA GPU + the NVIDIA Container Toolkit.
 # Builds the CUDA torch image (pmb:gpu) and passes the GPU into the container.

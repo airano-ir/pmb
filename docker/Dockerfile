@@ -10,6 +10,7 @@ ARG TORCH_VARIANT=cpu
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    HOME=/home/pmb \
     PMB_HOME=/data \
     HF_HOME=/hf-cache \
     SENTENCE_TRANSFORMERS_HOME=/hf-cache
@@ -21,7 +22,10 @@ RUN apt-get update \
 RUN groupadd -g "${GID}" pmb \
     && useradd -m -u "${UID}" -g "${GID}" -s /bin/bash pmb \
     && mkdir -p /data /hf-cache /app \
-    && chown -R pmb:pmb /data /hf-cache /app
+    && chown -R pmb:pmb /data /hf-cache /app \
+    # World-writable so the container works under any runtime UID (compose sets
+    # `user:` to the host's id), incl. fresh named volumes that inherit these.
+    && chmod -R 0777 /data /hf-cache /home/pmb
 
 WORKDIR /app
 
