@@ -13,6 +13,7 @@ from pmb.core.engine.types import (
     _cap_batch_content,
 )
 
+import time
 
 class WriteMixin:
     def _record_atomic_facts(
@@ -253,6 +254,12 @@ class WriteMixin:
         meta["keyed_fact_value"] = value
         if prior_ulids:
             meta["supersedes"] = prior_ulids
+        # Lever 3: stamp a validity window so a superseded value stays
+        # queryable "as of" a past date (Zep-style). New value is valid from
+        # now; each prior value's window is closed below. Additive metadata
+        # only - recall behaviour is unchanged.
+        now_ts = time.time()
+        meta["valid_from"] = now_ts
         # Human-readable content for embedder/BM25
         content = f"{subject} {attribute}: {value}"
         new_ulid = self.record_fact(
@@ -276,6 +283,7 @@ class WriteMixin:
                     ).fetchone()
                     old_meta = _json.loads(row[0] or "{}") if row else {}
                     old_meta["superseded_by"] = new_ulid
+                    old_meta["valid_to"] = now_ts  # close this value's window
                     conn.execute(
                         "UPDATE events SET metadata_json = ? WHERE ulid = ?",
                         (_json.dumps(old_meta), old_ulid),
@@ -288,6 +296,235 @@ class WriteMixin:
             "new_ulid": new_ulid,
             "superseded_ulids": prior_ulids,
             "key": key,
+        }
+
+    def keyed_fact_as_of(
+        self, subject: str, attribute: str, at_time: float,
+    ) -> Optional[dict]:
+        """As-of temporal query (Zep-style): what was the value of
+        (subject, attribute) at `at_time` (UTC epoch seconds)?
+
+        Uses the valid_from / valid_to windows stamped by record_keyed_fact
+        supersession, so "what city did I live in last March" returns the
+        value that was current THEN, not the latest one.
+
+        Standalone - NOT wired into the recall hot path, so it cannot affect
+        recall ranking or latency. Returns {value, valid_from, valid_to,
+        ulid, content} for the version valid at `at_time`, else None.
+        """
+        key = f"{subject.strip().lower()}::{attribute.strip().lower()}"
+        versions: list[tuple] = []
+        try:
+            import sqlite3 as _sql, json as _json
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                rows = conn.execute(
+                    "SELECT ulid, content, metadata_json, timestamp FROM events "
+                    "WHERE workspace_id = ? AND event_type = 'fact' "
+                    "AND metadata_json LIKE ? ORDER BY timestamp ASC",
+                    (self.workspace.id, f'%"keyed_fact_key": "{key}"%'),
+                ).fetchall()
+            for r in rows:
+                meta = _json.loads(r["metadata_json"] or "{}")
+                versions.append((r["ulid"], r["content"], meta, r["timestamp"]))
+        except Exception:
+            return None
+        if not versions:
+            return None
+
+        best = None
+        for ulid, content, meta, ts in versions:
+            vf = meta.get("valid_from", ts)
+            vf = float(vf) if isinstance(vf, (int, float)) else float(ts)
+            vt = meta.get("valid_to")
+            if at_time < vf:
+                continue
+            if vt is None or at_time <= float(vt):
+                # ascending order → keep updating, last match = most recent valid
+                best = {
+                    "value": meta.get("keyed_fact_value"),
+                    "valid_from": vf,
+                    "valid_to": (float(vt) if isinstance(vt, (int, float)) else None),
+                    "ulid": ulid,
+                    "content": content,
+                }
+        return best
+
+    def topic_overview(self, topic: str, max_events: int = 40) -> dict:
+        """Structured "what do I know about <topic>?" overview - no LLM.
+
+        Recalls memories related to the topic and aggregates them into key
+        facts & decisions, lessons, failures, open goals, a compact timeline,
+        and related topics (entity-graph neighbours). Pure read + aggregation:
+        it reuses recall() but writes nothing and changes no ranking. Exposed
+        on the CLI (`pmb overview`) and over MCP so an agent can get up to
+        speed on a project/feature in one call.
+        """
+        import time as _t
+        topic = (topic or "").strip()
+        if not topic:
+            return {"topic": topic, "n_memories": 0, "empty": True}
+
+        pack = self.recall(query=topic, top_k=max_events)
+        results = list(pack.results)
+
+        def _item(r) -> dict:
+            meta = r.metadata or {}
+            return {
+                "date": getattr(r, "resolved_date", None),
+                "content": (r.content or "")[:240],
+                "score": round(float(r.score), 3),
+                "kind": meta.get("kind") or r.event_type,
+            }
+
+        facts, lessons, failures, goals, other = [], [], [], [], []
+        for r in results:
+            meta = r.metadata or {}
+            k = meta.get("kind")
+            if k == "lesson":
+                lessons.append(_item(r))
+            elif k == "failure":
+                failures.append(_item(r))
+            elif r.event_type == "goal":
+                goals.append(_item(r))
+            elif r.event_type == "fact" or k == "decision":
+                facts.append(_item(r))
+            else:
+                other.append(_item(r))
+
+        timeline = sorted(
+            ({"date": getattr(r, "resolved_date", None) or "",
+              "content": (r.content or "")[:120]} for r in results),
+            key=lambda x: x["date"],
+        )[:12]
+
+        ts = [r.timestamp for r in results if r.timestamp]
+        span = None
+        if ts:
+            span = {"from": _t.strftime("%Y-%m-%d", _t.gmtime(min(ts))),
+                    "to": _t.strftime("%Y-%m-%d", _t.gmtime(max(ts)))}
+
+        related: list[str] = []
+        try:
+            for tok in topic.split()[:3]:
+                gn = self.graph_neighbors(tok, top_k=5)
+                if gn.get("entity"):
+                    for nbr in gn.get("neighbors", []):
+                        nm = (nbr.get("entity") or {}).get("name")
+                        if nm and nm.lower() not in topic.lower() and nm not in related:
+                            related.append(nm)
+        except Exception:
+            pass
+
+        return {
+            "topic": topic,
+            "n_memories": len(results),
+            "span": span,
+            "facts": facts[:10],
+            "lessons": lessons[:10],
+            "failures": failures[:10],
+            "goals": goals[:10],
+            "other": other[:5],
+            "timeline": timeline,
+            "related_topics": related[:8],
+            "empty": len(results) == 0,
+        }
+
+    def session_brief(self, session_id: Optional[str] = None,
+                      minutes: Optional[float] = None, limit: int = 100) -> dict:
+        """Compact digest of the CURRENT (or given) work session - what was
+        decided / done / learned so far.
+
+        Built so an agent can re-orient after its OWN context window compacts
+        in a long session: PMB is the durable session memory, so instead of
+        re-asking the user what it already did, the agent calls this and picks
+        the thread back up. Pure read; off the recall ranking path.
+
+        Scopes to events tagged with the active session; if none, falls back to
+        the last `minutes` (config `session.brief_minutes`).
+        """
+        import time as _t
+        sess = None
+        if session_id is None:
+            try:
+                sess = self.session_tracker.current(auto_create=False)
+            except Exception:
+                sess = None
+            session_id = getattr(sess, "id", None) if sess else None
+        if minutes is None:
+            try:
+                minutes = float(self.config.get("session.brief_minutes"))
+            except Exception:
+                minutes = 180.0
+
+        now = _t.time()
+        # Scope to the session as a UNION: every event recorded since the
+        # session began PLUS anything explicitly tagged with this session id.
+        # Why both: only `record_activity` auto-binds events to the session;
+        # facts / goals / lessons recorded during the session carry no
+        # session id, so a tag-only filter silently drops them. Falling back to
+        # the session's start time captures that work too. Without an active
+        # session, use the last `minutes` window.
+        sess_started = getattr(sess, "started_at", None) if sess else None
+        cutoff = now - minutes * 60.0
+        if session_id and isinstance(sess_started, (int, float)):
+            cutoff = min(cutoff, sess_started - 1.0)
+        events = self.events.list_active(self.workspace.id, limit=100000)
+        if session_id:
+            scoped = [e for e in events
+                      if e.source_session_id == session_id or e.timestamp >= cutoff]
+        else:
+            scoped = [e for e in events if e.timestamp >= cutoff]
+        scoped.sort(key=lambda e: e.timestamp)
+
+        def _kind(meta) -> Optional[str]:
+            # `record_activity` stores the kind under `activity_kind`; lessons /
+            # failures use `kind`. Read both so decisions/done classify.
+            return meta.get("kind") or meta.get("activity_kind")
+
+        def _it(e) -> dict:
+            meta = e.metadata or {}
+            return {
+                "when": _t.strftime("%m-%d %H:%M", _t.gmtime(e.timestamp)),
+                "content": (e.content or "")[:200],
+                "kind": _kind(meta) or e.event_type,
+            }
+
+        decisions, done, lessons, failures, goals, other = [], [], [], [], [], []
+        for e in scoped:
+            meta = e.metadata or {}
+            k = _kind(meta)
+            if k == "lesson":
+                lessons.append(_it(e))
+            elif k == "failure":
+                failures.append(_it(e))
+            elif e.event_type == "goal":
+                goals.append(_it(e))
+            elif k == "decision":
+                decisions.append(_it(e))
+            elif k == "completed":
+                done.append(_it(e))
+            else:
+                other.append(_it(e))
+
+        duration_min = None
+        started = getattr(sess, "started_at", None) if sess else None
+        if isinstance(started, (int, float)):
+            duration_min = round((now - started) / 60.0)
+
+        return {
+            "session_id": session_id,
+            "session_name": getattr(sess, "name", None) if sess else None,
+            "duration_min": duration_min,
+            "scope": "session" if (session_id and scoped) else f"last {minutes:g} min",
+            "n_events": len(scoped),
+            "decisions": decisions[:15],
+            "done": done[:15],
+            "lessons": lessons[:15],
+            "failures": failures[:15],
+            "goals": goals[:15],
+            "other": other[:10],
+            "empty": len(scoped) == 0,
         }
 
     def record_preference(

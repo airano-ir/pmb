@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -29,6 +30,7 @@ class RecallResult:
             "content": self.content,
             "metadata": self.metadata,
             "timestamp": self.timestamp,
+            "date": self.resolved_date,
             "score": self.score,
             "signals": {
                 "bm25": self.bm25_score,
@@ -37,6 +39,31 @@ class RecallResult:
                 "recency": self.recency_score,
             },
         }
+
+    @property
+    def resolved_date(self) -> Optional[str]:
+        """Human-readable date this result REFERS to.
+
+        Prefers the parsed `event_time` (the date *inside* the content), then a
+        session-date string (chat-history imports), then the creation
+        timestamp. Lets an agent answer "when ...?" without epoch math, and
+        anchors relative-date reasoning to the EVENT, not to "today".
+        Output-only - never affects ranking or latency.
+        """
+        meta = self.metadata if isinstance(self.metadata, dict) else {}
+        et = meta.get("event_time")
+        if isinstance(et, (int, float)):
+            try:
+                return time.strftime("%Y-%m-%d", time.gmtime(float(et)))
+            except Exception:
+                pass
+        sd = meta.get("session_dt") or meta.get("session_date_time")
+        if isinstance(sd, str) and sd.strip():
+            return sd.strip()
+        try:
+            return time.strftime("%Y-%m-%d", time.gmtime(float(self.timestamp)))
+        except Exception:
+            return None
 
 
 @dataclass
@@ -86,7 +113,7 @@ class RecallPack:
 
         lines = [f"[Memory recall from '{self.workspace_name}']"]
         for r in self.results[:max_results]:
-            ts = time.strftime("%Y-%m-%d", time.gmtime(r.timestamp))
+            ts = r.resolved_date or time.strftime("%Y-%m-%d", time.gmtime(r.timestamp))
             content_preview = r.content[:300] + "..." if len(r.content) > 300 else r.content
             lines.append(f"\n— [{ts}] [{r.event_type}] (score {r.score:.2f}):")
             lines.append(content_preview)
