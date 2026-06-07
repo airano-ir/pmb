@@ -579,6 +579,56 @@ class RecallMixin:
             if u not in seen_for_dedupe:
                 all_ulids.append(u)
                 seen_for_dedupe.add(u)
+
+        # Inject active keyed-facts into the candidate pool when the query
+        # looks like a personal-attribute question. Lexical / vector overlap
+        # is often poor (e.g. query "where do I live" vs content "user city:
+        # Warsaw") so without this the keyed fact never reaches the ranking
+        # stage, and the keyed-fact-boost has nothing to amplify. This is
+        # a cheap SQL scan (~5ms on a 1000-event workspace) gated on a tight
+        # regex so non-personal queries pay nothing.
+        # Two-token intent gate: needs BOTH a question word AND a
+        # personal-pronoun/user-cue. Either alone fires too often —
+        # "how does X work" should not inject keyed-facts (no personal
+        # cue), and "user works on PMB" should not inject either (no
+        # question cue).
+        _qword_re = getattr(self, "_qword_re", None)
+        _attr_re  = getattr(self, "_attr_re",  None)
+        if _qword_re is None:
+            import re as _re
+            _qword_re = _re.compile(
+                r"\b(where|when|why|what|who|which|how|какой|какая|какое|"
+                r"какие|когда|где|куда|откуда|сколько|чей|чья)\b",
+                _re.IGNORECASE,
+            )
+            _attr_re = _re.compile(
+                r"\b(i|my|me|mine|myself|user|user_|"
+                r"я|меня|мне|мой|моя|моё|моих|мою|моему|моих|"
+                r"u|user'?s)\b",
+                _re.IGNORECASE,
+            )
+            self._qword_re = _qword_re
+            self._attr_re = _attr_re
+        if _qword_re.search(query) and _attr_re.search(query):
+            try:
+                import sqlite3 as _sql
+                with _sql.connect(str(self.workspace.db_path)) as _c:
+                    _c.row_factory = _sql.Row
+                    _keyed_rows = _c.execute(
+                        "SELECT ulid FROM events "
+                        "WHERE workspace_id = ? "
+                        "AND archived_at IS NULL "
+                        "AND metadata_json LIKE '%\"keyed_fact_key\"%' "
+                        "ORDER BY timestamp DESC LIMIT 20",
+                        (self.workspace.id,),
+                    ).fetchall()
+                for _r in _keyed_rows:
+                    if _r["ulid"] not in seen_for_dedupe:
+                        all_ulids.append(_r["ulid"])
+                        seen_for_dedupe.add(_r["ulid"])
+            except Exception:
+                pass
+
         rows = self.events.get_many(
             all_ulids,
             workspace_id=self.workspace.id,
@@ -784,6 +834,33 @@ class RecallMixin:
                 else:
                     # raw events (qa, fact, event, git, etc.)
                     base *= layer_weights.raw_boost
+            # Keyed-fact boost. Facts recorded via record_keyed_fact
+            # (subject/attribute/value pattern, e.g. "user.city=Warsaw")
+            # represent the CURRENT canonical value of a personal
+            # attribute. On personal-attribute queries ("where do I
+            # live", "what is my X") these should rank above generic
+            # facts that share vocabulary. Old values are archived by
+            # supersession so we never boost a stale value here.
+            #
+            # Two-step boost:
+            #   (a) MIN FLOOR — keyed-facts have weak text overlap with
+            #       natural-language questions ("where do I live" vs
+            #       "user.city: Warsaw"). Bring the base up to a floor
+            #       so it competes with topical matches.
+            #   (b) ADDITIVE — recency-weighted, importance-scaled.
+            #   (c) MULTIPLICATIVE — keyed-facts answering personal
+            #       questions are USUALLY the right answer. Bump above
+            #       merely-topical hits.
+            if ev.metadata and isinstance(ev.metadata, dict) and ev.metadata.get("keyed_fact_key"):
+                keyed_boost = self.config.get("recall.keyed_fact_boost") or 0.35
+                # (a) Floor — keyed-fact text is short ("user city: X")
+                # so vector + BM25 base often underestimates.
+                base = max(base, 0.50)
+                # (b) additive — recency and importance scaled.
+                base += keyed_boost * importance_factor * (1.0 + 0.3 * recency)
+                # (c) multiplicative — keyed-fact-on-personal-query is
+                # almost always the right answer.
+                base *= 1.4
             # Improvement B: query-keyword overlap boost. If most of the
             # meaningful tokens of the query are present in this event's
             # content, this event is a likely DIRECT match - boost it.

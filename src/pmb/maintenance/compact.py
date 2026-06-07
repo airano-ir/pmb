@@ -161,6 +161,23 @@ class StorageCompactor:
         except Exception:
             pass
 
+        # Cheap graph cleanup as part of weekly compact. We prune one-off
+        # co-mention edges older than 30d AND the orphan entities they leave
+        # behind. This is safe (drops noise, never touches events) and keeps
+        # the entity graph from drifting upward forever. A full `pmb regraph`
+        # (rerunning the extractor over all active events) is intentionally
+        # NOT automatic — it's expensive with LLM backends and the user
+        # should run it manually after upgrading the extractor.
+        graph_prune = None
+        try:
+            graph_prune = self.engine.prune_graph(
+                max_weight=1,
+                older_than_days=30.0,
+                also_drop_orphan_entities=True,
+            )
+        except Exception:
+            pass
+
         size_after = main_db.stat().st_size if main_db.exists() else 0
 
         return {
@@ -169,6 +186,7 @@ class StorageCompactor:
             "main_size_after": size_after,
             "size_saved": max(0, size_before - size_after),
             "cold_db_path": str(cold_db),
+            "graph_prune": graph_prune,
             "dry_run": False,
         }
 

@@ -265,6 +265,58 @@ def check_multilingual_model() -> dict:
         return {"status": "ok", "msg": f"(skipped: {type(e).__name__})"}
 
 
+def check_graph_extractor() -> dict:
+    """Report the active entity-graph extractor backend and whether its
+    requirements (spaCy model / Claude / Ollama / Codex CLI) are satisfied.
+    """
+    try:
+        from pmb.config import Config
+        cfg = Config()
+        backend = (cfg.get("graph.extractor") or "regex").strip().lower()
+    except Exception as e:
+        return {"status": "warn", "msg": f"could not read config ({e})"}
+    if backend in ("regex", "", "default"):
+        return {"status": "ok",
+                "msg": "backend `regex` (default: fast, offline, no deps)"}
+    if backend == "spacy":
+        try:
+            import spacy  # noqa: F401
+        except ImportError:
+            return {"status": "warn",
+                    "msg": "backend `spacy` selected but spaCy not installed → "
+                           "falls back to regex. Run: pip install spacy && "
+                           "python -m spacy download en_core_web_sm"}
+        # Probe at least one model
+        try:
+            import spacy
+            for name in ("en_core_web_sm", "en_core_web_md", "xx_ent_wiki_sm"):
+                try:
+                    spacy.load(name)
+                    return {"status": "ok",
+                            "msg": f"backend `spacy` ready (model: {name})"}
+                except OSError:
+                    continue
+        except Exception:
+            pass
+        return {"status": "warn",
+                "msg": "backend `spacy` selected but no model installed → "
+                       "falls back to regex. Run: python -m spacy download en_core_web_sm"}
+    if backend.startswith("llm:"):
+        import shutil
+        provider = backend.split(":", 1)[1]
+        bins = {"claude": "claude", "ollama": "ollama", "codex": "codex"}
+        bin_name = bins.get(provider)
+        if not bin_name:
+            return {"status": "warn", "msg": f"unknown LLM provider {provider!r} → falls back to regex"}
+        if not shutil.which(bin_name):
+            return {"status": "warn",
+                    "msg": f"backend `{backend}` selected but `{bin_name}` "
+                           f"CLI not on PATH → falls back to regex"}
+        return {"status": "ok",
+                "msg": f"backend `{backend}` ready (`{bin_name}` CLI on PATH)"}
+    return {"status": "warn", "msg": f"unknown graph.extractor={backend!r} → falls back to regex"}
+
+
 def run_doctor(remote: Optional[str] = None) -> list[tuple[str, dict]]:
     """Run all checks. Returns list of (label, result_dict)."""
     checks: list[tuple[str, dict]] = [
@@ -272,6 +324,7 @@ def run_doctor(remote: Optional[str] = None) -> list[tuple[str, dict]]:
         ("Dependencies", check_deps()),
         ("Embedding model cache", check_embedding_model()),
         ("Multilingual fit", check_multilingual_model()),
+        ("Graph extractor", check_graph_extractor()),
         ("PMB_HOME", check_pmb_home()),
         ("Git", check_git()),
         ("Consolidation backend", check_consolidation_backend()),

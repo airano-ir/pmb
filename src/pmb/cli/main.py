@@ -52,25 +52,46 @@ def _humanize_time(ts: Optional[float]) -> str:
 def dashboard(
     port: int = typer.Option(8765, "--port", "-p", help="Port to bind to"),
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address (default localhost)"),
+    export: str = typer.Option(
+        None, "--export", "-e",
+        help="Don't serve - write a self-contained HTML file (open offline / share)."),
+    open_browser: bool = typer.Option(
+        False, "--open", help="Open the dashboard (or export) in your browser."),
 ):
-    """Launch the local web dashboard.
+    """Launch the local web dashboard - an interactive map of your memory.
 
-    Opens http://127.0.0.1:8765 with:
-      • workspace stats
-      • event timeline
-      • entity graph (filterable by kind)
-      • narrative arcs
-      • recall debugger (paste query → see scoring breakdown)
-      • per-event inspector (entities, derived facts, edges, pin/archive/feedback)
+    Serves http://127.0.0.1:8765 with the memory graph, a git-style timeline of
+    what was captured and when, workspace stats, recall debugger, and a
+    per-event inspector. Bound to localhost; pure stdlib, no external deps.
 
-    Bound to localhost by default. No external dependencies - pure stdlib.
+    `--export memory.html` writes a single self-contained file instead of
+    serving - useful to open offline or share.
     """
     eng = Engine()
+    if export:
+        from pmb.dashboard.viz import build_memory_html
+        html = build_memory_html(eng)
+        p = Path(export)
+        p.write_text(html, encoding="utf-8")
+        try:
+            s = eng.graph_stats()
+            console.print(
+                f"[green]done[/] wrote [bold]{p}[/] - "
+                f"{s['n_entities']} entities, {s['n_edges']} connections")
+        except Exception:
+            console.print(f"[green]done[/] wrote [bold]{p}[/]")
+        if open_browser:
+            import webbrowser
+            webbrowser.open(p.resolve().as_uri())
+        return
     try:
         from pmb.dashboard.server import run_dashboard
     except Exception as e:
         console.print(f"[red]Failed to import dashboard:[/] {e}")
         return
+    if open_browser:
+        import webbrowser, threading
+        threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}")).start()
     run_dashboard(eng, host=host, port=port)
 
 
@@ -1633,29 +1654,62 @@ def config_list(
         False, "--only-overridden",
         help="Show only keys whose value differs from the schema default",
     ),
+    pro: bool = typer.Option(
+        False, "--pro",
+        help="Show pro / advanced knobs in addition to the default-tier keys.",
+    ),
+    all_: bool = typer.Option(
+        False, "--all",
+        help="Show every config key, including experimental/internal knobs. "
+             "Alias for --pro.",
+    ),
 ):
-    """Print every config key, its value, and where the value comes from."""
-    from pmb.config import SCHEMA
+    """Print PMB config keys with values and source.
+
+    By default shows the curated DEFAULT tier (~25 keys most users care
+    about). Pass --pro (or --all) to see every knob, including internal
+    tunables and experimental flags.
+    """
+    from pmb.config import SCHEMA, is_default_tier
+    show_all = pro or all_
     cfg, ws = _open_config()
+    n_default = sum(1 for k in SCHEMA if is_default_tier(k))
+    n_pro = len(SCHEMA) - n_default
+    hidden_hint = (
+        "" if show_all
+        else f"  (+ {n_pro} pro knobs hidden — pass --pro to see them)"
+    )
     console.print(Panel.fit(
         f"workspace: [cyan]{ws.name}[/] ({ws.id[:12]})\n"
         f"  workspace yaml: {cfg.workspace_path}\n"
-        f"  global yaml:    {cfg.global_path}",
+        f"  global yaml:    {cfg.global_path}\n"
+        f"  showing: {'all '+str(len(SCHEMA))+' keys' if show_all else str(n_default)+' default-tier keys'}"
+        f"{hidden_hint}",
         title="PMB config sources",
     ))
     table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("Tier", style="dim", width=4)
     table.add_column("Key", overflow="fold")
     table.add_column("Value", overflow="fold")
     table.add_column("Source", style="dim")
     table.add_column("Default", style="dim", overflow="fold")
     for key, setting in SCHEMA.items():
+        is_def = is_default_tier(key)
+        if not show_all and not is_def:
+            continue
         value = cfg.get(key)
         src = cfg.source_of(key)
         if only_overridden and src == "default":
             continue
+        tier_lbl = "[green]●[/]" if is_def else "[dim]○[/]"
         default_repr = repr(setting.default)
-        table.add_row(key, repr(value), src, default_repr)
+        table.add_row(tier_lbl, key, repr(value), src, default_repr)
     console.print(table)
+    if not show_all:
+        console.print(
+            "\n[dim]● default-tier  ○ pro-tier  ·  `pmb config list --pro` to "
+            "see everything[/]"
+        )
 
 
 @config_app.command("get")
@@ -1740,7 +1794,15 @@ def connect(
                               help="project | global (where the agent supports both)"),
     remote: Optional[str] = typer.Option(
         None, "--remote",
-        help="SSH-tunnel: user@host:/abs/path/to/repo (memory + Ollama on server)",
+        help="Connect to a remote PMB server. Two forms:\n"
+             "  • SSH: user@host:/abs/path/to/repo (stdio over SSH tunnel)\n"
+             "  • HTTP: http://host:8765/mcp (team-shared streamable-http)",
+    ),
+    bearer_token: Optional[str] = typer.Option(
+        None, "--bearer-token", "--token",
+        envvar="PMB_MCP_BEARER_TOKEN",
+        help="Shared secret for the remote HTTP server (if it was started "
+             "with `pmb mcp serve --bearer-token <secret>`).",
     ),
     name: Optional[str] = typer.Option(
         None, "--name", help="MCP entry name (default: pmb or pmb-remote)",
@@ -1769,6 +1831,13 @@ def connect(
         help="Proactive logging: the agent records its own decisions / lessons / "
              "what it did during coding, without waiting for 'remember'. Recall "
              "stays lazy. Default rules are conservative (PMB off until a trigger).",
+    ),
+    rules_only: bool = typer.Option(
+        False, "--rules-only", "--update",
+        help="Only refresh the AGENTS.md / CLAUDE.md rules block — don't touch "
+             "the MCP config file. Use after a PMB update to bring the agent "
+             "instructions in sync with the latest READ-FIRST guidance, without "
+             "duplicating or re-adding the MCP server entry.",
     ),
     probe: bool = typer.Option(False, "--probe", help="Spawn pmb-mcp briefly to verify it starts"),
 ):
@@ -1809,12 +1878,51 @@ def connect(
 
     _toggles = _agent_toggles_from_config()
     effective_active = active or bool((_toggles or {}).get("active_mode"))
+
+    # --rules-only: skip MCP config wiring, just refresh the markdown rules
+    # block. Useful after a PMB upgrade to bring CLAUDE.md / AGENTS.md in
+    # sync with the latest READ-FIRST instructions without re-adding the
+    # MCP server entry.
+    if rules_only:
+        from pmb.cli.connect import (
+            install_agent_rules,
+            instruction_paths_for_agent,
+        )
+        try:
+            paths = instruction_paths_for_agent(agent, Path.cwd())
+        except Exception as e:
+            console.print(f"[red]Unknown agent {agent!r}: {e}[/]")
+            raise typer.Exit(code=2)
+        results = []
+        for inst_path in paths:
+            try:
+                action = install_agent_rules(
+                    inst_path, active=effective_active,
+                    active_toggles=(_toggles if effective_active else None),
+                )
+                results.append((inst_path, action, None))
+            except Exception as e:
+                results.append((inst_path, "error", str(e)))
+            break  # global only
+        for p, act, err in results:
+            if err:
+                console.print(f"[red]Failed: {p}[/] — {err}")
+            else:
+                colour = "green" if act in ("updated", "added") else "yellow"
+                console.print(
+                    f"[{colour}]Rules {act}:[/] {p}\n"
+                    "  → MCP config untouched. Restart your agent to pick up "
+                    "the new instructions."
+                )
+        return
+
     try:
         result = do_connect(
             agent, cwd=Path.cwd(), scope=scope, remote=remote, name_override=name,
             workspace_id=workspace, pmb_home=pmb_home, config_path=config_path,
             active=effective_active,
             active_toggles=(_toggles if effective_active else None),
+            bearer_token=bearer_token,
         )
     except ValueError as e:
         console.print(f"[red]{e}[/]")
@@ -2136,6 +2244,132 @@ def workspace_clone(
         f"[dim]Use it: [bold]PMB_WORKSPACE={name} pmb stats[/] or "
         f"[bold]pmb connect claude-code --workspace {name}[/][/]"
     )
+
+
+index_app = typer.Typer(help="Index external content into PMB memory (PDFs, code projects).")
+app.add_typer(index_app, name="index")
+
+
+@index_app.command("pdf")
+def index_pdf_cmd(
+    path: str = typer.Argument(..., help="Path to a PDF file OR a directory."),
+    recurse: bool = typer.Option(
+        False, "--recurse", "-r",
+        help="If PATH is a directory, find PDFs recursively.",
+    ),
+    importance: float = typer.Option(
+        0.6, "--importance", help="Per-chunk importance (0.0-1.0)",
+        min=0.0, max=1.0,
+    ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Re-ingest even if a PDF with the same content hash is already in memory.",
+    ),
+):
+    """Extract text from a PDF and persist it as searchable PMB events.
+
+    Re-ingesting the same file is a no-op (idempotent via SHA1 of content).
+
+    Examples:
+      pmb index pdf paper.pdf
+      pmb index pdf ~/Documents/research/ --recurse
+      pmb index pdf paper.pdf --force      # force re-index
+    """
+    from pmb.ingest.pdf import ingest_pdf, ingest_pdfs
+    from pmb.core.engine import Engine
+    eng = Engine()
+    p = Path(path)
+    if p.is_dir():
+        result = ingest_pdfs(eng, p, recurse=recurse,
+                             importance=importance, force=force)
+        console.print(Panel.fit(
+            f"[green]Indexed {result['n_files']} PDF{'s' if result['n_files']!=1 else ''}[/]\n"
+            f"  chunks: {result['n_chunks']}\n"
+            f"  skipped (already indexed): {result['n_skipped']}",
+            title="PMB · index pdf"
+        ))
+    else:
+        result = ingest_pdf(eng, p, importance=importance, force=force)
+        if result.get("error"):
+            console.print(f"[red]Error:[/] {result['error']}")
+            raise typer.Exit(1)
+        if result.get("skipped"):
+            console.print(f"[yellow]Skipped[/] {p.name}: {result.get('reason','')}")
+        else:
+            console.print(
+                f"[green]Indexed[/] {p.name}: "
+                f"{result['n_pages']} pages → {result['n_chunks']} chunks "
+                f"({result['duration_ms']} ms, backend {result['backend']})"
+            )
+    # Block briefly so the user sees the count update in pmb stats.
+    try:
+        eng.wait_for_writes(timeout=120)
+    except Exception:
+        pass
+
+
+@index_app.command("project")
+def index_project_cmd(
+    path: str = typer.Argument(
+        ".", help="Path to the project root (default: current directory).",
+    ),
+    importance: float = typer.Option(
+        0.55, "--importance", help="Per-file importance (0.0-1.0)",
+        min=0.0, max=1.0,
+    ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Re-index every file even if its SHA1 hash is already in memory.",
+    ),
+    max_files: int = typer.Option(
+        5000, "--max-files",
+        help="Cap on number of files to walk. Safety against giant repos.",
+    ),
+):
+    """Scan a project directory and persist per-file structure (symbols + imports)
+    as PMB events.
+
+    The agent can then recall things like:
+      • "where is the auth flow"
+      • "what files import LanceDB"
+      • "show me the recall pipeline"
+
+    Re-running on the same project is a no-op for unchanged files
+    (idempotent via per-file SHA1). Respects .gitignore.
+
+    Examples:
+      pmb index project                       # current dir
+      pmb index project ~/code/myrepo
+      pmb index project ~/code/myrepo --force # re-index all files
+    """
+    from pmb.ingest.project import index_project
+    from pmb.core.engine import Engine
+    eng = Engine()
+    result = index_project(eng, Path(path),
+                           importance=importance, force=force,
+                           max_files=max_files)
+    if result.get("error"):
+        console.print(f"[red]Error:[/] {result['error']}")
+        raise typer.Exit(1)
+    by_lang = ", ".join(
+        f"{k}={v}" for k, v in sorted(
+            result.get("by_language", {}).items(), key=lambda x: -x[1]
+        )[:8]
+    )
+    console.print(Panel.fit(
+        f"[green]Indexed project[/] [bold]{result['project_name']}[/]\n"
+        f"  path:       {result['project_path']}\n"
+        f"  files seen: {result['n_files_seen']}\n"
+        f"  indexed:    {result['n_indexed']}\n"
+        f"  unchanged:  {result['n_skipped']}\n"
+        f"  by lang:    {by_lang}\n"
+        f"  duration:   {result['duration_ms']} ms",
+        title="PMB · index project"
+    ))
+    try:
+        eng.wait_for_writes(timeout=120)
+    except Exception:
+        pass
 
 
 @app.command("import")
@@ -2914,6 +3148,676 @@ def workspaces():
     for w in items:
         table.add_row(w.id[:12], w.name, str(w.root), w.source, w.created_at[:10])
     console.print(table)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# prepare-context — the line that hooks call to inject memory at session
+# start. Reads the user message from stdin or a positional arg, prints a
+# compact context block.
+# ═══════════════════════════════════════════════════════════════════════
+
+def _read_stdin_utf8() -> str:
+    """Read stdin as UTF-8, regardless of the platform locale.
+
+    Critical for the hook path: Claude Code pipes the user message as
+    UTF-8, but on Windows `sys.stdin.read()` defaults to the locale
+    codepage (cp1251 on a RU system), which mangles Cyrillic/non-ASCII
+    into mojibake — and then the intent regexes never match. Read the raw
+    bytes and decode UTF-8 explicitly (replace on error so we never crash
+    the hook).
+    """
+    import sys as _sys
+    try:
+        data = _sys.stdin.buffer.read()
+        return data.decode("utf-8", errors="replace")
+    except Exception:
+        # Fallback to the text stream if .buffer isn't available (e.g.
+        # pytest capture replaces stdin with a StringIO).
+        try:
+            return _sys.stdin.read()
+        except Exception:
+            return ""
+
+
+@app.command("prepare-context")
+def prepare_context_cmd(
+    message: Optional[str] = typer.Argument(
+        None,
+        help="The user message to prepare context for. If omitted, read from stdin.",
+    ),
+    stdin_flag: bool = typer.Option(
+        False, "--stdin",
+        help="Read the message from stdin instead of the positional arg.",
+    ),
+    max_chars: int = typer.Option(
+        4000, "--max-chars",
+        help="Hard cap on output size. Hosts truncate long hook output.",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q",
+        help="Suppress empty / no-context output (silent if nothing to inject).",
+    ),
+    legacy: bool = typer.Option(
+        False, "--legacy",
+        help="Force the pre-auto-recall always-on bundle (project + lessons + "
+             "recent + goals on every turn). Useful for A/B vs the new "
+             "intent-classified path.",
+    ),
+):
+    """Print a compact PMB context block for a user message.
+
+    Designed to be wired into session-start hooks (`pmb hooks install`).
+    Output is plain text — the hook host appends it to the prompt as
+    an additional system note before the model thinks.
+
+    The default behaviour goes through `pmb.hooks.auto_recall`:
+
+      - skip silently on trivial input (greetings, acks, <5 chars)
+      - PROJECT_PREP / PROJECT_OVERVIEW on known project names
+      - PAST_QUERY → recall()  (this is the big one — fixes the
+        "agent forgot to call recall" hole)
+      - RECENT_QUERY → what_just_happened()
+      - GOALS_QUERY → list_goals(in_progress)
+      - LESSONS_QUERY → wider find_lessons() window
+      - GENERIC_FACTUAL → low-cost recall, surface only if confident
+      - lessons always run as a side-dish
+
+    Pass `--legacy` to fall back to the older always-on bundle.
+    Pass `auto_recall.enabled=false` in config for the same effect at
+    the workspace level.
+    """
+    import sys as _sys
+    if stdin_flag or message is None:
+        msg = _read_stdin_utf8().strip()
+    else:
+        msg = (message or "").strip()
+    if not msg:
+        if quiet:
+            return
+        _sys.stdout.write("[pmb hook] no user message; nothing to prepare\n")
+        return
+
+    try:
+        from pmb.core.engine import Engine
+        eng = Engine()
+    except Exception as e:
+        if quiet:
+            return
+        _sys.stdout.write(f"[pmb hook] engine init failed: {e}\n")
+        return
+
+    # Respect the config switch and the CLI override.
+    use_auto = not legacy and bool(eng.config.get("auto_recall.enabled"))
+
+    if use_auto:
+        from pmb.hooks import run_auto_context, format_context
+        try:
+            res = run_auto_context(
+                eng, msg,
+                min_chars=int(eng.config.get("auto_recall.min_message_chars") or 5),
+                recall_top_k=int(eng.config.get("auto_recall.recall_top_k") or 5),
+                recall_min_score=float(
+                    eng.config.get("auto_recall.recall_min_score") or 0.30
+                ),
+                surface_decisions=bool(
+                    eng.config.get("auto_recall.surface_decisions")
+                ),
+            )
+        except Exception as e:
+            if quiet:
+                return
+            _sys.stdout.write(f"[pmb hook] auto-recall failed: {e}\n")
+            return
+
+        if res.skipped or res.is_empty():
+            if quiet:
+                return
+            _sys.stdout.write(
+                f"[pmb hook] no context to inject "
+                f"(intents={','.join(res.intents)}, "
+                f"reason={res.skip_reason or 'no-match'}).\n"
+            )
+            return
+
+        # Allow either CLI flag or config to bound output size; smaller wins.
+        cap = min(
+            max_chars,
+            int(eng.config.get("auto_recall.budget_chars") or 4000),
+        )
+        include_trace = bool(eng.config.get("auto_recall.include_trace"))
+        text = format_context(res, max_chars=cap, include_trace=include_trace)
+        if not text:
+            if quiet:
+                return
+            _sys.stdout.write("[pmb hook] auto-recall produced empty output.\n")
+            return
+        _sys.stdout.write(text + "\n")
+        return
+
+    # ── Legacy path: always-on bundle (kept for --legacy A/B testing) ──
+    try:
+        out: dict = {}
+        det = eng.detect_project_in_text(msg)
+        if det:
+            ov = eng.project_overview(det["name"])
+            out["project_context"] = ov
+            try:
+                arcs = eng.active_arcs_for_project(det["name"], limit=2)
+                if arcs:
+                    out["active_arcs"] = arcs
+            except Exception:
+                pass
+        try:
+            ls = eng.find_lessons(query=msg, limit=5)
+            if ls:
+                eng._log_lesson_surfaces(ls, query=msg, source="hook.prepare")
+                out["lessons"] = ls
+        except Exception:
+            pass
+        try:
+            act = eng.recent_activity(minutes=1440.0, limit=8)
+            if act:
+                out["recent_activity"] = act
+        except Exception:
+            pass
+        try:
+            goals = eng.list_goals(status="in_progress", limit=5)
+            if goals:
+                out["open_goals"] = goals
+        except Exception:
+            pass
+    except Exception as e:
+        if quiet:
+            return
+        _sys.stdout.write(f"[pmb hook] prepare failed: {e}\n")
+        return
+
+    if not out:
+        if quiet:
+            return
+        _sys.stdout.write(
+            "[pmb hook] no project / lesson / activity matched. "
+            "Answer normally.\n"
+        )
+        return
+
+    buf: list[str] = []
+    buf.append("== PMB context for this turn ==")
+    buf.append(f"(matched on message: {msg[:80]!r})")
+
+    pc = out.get("project_context")
+    if pc and not pc.get("empty"):
+        ent = pc.get("entity") or {}
+        buf.append(f"\nProject: {ent.get('name')} ({ent.get('n_mentions')} mentions)")
+        kf = pc.get("key_facts", [])[:5]
+        if kf:
+            buf.append("Key facts:")
+            for f in kf:
+                buf.append(f"  - {f.get('content','')[:160]}")
+        ls_in_pc = pc.get("lessons", [])[:5]
+        if ls_in_pc:
+            buf.append("Lessons (RULES to follow):")
+            for L in ls_in_pc:
+                sid = L.get("surface_id")
+                tag = f" [surface_id={sid}]" if sid else ""
+                buf.append(f"  ! {L.get('content','')[:200]}{tag}")
+        dec = pc.get("decisions", [])[:3]
+        if dec:
+            buf.append("Past decisions:")
+            for d in dec:
+                buf.append(f"  > {d.get('content','')[:160]}")
+        og = pc.get("open_goals", [])[:3]
+        if og:
+            buf.append("Open goals:")
+            for g in og:
+                buf.append(f"  * {g.get('content', g.get('title',''))[:120]}")
+
+    ls_flat = out.get("lessons", [])
+    if ls_flat and (not pc or not pc.get("lessons")):
+        buf.append("\nLessons matching this message:")
+        for L in ls_flat[:5]:
+            sid = L.get("surface_id")
+            tag = f" [surface_id={sid}]" if sid else ""
+            buf.append(f"  ! {L.get('content','')[:200]}{tag}")
+
+    ra = out.get("recent_activity", [])
+    if ra:
+        buf.append("\nRecent activity (last 24h):")
+        for a in ra[:5]:
+            buf.append(f"  - {a.get('content','')[:120]}")
+
+    arcs = out.get("active_arcs", [])
+    if arcs:
+        buf.append("\nActive narrative arcs:")
+        for a in arcs[:2]:
+            buf.append(f"  ~ {a.get('title','')[:120]} ({a.get('n_events')} events)")
+
+    buf.append("")
+    buf.append("If a Lesson with [surface_id=N] applies, FOLLOW it and after")
+    buf.append("acting call mark_lesson_followed(surface_id=N, followed=True,")
+    buf.append("note=\"<one line: what you did>\").")
+
+    text = "\n".join(buf)
+    if len(text) > max_chars:
+        text = text[: max_chars - 40] + "\n... [context truncated]"
+    _sys.stdout.write(text + "\n")
+
+
+# ─── pmb auto-context — debug-friendly inspection of the hook output ──
+
+@app.command("auto-context")
+def auto_context_cmd(
+    message: str = typer.Argument(
+        ..., help="The message to classify and dispatch on.",
+    ),
+    show_json: bool = typer.Option(
+        False, "--json",
+        help="Print the structured AutoContextResult as JSON instead of the "
+             "formatted context block.",
+    ),
+    max_chars: int = typer.Option(
+        4000, "--max-chars",
+        help="Cap on the formatted context block (ignored when --json).",
+    ),
+):
+    """Inspect what the auto-recall hook would inject for a given message.
+
+    Useful for debugging "why didn't PMB fire here?" / "why did it fire
+    on this trivial input?". The classifier is regex-only so behaviour is
+    deterministic and reproducible.
+
+    Examples:
+
+      pmb auto-context "fix the recall bug in PMB"
+      pmb auto-context "когда я последний раз правил docker-compose"
+      pmb auto-context "what are my open goals" --json
+    """
+    from pmb.core.engine import Engine
+    from pmb.hooks import run_auto_context, format_context
+
+    eng = Engine()
+    res = run_auto_context(
+        eng, message,
+        min_chars=int(eng.config.get("auto_recall.min_message_chars") or 5),
+        recall_top_k=int(eng.config.get("auto_recall.recall_top_k") or 5),
+        recall_min_score=float(
+            eng.config.get("auto_recall.recall_min_score") or 0.30
+        ),
+        surface_decisions=bool(eng.config.get("auto_recall.surface_decisions")),
+    )
+    if show_json:
+        import json
+        from dataclasses import asdict
+        console.print_json(json.dumps(asdict(res), default=str, ensure_ascii=False))
+        return
+    text = format_context(res, max_chars=max_chars, include_trace=True)
+    if not text:
+        console.print(
+            f"[dim]no context (intents={','.join(res.intents)}, "
+            f"reason={res.skip_reason or 'no-match'}, "
+            f"latency={res.latency_ms}ms)[/]"
+        )
+        return
+    # markup=False: the formatted block contains `[surface_id=N]` and
+    # `[intents=...]` brackets that Rich would otherwise eat as style tags.
+    console.print(text, markup=False, highlight=False)
+
+
+# ─── pmb session-restore — rebuild context after a compaction ─────────
+
+@app.command("session-restore")
+def session_restore_cmd(
+    minutes: Optional[int] = typer.Option(
+        None, "--minutes", "-m",
+        help="Window to summarise (default: config session.brief_minutes). "
+             "Used when no active session is bound (e.g. fresh hook process).",
+    ),
+    max_chars: int = typer.Option(
+        4000, "--max-chars",
+        help="Hard cap on output size.",
+    ),
+    no_project: bool = typer.Option(
+        False, "--no-project",
+        help="Skip the project_overview section (session_brief only).",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q",
+        help="Print nothing when there's no session to restore.",
+    ),
+):
+    """Rebuild 'where you left off' after the agent's context compacts.
+
+    Designed for a SessionStart(compact|resume) hook (`pmb hooks install`):
+    when Claude Code compacts the conversation, this prints what THIS
+    session decided / did / learned + the project overview, so the agent
+    picks the thread back up instead of re-asking the user.
+
+    Run it by hand to preview:  pmb session-restore -m 180
+    """
+    import sys as _sys
+    try:
+        from pmb.core.engine import Engine
+        from pmb.hooks import build_session_restore
+        eng = Engine()
+    except Exception as e:
+        if not quiet:
+            _sys.stdout.write(f"[pmb hook] engine init failed: {e}\n")
+        return
+    try:
+        text = build_session_restore(
+            eng,
+            minutes=float(minutes) if minutes else None,
+            include_project=not no_project,
+            max_chars=max_chars,
+        )
+    except Exception as e:
+        if not quiet:
+            _sys.stdout.write(f"[pmb hook] session-restore failed: {e}\n")
+        return
+    if not text:
+        if not quiet:
+            _sys.stdout.write(
+                "[pmb hook] nothing to restore (no recent session activity).\n"
+            )
+        return
+    _sys.stdout.write(text + "\n")
+
+
+# ─── pmb lesson-followcheck — infer follow-through, no model cooperation ──
+
+@app.command("lesson-followcheck")
+def lesson_followcheck_cmd(
+    window: int = typer.Option(
+        30, "--window", "-w",
+        help="Minutes back to scan for unconfirmed lesson surfaces.",
+    ),
+    min_overlap: int = typer.Option(
+        2, "--min-overlap",
+        help="Distinctive-token overlap required to count a lesson as "
+             "followed. Higher = stricter (fewer false positives).",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Show what would be marked without writing.",
+    ),
+    show_json: bool = typer.Option(
+        False, "--json", help="Emit the FollowCheckResult as JSON.",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q",
+        help="Print nothing (for the Stop hook — it runs silently).",
+    ),
+):
+    """Infer lesson follow-through from recorded activity — no model needed.
+
+    For each lesson that surfaced recently but was never confirmed, check
+    whether its distinctive tokens show up in what the agent actually did
+    this turn (recorded activity). If so, mark it followed with an honest
+    'auto-detected' note. Lessons with no evidence stay unconfirmed — we
+    never fabricate a follow.
+
+    Designed for a Stop hook (`pmb hooks install`) so the adherence
+    dashboard's follow-rate reflects reality instead of sitting at 0%
+    because models don't self-report.
+
+    Preview:  pmb lesson-followcheck --dry-run --json
+    """
+    import sys as _sys
+    try:
+        from pmb.core.engine import Engine
+        from pmb.hooks import run_followcheck
+        eng = Engine()
+    except Exception as e:
+        if not quiet:
+            _sys.stdout.write(f"[pmb hook] engine init failed: {e}\n")
+        return
+    try:
+        res = run_followcheck(
+            eng,
+            window_minutes=float(window),
+            activity_minutes=float(window),
+            min_overlap=min_overlap,
+            apply=not dry_run,
+        )
+    except Exception as e:
+        if not quiet:
+            _sys.stdout.write(f"[pmb hook] followcheck failed: {e}\n")
+        return
+    if show_json:
+        import json
+        console.print_json(json.dumps(res.to_dict(), ensure_ascii=False))
+        return
+    if quiet:
+        return
+    verb = "would mark" if dry_run else "marked"
+    if res.marked_followed:
+        console.print(
+            f"[green]{verb} {res.marked_followed} lesson(s) followed[/] "
+            f"(checked {res.checked})"
+        )
+        for v in res.verdicts:
+            console.print(
+                f"  ✓ surface {v.surface_id} · overlap: "
+                f"{', '.join(v.overlap[:5])}", markup=False, highlight=False,
+            )
+    else:
+        console.print(
+            f"[dim]no follow-through inferred "
+            f"(checked {res.checked}, reason={res.skipped_reason or 'no overlap'})[/]"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# pmb hooks install / list / uninstall — force-feed prepare() into the
+# agent's session-start hook so the READ-FIRST workflow is not optional.
+# ═══════════════════════════════════════════════════════════════════════
+
+hooks_app = typer.Typer(
+    help="Install force-feeding session-start hooks into your agent's "
+         "config so PMB context arrives BEFORE the model thinks.",
+)
+app.add_typer(hooks_app, name="hooks")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# pmb mcp serve — expose the MCP server over HTTP for team-shared mode.
+# One persistent process on a homelab box / Tailscale node serves every
+# developer's agent. Same workspace, same memory, no per-machine state.
+# ═══════════════════════════════════════════════════════════════════════
+
+mcp_app = typer.Typer(
+    help="Run the MCP server. Stdio (per-developer) is the default; "
+         "streamable-http exposes one shared instance to a team.",
+)
+app.add_typer(mcp_app, name="mcp")
+
+
+@mcp_app.command("serve")
+def mcp_serve_cmd(
+    transport: str = typer.Option(
+        "streamable-http", "--transport",
+        help="streamable-http (HTTP for team-shared) or stdio (one-shot).",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1", "--host",
+        help="Bind address. Use 0.0.0.0 to accept connections from the LAN / "
+             "Tailscale mesh.",
+    ),
+    port: int = typer.Option(
+        8765, "--port",
+        help="Bind port (default 8765). Make sure it doesn't collide with "
+             "`pmb dashboard`.",
+    ),
+    path: str = typer.Option(
+        "/mcp", "--path",
+        help="Mount path for the streamable-http transport.",
+    ),
+    workspace: Optional[str] = typer.Option(
+        None, "--workspace", "-w",
+        help="Force a specific workspace id (default: cwd-based detection).",
+    ),
+    bearer_token: Optional[str] = typer.Option(
+        None, "--bearer-token", "--token",
+        envvar="PMB_MCP_BEARER_TOKEN",
+        help="Shared secret required in `Authorization: Bearer <token>`. "
+             "Strongly recommended if `--host` is not 127.0.0.1.",
+    ),
+):
+    """Run the PMB MCP server.
+
+    Examples:
+
+      # Local stdio (what `pmb connect` wires by default — usually no
+      # need to run this manually)
+      pmb mcp serve --transport stdio
+
+      # Team-shared HTTP on Tailscale mesh
+      pmb mcp serve --transport streamable-http --host 0.0.0.0 --port 8765 \\
+                   --workspace team --bearer-token <secret>
+
+      # Then on each developer's machine:
+      pmb connect claude-code --remote http://memo.local:8765/mcp \\
+                              --bearer-token <secret>
+    """
+    import os, sys
+
+    if transport not in ("stdio", "streamable-http", "http", "https"):
+        console.print(f"[red]Unknown transport {transport!r}.[/]")
+        raise typer.Exit(2)
+    if transport in ("http", "https"):
+        transport = "streamable-http"
+
+    # Hand off to the existing server entrypoint via env-vars so we share
+    # one code path with `pmb-mcp` when it's spawned by an agent.
+    if workspace:
+        os.environ["PMB_WORKSPACE"] = workspace
+    os.environ["PMB_MCP_TRANSPORT"] = transport
+    os.environ["PMB_MCP_HOST"] = host
+    os.environ["PMB_MCP_PORT"] = str(port)
+    os.environ["PMB_MCP_PATH"] = path
+    if bearer_token:
+        os.environ["PMB_MCP_BEARER_TOKEN"] = bearer_token
+
+    if transport == "streamable-http":
+        url = f"http://{host}:{port}{path}"
+        auth = (
+            f"[green]bearer-token enabled[/]"
+            if bearer_token
+            else "[yellow]UNAUTHENTICATED — bind to 127.0.0.1 or set --bearer-token[/]"
+        )
+        console.print(Panel.fit(
+            f"PMB MCP server starting\n"
+            f"  transport: streamable-http\n"
+            f"  url:       {url}\n"
+            f"  auth:      {auth}\n"
+            f"  workspace: {os.environ.get('PMB_WORKSPACE', '(cwd-detected)')}\n\n"
+            f"Wire an agent to it:\n"
+            f"  [cyan]pmb connect claude-code --remote {url}"
+            + (f" --bearer-token <secret>" if bearer_token else "") + "[/]\n\n"
+            f"Stop with Ctrl-C.",
+            title="PMB · mcp serve",
+        ))
+    else:
+        console.print("[dim]Running stdio MCP server. Use Ctrl-D / Ctrl-C to stop.[/]")
+
+    from pmb.mcp.server import main as _server_main
+    _server_main()
+
+
+@hooks_app.command("install")
+def hooks_install_cmd(
+    agent: str = typer.Argument(
+        ...,
+        help="claude-code | codex | cursor (cursor: unsupported, prints why).",
+    ),
+):
+    """Install PMB's lifecycle hooks for AGENT.
+
+    For claude-code this wires THREE hooks:
+      • UserPromptSubmit → pmb prepare-context  (auto-recall: inject
+        lessons / decisions / recall / project context per turn)
+      • SessionStart     → pmb session-restore  (rebuild context after a
+        compaction / resume)
+      • Stop             → pmb lesson-followcheck (infer which lessons
+        were actually followed — feeds the adherence dashboard)
+
+    For codex it wires the per-turn context injector only.
+
+    Examples:
+        pmb hooks install claude-code
+        pmb hooks install codex
+    """
+    from pmb.cli.hooks import install_hook
+    try:
+        result = install_hook(agent)
+    except ValueError as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(2)
+
+    act = result.get("action")
+    if act == "not_supported":
+        console.print(
+            f"[yellow]Hooks not supported for {result['agent']}.[/]\n"
+            f"  {result.get('reason','')}"
+        )
+        return
+
+    # claude-code returns a multi-event `actions` list; codex returns a
+    # single `action`/`command`.
+    if result.get("actions"):
+        lines = "\n".join(
+            f"  • {a['event']}: {a['action']}" for a in result["actions"]
+        )
+        console.print(Panel.fit(
+            f"[green]Hooks installed[/] for [bold]{result['agent']}[/]\n"
+            f"  config: {result.get('path','?')}\n{lines}\n\n"
+            "Restart the agent. Now, every turn:\n"
+            "  · context is injected BEFORE the model thinks (auto-recall)\n"
+            "  · after a compaction it rebuilds where you left off\n"
+            "  · at turn end it scores lesson follow-through\n"
+            "— the adherence problem, handled at the protocol level.",
+            title="PMB · hooks installed",
+        ))
+    else:
+        colour = "green" if act in ("installed", "created", "updated") else "yellow"
+        console.print(Panel.fit(
+            f"[{colour}]Hook {act}[/] for [bold]{result['agent']}[/]\n"
+            f"  config:  {result.get('path','?')}\n"
+            f"  command: {result.get('command','?')}\n\n"
+            "Restart the agent. Every new session now reads PMB BEFORE it\n"
+            "starts thinking — adherence problem solved at the protocol level.",
+            title="PMB · hook installed",
+        ))
+
+
+@hooks_app.command("list")
+def hooks_list_cmd():
+    """Show which lifecycle hooks are currently installed."""
+    from pmb.cli.hooks import list_installed
+    rows = list_installed()
+    t = Table(show_header=True, header_style="bold magenta", title="PMB hooks")
+    t.add_column("Agent"); t.add_column("Event"); t.add_column("Installed")
+    t.add_column("Path")
+    for r in rows:
+        mark = "[green]✓[/]" if r["installed"] else "[dim]–[/]"
+        t.add_row(r["agent"], r.get("event", "?"), mark, r["path"])
+    console.print(t)
+
+
+@hooks_app.command("uninstall")
+def hooks_uninstall_cmd(
+    agent: str = typer.Argument(..., help="claude-code | codex"),
+):
+    """Remove PMB's session-start hook for AGENT."""
+    from pmb.cli.hooks import uninstall_hook
+    try:
+        r = uninstall_hook(agent)
+    except ValueError as e:
+        console.print(f"[red]{e}[/]"); raise typer.Exit(2)
+    if r["action"] == "not_installed":
+        console.print(f"[dim]Nothing to remove for {r['agent']}.[/]")
+    else:
+        console.print(f"[green]Removed[/] hook for {r['agent']} ({r.get('path','?')})")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ Endpoints:
   GET  /api/stats            → workspace + memory stats
   GET  /api/events?limit=50  → recent events (paginated)
   GET  /api/entities?limit=30 → top entities by mentions
+  GET  /api/entity_events?entity_id=N → events linked to one entity (for Map node-click)
   GET  /api/arcs             → narrative arcs
   GET  /api/event/<ulid>     → one event detail (+ reflections, facts, edges)
   POST /api/recall           → run recall (body: {"query": "...", "top_k": 10})
@@ -116,6 +117,22 @@ def make_handler(engine):
                     hours = float((qs.get("hours") or ["24"])[0])
                     self._send_json(self._handle_perf(hours))
                     return
+                if route == "/api/entity_events":
+                    try:
+                        eid = int((qs.get("entity_id") or ["0"])[0])
+                    except ValueError:
+                        eid = 0
+                    elim = int((qs.get("limit") or ["20"])[0])
+                    self._send_json(self._handle_entity_events(eid, elim))
+                    return
+                if route == "/api/lessons":
+                    days = float((qs.get("days") or ["7"])[0])
+                    self._send_json(self._handle_lesson_stats(days))
+                    return
+                if route == "/api/adherence":
+                    days = float((qs.get("days") or ["7"])[0])
+                    self._send_json(self._handle_adherence(days))
+                    return
                 self.send_error(404)
             except Exception as e:
                 log.exception("GET %s failed", route)
@@ -171,6 +188,37 @@ def make_handler(engine):
 
         def _handle_events(self, limit: int) -> list[dict]:
             evs = engine.events.list_active(engine.workspace.id, limit=limit)
+            ulids = [e.ulid for e in evs]
+            # Bulk-load top entities per event so the Timeline UI can group
+            # by project without N+1 queries. We pick the 3 highest-mention
+            # entities per event — that's plenty for the lane assignment
+            # heuristic ("project = top entity") plus a tooltip.
+            ent_map: dict[str, list[dict]] = {u: [] for u in ulids}
+            if ulids:
+                import sqlite3
+                placeholders = ",".join("?" * len(ulids))
+                with sqlite3.connect(engine.workspace.db_path) as conn:
+                    conn.row_factory = sqlite3.Row
+                    rows = conn.execute(
+                        f"""
+                        SELECT ee.event_ulid, e.id, e.kind, e.name, e.n_mentions
+                        FROM graph_event_entities ee
+                        JOIN graph_entities e ON e.id = ee.entity_id
+                        WHERE ee.event_ulid IN ({placeholders})
+                          AND e.workspace_id = ?
+                        ORDER BY e.n_mentions DESC
+                        """,
+                        (*ulids, engine.workspace.id),
+                    ).fetchall()
+                for r in rows:
+                    lst = ent_map.setdefault(r["event_ulid"], [])
+                    if len(lst) < 3:
+                        lst.append({
+                            "id": r["id"],
+                            "kind": r["kind"],
+                            "name": r["name"],
+                            "mentions": r["n_mentions"],
+                        })
             return [
                 {
                     "ulid": e.ulid,
@@ -181,9 +229,110 @@ def make_handler(engine):
                     "tier": e.tier,
                     "access_count": e.access_count,
                     "metadata": e.metadata,
+                    "top_entities": ent_map.get(e.ulid, []),
                 }
                 for e in evs
             ]
+
+        def _handle_lesson_stats(self, days: float) -> dict:
+            """Self-improvement loop dashboard data."""
+            try:
+                return engine.lesson_follow_stats(days=days)
+            except Exception as e:
+                log.exception("lesson stats failed")
+                return {"error": str(e)}
+
+        def _handle_adherence(self, days: float) -> dict:
+            """Adherence stats + a day-by-day breakdown for the chart."""
+            try:
+                base = engine.adherence_stats(days=days)
+            except Exception as e:
+                log.exception("adherence stats failed")
+                return {"error": str(e)}
+            # Add a per-day series so the dashboard can draw the chart.
+            try:
+                import sqlite3, time as _t
+                cutoff = _t.time() - days * 86400.0
+                read_tools = (
+                    "recall","prepare","project_overview","find_lessons",
+                    "overview","recent_activity","what_just_happened",
+                    "session_brief","list_goals","recall_smart",
+                    "get_subfacts","list_recent",
+                )
+                write_tools = (
+                    "record_batch","record_fact","record_fact_tree",
+                    "record_keyed_fact","record_goal","record_activity",
+                    "record_milestone","remember","index_pdf","index_project",
+                )
+                with sqlite3.connect(engine.workspace.db_path) as conn:
+                    rows = conn.execute(
+                        "SELECT DATE(timestamp,'unixepoch') AS d, tool_name, COUNT(*) "
+                        "FROM mcp_calls WHERE workspace_id=? AND timestamp >= ? "
+                        "GROUP BY d, tool_name ORDER BY d",
+                        (engine.workspace.id, cutoff),
+                    ).fetchall()
+                by_day: dict[str, dict] = {}
+                for d, tool, n in rows:
+                    rec = by_day.setdefault(d, {"day": d, "read": 0, "write": 0,
+                                               "prepare": 0, "by_tool": {}})
+                    rec["by_tool"][tool] = n
+                    if tool in read_tools: rec["read"] += n
+                    if tool in write_tools: rec["write"] += n
+                    if tool == "prepare": rec["prepare"] += n
+                series = sorted(by_day.values(), key=lambda r: r["day"])
+                base["series"] = series
+            except Exception:
+                base["series"] = []
+            return base
+
+        def _handle_entity_events(self, entity_id: int, limit: int) -> dict:
+            """Return events linked to one entity, plus the entity itself.
+            Used by the Map view's node-click panel."""
+            import sqlite3
+            ws = engine.workspace.id
+            with sqlite3.connect(engine.workspace.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                ent = conn.execute(
+                    "SELECT id, kind, name, n_mentions FROM graph_entities "
+                    "WHERE id = ? AND workspace_id = ?",
+                    (entity_id, ws),
+                ).fetchone()
+                if not ent:
+                    return {"entity": None, "events": []}
+                rows = conn.execute(
+                    """
+                    SELECT ev.ulid, ev.event_type, ev.content, ev.timestamp,
+                           ev.importance, ev.metadata_json
+                    FROM graph_event_entities ee
+                    JOIN events ev ON ev.ulid = ee.event_ulid
+                    WHERE ee.entity_id = ?
+                      AND ev.workspace_id = ?
+                      AND ev.archived_at IS NULL
+                    ORDER BY ev.timestamp DESC
+                    LIMIT ?
+                    """,
+                    (entity_id, ws, limit),
+                ).fetchall()
+                events = []
+                for r in rows:
+                    md = {}
+                    if r["metadata_json"]:
+                        try:
+                            md = json.loads(r["metadata_json"])
+                        except Exception:
+                            md = {}
+                    events.append({
+                        "ulid": r["ulid"],
+                        "event_type": r["event_type"],
+                        "content": (r["content"] or "")[:300],
+                        "timestamp": r["timestamp"],
+                        "importance": r["importance"],
+                        "metadata": md,
+                    })
+            return {
+                "entity": dict(ent),
+                "events": events,
+            }
 
         def _handle_entities(self, limit: int, kind: Optional[str]) -> list[dict]:
             ents = engine.graph.top_entities(
@@ -259,15 +408,25 @@ def make_handler(engine):
 
         def _handle_graph(self, limit: int) -> dict:
             """Return nodes + edges for visualization.
-            Top-N entities by mentions; only edges between included nodes."""
+            Top-N entities by mentions; only edges between included nodes.
+
+            Honors `graph.viz_min_mentions` so one-off concepts (mentions=1) can
+            be hidden from the dashboard without touching the DB — useful when
+            the regex extractor produces a long tail of word-noise.
+            """
             import sqlite3
             ws = engine.workspace.id
+            try:
+                min_mentions = int(engine.config.get("graph.viz_min_mentions") or 1)
+            except Exception:
+                min_mentions = 1
             with sqlite3.connect(engine.workspace.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 ent_rows = conn.execute(
                     "SELECT id, kind, name, n_mentions FROM graph_entities "
-                    "WHERE workspace_id = ? ORDER BY n_mentions DESC LIMIT ?",
-                    (ws, limit),
+                    "WHERE workspace_id = ? AND n_mentions >= ? "
+                    "ORDER BY n_mentions DESC LIMIT ?",
+                    (ws, min_mentions, limit),
                 ).fetchall()
                 included = {r["id"] for r in ent_rows}
                 if not included:

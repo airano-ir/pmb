@@ -17,9 +17,15 @@ from pmb.cli.connect import (  # noqa: E402
 )
 
 
+# Stable marker for the base (always-present) rules block. The body was
+# reworded to the "adherence is visible" framing; this header is the
+# durable anchor that every base block carries.
+_BASE_MARKER = "persistent memory (via MCP)"
+
+
 def test_default_rules_are_conservative():
     block = _build_agent_rules_block(active=False)
-    assert "PMB is OFF by default" in block
+    assert _BASE_MARKER in block
     assert "ACTIVE MODE" not in block
 
 
@@ -29,7 +35,7 @@ def test_active_rules_add_proactive_logging():
     assert '"kind":"decision"' in block      # proactive write examples present
     assert '"type":"lesson"' in block
     assert "Recall stays lazy" in block       # recall side unchanged
-    assert "PMB is OFF by default" in block   # appended, not replaced
+    assert _BASE_MARKER in block              # appended, not replaced
 
 
 def test_install_active_writes_addendum(tmp_path):
@@ -45,7 +51,7 @@ def test_install_default_no_addendum(tmp_path):
     install_agent_rules(p, active=False)
     body = p.read_text(encoding="utf-8")
     assert "ACTIVE MODE" not in body
-    assert "PMB is OFF by default" in body
+    assert _BASE_MARKER in body
 
 
 def test_toggle_active_off_removes_addendum(tmp_path):
@@ -57,7 +63,7 @@ def test_toggle_active_off_removes_addendum(tmp_path):
     install_agent_rules(p, active=False)
     body = p.read_text(encoding="utf-8")
     assert "ACTIVE MODE" not in body
-    assert "PMB is OFF by default" in body
+    assert _BASE_MARKER in body
 
 
 # ----------------------------------------------------------------------

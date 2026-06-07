@@ -241,6 +241,30 @@ _DDL = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_pc_workspace ON predictive_cache(workspace_id, created_at DESC)",
+    # ------------------------------------------------------------------
+    # v6: lesson surface tracking.
+    # Every time a lesson is surfaced to the agent (via recall, overview,
+    # find_lessons, project_overview) we log one row. The agent can later
+    # call mark_lesson_followed(surface_id, True/False) to confirm whether
+    # the lesson actually changed its behaviour. Powers the self-improvement
+    # loop ("of 12 lessons surfaced last week, 7 were followed").
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS lesson_surfaces (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id TEXT NOT NULL,
+        lesson_ulid TEXT NOT NULL,
+        query TEXT NOT NULL,
+        source TEXT NOT NULL,
+        surfaced_at REAL NOT NULL,
+        session_id TEXT,
+        followed INTEGER DEFAULT NULL,
+        follow_note TEXT,
+        followed_at REAL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_ls_lesson ON lesson_surfaces(lesson_ulid)",
+    "CREATE INDEX IF NOT EXISTS idx_ls_ws_time ON lesson_surfaces(workspace_id, surfaced_at DESC)",
 ]
 
 
@@ -277,10 +301,10 @@ class EventStore:
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
+        from pmb.core.sqlite_helper import apply_pragmas
         conn = sqlite3.connect(self.db_path, isolation_level=None)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        apply_pragmas(conn)
         try:
             yield conn
         finally:
