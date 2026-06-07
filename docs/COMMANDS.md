@@ -155,6 +155,43 @@ pmb config set agent.log_goals false       # don't log goals
 pmb connect codex --active                 # regenerate rules
 ```
 
+### Pro: choose the entity-graph extractor
+
+The dashboard's memory graph and `recall`'s graph-boost step both lean on the
+**entity extractor** — the thing that turns event text into nodes
+(`file` / `tech` / `person` / `concept`). PMB ships three backends; swap one
+at runtime, no code changes:
+
+| Backend | What it does | Cost | Deps |
+|---|---|---|---|
+| `regex` (default) 🟢 | Fast file/tech regex + improved stop-list + multi-word phrase detection ("Claude Code" → one node). Fully offline. | ~0 ms | none |
+| `spacy` 🟢 | Adds POS-filter (noun/proper-noun only) and real NER (PERSON / ORG / GPE / PRODUCT). Cleanest no-LLM option. | ~3–10 ms | `pip install spacy` + `python -m spacy download en_core_web_sm` |
+| `llm:claude` 🧠 | One Claude Code CLI call per event — returns clean named-entity JSON. Same idea as graphify / Penpax. Falls back to regex on timeout / error. | ~1–3 s/event | `claude` CLI on PATH |
+| `llm:ollama` 🧠 | Same, but via a local Ollama model (default `qwen2.5:3b`). Fully offline if you have a model pulled. | ~1–4 s/event | `ollama` CLI + a model |
+| `llm:codex` 🧠 | OpenAI Codex CLI. | ~1–3 s/event | `codex` CLI on PATH |
+
+```bash
+# default — leave it at regex unless the noise bugs you
+pmb config set graph.extractor regex
+
+# nicer no-LLM extraction
+pip install spacy && python -m spacy download en_core_web_sm
+pmb config set graph.extractor spacy
+
+# cleanest knowledge graph (LLM at write time)
+pmb config set graph.extractor llm:claude       # uses your Claude Code login
+pmb config set graph.llm_max_concepts 5
+pmb config set graph.llm_timeout_s 30
+
+# hide one-off noise in the dashboard graph (DB stays intact)
+pmb config set graph.viz_min_mentions 2
+```
+
+LLM backends never block the write path: if the CLI times out or returns
+malformed output, the record falls back to the regex extractor for that one
+event. Recall still works exactly the same — the choice only changes WHICH
+entities end up as graph nodes, not the recall pipeline.
+
 ---
 
 ## Ollama (optional fully-local LLM)

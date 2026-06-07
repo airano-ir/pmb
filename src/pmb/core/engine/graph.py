@@ -15,7 +15,14 @@ class GraphMixin:
     def _index_event_in_graph(self, ev: Event, full_text: str) -> list[int]:
         """Extract entities + upsert nodes + co-occurrence edges. Returns entity_ids."""
         files_hint = ev.metadata.get("files_changed") or []
-        ext = self.entity_extractor.extract(full_text, files_hint=files_hint)
+        # Use the batch-pre-extracted result if record_batch pre-cached it
+        # (one LLM call for N events instead of N calls). Falls through to
+        # per-event extract() for solo writes and for batches that bypassed
+        # pre-extraction (regex backend, or LLM batch failure).
+        cache = getattr(self, '_extract_cache', None)
+        ext = (cache or {}).get(full_text) if cache else None
+        if ext is None:
+            ext = self.entity_extractor.extract(full_text, files_hint=files_hint)
         named = ext.all_named()
 
         # Improvement H: person extraction (no-ML, regex + dict + speaker)

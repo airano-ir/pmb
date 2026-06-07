@@ -36,90 +36,106 @@ PMB_AGENT_RULES_START = "<!-- PMB-RULES-START (managed by `pmb connect`) -->"
 PMB_AGENT_RULES_END   = "<!-- PMB-RULES-END -->"
 
 PMB_AGENT_RULES_BODY = """\
-## PMB - memory tools (via MCP)
+## PMB — persistent memory (via MCP)
 
-**PMB is OFF by default.** Ignore PMB and answer normally for general
-questions. Engage PMB ONLY on the explicit triggers below.
+This project has a PMB workspace attached. The user reviews your
+adherence to these rules in the PMB dashboard's "Adherence" tab; your
+prepare-rate, lesson-followthrough, and read/write ratio are visible
+to them. Skipping the rules below means writing into a void the user
+can see is unused.
 
-### When to CALL pmb.recall(query)
+### REQUIRED — call BEFORE the first substantive action of any task
 
-Only if user asks about themselves / their past / their project:
-- "когда я / что я / кто такой / почему мы выбрали / какой у меня"
-- "what did I / when did I / who is <name> / why did we choose"
+```
+prepare(message="<the user's first or current message>")
+```
 
-For general/technical questions ("что такое Next.js", "как работает X",
-"explain Y", coding help, debugging) - DO NOT call recall. Answer directly.
+That single call returns project_context, surfaced lessons (with
+`surface_id`), recent_activity, open_goals. ~10 ms. If the response
+has a `lessons` array, READ THEM before acting — they OVERRIDE your
+defaults ("use pnpm not npm" means use pnpm, no debate).
 
-### When to CALL pmb.recent_activity / what_just_happened
+After acting on a surfaced lesson:
 
-- "что я недавно спрашивал / что мы обсуждали" → `recent_activity(minutes=10080, kind="research")`
-- "что мы только что делали / что я писал час назад" → `recent_activity(minutes=60)` or `what_just_happened(5)`
-- "какие у меня открытые цели / что я планировал" → `list_goals(status="in_progress")`
+```
+mark_lesson_followed(surface_id=<from prepare>, followed=True|False,
+                     note="<one line: what you did>")
+```
 
-### When to CALL pmb.record_batch(items=[…])
+Do this even when followed=False (be honest — the dashboard shows
+both). Lessons never marked are counted as ignored.
 
-Only if the user EXPLICITLY does one of these:
+### OK to skip prepare() ONLY when
 
-1. Says "запомни / remember / это важно / сохрани":
-   ```
-   record_batch(items=[{"type":"fact_tree", "main":"...", "subfacts":[...],
-                        "importance":0.95, "pin":true}])
-   ```
+- User asks a pure theory question ("what is X / how does Y work")
+  with no project context. Answer from training.
+- Continuation of a task already prepared earlier this session.
+- One-line trivial change (rename a variable, fix a typo).
 
-2. Shares a personal fact ("я работаю над X", "у меня кошка Y", "вчера ...",
-   "решил выбрать Z", "встречаюсь с ..."):
-   ```
-   record_batch(items=[{"type":"fact","content":"User works on X"},
-                       {"type":"goal","title":"...","status":"in_progress"}])
-   ```
+If you're unsure — call prepare(). It's 10 ms.
 
-3. You (the agent) make a meaningful design/code decision on user's behalf:
-   ```
-   record_batch(items=[{"type":"activity","kind":"decision",
-                        "content":"Chose X over Y for project Z because..."}])
-   ```
+### BEFORE a kind of action you haven't done before this session
 
-4. The user CORRECTS you, or you discover a reusable gotcha/technique that
-   should change how you work in THIS project going forward - record a LESSON:
-   ```
-   record_batch(items=[{"type":"lesson",
-                        "content":"This repo uses pnpm, never npm"}])
-   ```
-   Lessons are procedural ("how to work here"), not facts. Record them when
-   the user says "no, do it this way", "we always/never ...", "stop doing X",
-   or when a fix reveals a non-obvious project rule. They are stored at high
-   importance and surface automatically on future recalls.
+Before introducing a tool / library / pattern / config / command you
+have NOT already used in this session, CHECK memory first:
 
-For general questions answered from your own knowledge - DO NOT save anything.
-PMB is not a logbook of every interaction.
+```
+find_lessons(query="<what you're about to do>")     # rules / gotchas
+recall(query="<what you're about to do>")           # past decisions / why
+```
 
-### When to RECALL lessons (apply them, don't repeat mistakes)
+Then:
+- A lesson or past decision covers it → FOLLOW it. Don't re-litigate a
+  settled call without a concrete new reason.
+- Nothing comes back → proceed with your best judgement, AND record the
+  choice so the next session doesn't start from zero:
+  `record_batch(items=[{"type":"activity","kind":"decision",
+   "content":"Chose X for <task> because <reason>; no prior memory on it"}])`
 
-At the START of a non-trivial coding task in a known project, call
-`recall("<task topic> conventions lessons")` once. If a lesson comes back
-(e.g. "use pnpm, never npm"), FOLLOW it - that's the point of lessons. This is
-the one case where recall is worth it for a coding task, not just a personal
-question.
+This is the loop that makes the agent get better at THIS project over
+time: act → record why → next time it surfaces as a decision/lesson.
 
-### Rules when you DO call PMB
+### Context that arrives automatically (PMB hooks)
 
-- Exactly ONE `record_batch` per turn (collect all items in one call).
-- NEVER call `recall` after writing to "verify".
-- NEVER call `pin()` separately - use the `pin: true` field on items.
-- Use ABSOLUTE dates ("On May 25, 2026") not "today".
+If PMB hooks are installed you'll sometimes see, prepended to a message,
+blocks titled `== PMB auto-context ==` or `== PMB session restore ==`.
+That's PMB pre-loading memory for you — treat its lessons/decisions as
+if you'd fetched them yourself. After a compaction, the session-restore
+block tells you what THIS session already did: pick the thread back up,
+don't re-ask the user.
 
-### Style - never expose the plumbing
+### WRITE — one `record_batch` per turn, only on these triggers
 
-- Never say "в памяти / I found in memory / согласно записям / я записал"
-- After recall, use results as your own knowledge, weave them naturally
-- Don't narrate what tools you called
+| Trigger | What to write |
+| --- | --- |
+| "запомни / remember / это важно" | fact, importance=0.95, pin=true |
+| User shares a personal fact | fact, importance=0.7 |
+| You completed substantive work | activity, kind=completed |
+| You made a project-shaping choice | activity, kind=decision |
+| User corrected you OR a non-obvious rule emerged | lesson (high-importance) |
+| User states a personal attribute that CAN CHANGE | record_keyed_fact(subject, attribute, value) |
 
-### NOT a constraint on your response
+Never call `recall` after writing to "verify". Never call `pin`
+separately. Use absolute dates ("On May 25, 2026"), not "today".
 
-The save-content rules apply to MEMORY only. Your answer to the user can
-be as long, detailed, code-rich as the question deserves.
+### Anti-patterns the user watches for
 
-PMB is local-only.
+- ❌ Writing 3 lessons in one session without calling prepare once.
+  → looks like LARP, not memory use.
+- ❌ Long boilerplate "I'll save this..." narration.
+  → the user does not read it; tools already returned.
+- ❌ Marking lessons followed=True without a `note`.
+  → looks like compliance theatre.
+- ❌ Calling recall(...) with a 1-2 word query.
+  → use prepare(message=full_user_text) instead.
+
+### Style
+
+Use read results as your own knowledge — weave naturally. Never say
+"в памяти / I found in memory / согласно записям / я записал". Don't
+narrate which tools you called.
+
+PMB is local-only. Apache 2.0. The user owns every byte.
 """
 
 
@@ -387,12 +403,39 @@ def make_local_entry(
     }
 
 
-def make_remote_entry(remote: str) -> dict:
-    """SSH-tunneled entry. `remote` = user@host:/abs/path/to/repo."""
+def make_remote_entry(remote: str, bearer_token: Optional[str] = None) -> dict:
+    """Build an MCP entry for a remote PMB server.
+
+    Two forms are supported:
+
+      • SSH tunnel:    `user@host:/abs/path/to/repo` — wraps `pmb-mcp` via ssh
+                       (stdio over an SSH tunnel; uses the remote box's PMB).
+      • HTTP URL:      `http://host:8765/mcp` or `https://...` — connects to
+                       a `pmb mcp serve --transport streamable-http` process.
+
+    For HTTP, pass `bearer_token` if the server was started with
+    `--bearer-token` — the resulting entry will include the
+    `Authorization: Bearer <token>` header.
+    """
+    if remote.startswith(("http://", "https://")):
+        entry: dict = {
+            "type": "http",
+            "url": remote,
+        }
+        if bearer_token:
+            entry["headers"] = {
+                "Authorization": f"Bearer {bearer_token}",
+            }
+        return entry
+
     if ":" not in remote:
-        raise ValueError(f"--remote must look like user@host:/abs/path/to/repo, got {remote!r}")
+        raise ValueError(
+            f"--remote must be one of:\n"
+            f"  • user@host:/abs/path/to/repo   (SSH tunnel)\n"
+            f"  • http://host:port/mcp           (streamable HTTP)\n"
+            f"got {remote!r}"
+        )
     target, remote_cwd = remote.split(":", 1)
-    # Build the remote command line: set PMB_CWD inline and exec pmb-mcp
     remote_cmd = f'PMB_CWD="{remote_cwd}" pmb-mcp'
     return {
         "command": "ssh",
@@ -689,13 +732,14 @@ def connect_extended_agent(
     config_path: Optional[str] = None,
     active: bool = False,
     active_toggles: Optional[dict] = None,
+    bearer_token: Optional[str] = None,
 ) -> dict:
     """Wire one of the JSON_AGENT_SPECS agents. Returns the same dict shape
     as `connect()` so the CLI layer renders both paths identically."""
     spec = JSON_AGENT_SPECS[agent]
 
     if remote:
-        base = make_remote_entry(remote)
+        base = make_remote_entry(remote, bearer_token=bearer_token)
         name = name_override or "pmb-remote"
     else:
         base = make_local_entry(cwd, workspace_id=workspace_id, pmb_home=pmb_home)
@@ -810,12 +854,17 @@ def connect(
     config_path: Optional[str] = None,
     active: bool = False,
     active_toggles: Optional[dict] = None,
+    bearer_token: Optional[str] = None,
 ) -> dict:
     """Write the MCP entry into the right config file.
 
     workspace_id and pmb_home are forwarded to the MCP server via env vars
     (PMB_WORKSPACE, PMB_HOME). When set, the server uses that exact workspace
     regardless of cwd - letting multiple AI clients share one memory.
+
+    `remote` accepts either an SSH form (`user@host:/abs/path`) or an
+    HTTP URL (`http://host:8765/mcp`). For HTTP, pass `bearer_token` if
+    the server was started with --bearer-token.
     """
     # Extended agents (windsurf / gemini / vscode / zed / opencode / continue)
     # have their own config formats - handle them and return early. The
@@ -825,7 +874,7 @@ def connect(
             agent, cwd=cwd, scope=scope, remote=remote,
             name_override=name_override, workspace_id=workspace_id,
             pmb_home=pmb_home, config_path=config_path, active=active,
-            active_toggles=active_toggles,
+            active_toggles=active_toggles, bearer_token=bearer_token,
         )
 
     if agent == "claude-code":
@@ -843,7 +892,7 @@ def connect(
     path = next((p for p in target.config_paths if p.exists()), target.fallback_path)
 
     if remote:
-        entry = make_remote_entry(remote)
+        entry = make_remote_entry(remote, bearer_token=bearer_token)
         name = name_override or "pmb-remote"
     else:
         entry = make_local_entry(

@@ -37,51 +37,64 @@ from pmb.core.workspace import detect_workspace
 
 
 PMB_SYSTEM_INSTRUCTIONS = """\
-PMB is OFF by default. Ignore PMB and answer normally for general questions
-(general knowledge, coding help, debugging, "что такое X"). Engage only
-on explicit triggers below.
+PMB is OFF for general questions (theory, syntax, "what is X"). Don't call
+it on coding/debugging questions answerable from training.
 
-CALL recall(q) ONLY if user asks about themselves/past/project:
-  "когда я / что я / кто такой / почему мы выбрали / какой у меня"
+But when you DO engage — READ BEFORE YOU WRITE. The core failure mode:
+agents record lessons, decisions, facts — then on the next task ignore all
+of it and start from scratch. PMB exists to break that pattern. If you
+write a lesson and never read it, the lesson is wasted.
 
-CALL recent_activity / what_just_happened / list_goals for:
-  "что я недавно спрашивал" → recent_activity(min=10080, kind="research")
-  "что мы только что"        → what_just_happened(5)
-  "какие у меня цели"        → list_goals(status="in_progress")
+══════════ READ FIRST — call BEFORE acting ══════════
 
-CALL record_batch(items=[…]) ONLY if user explicitly:
-  1. Says "запомни / remember / это важно"
-     → items with importance:0.95, pin:true
-  2. Shares a personal fact ("я работаю над X", "вчера сделал Y")
-     → items with importance:0.7
-  3. You (agent) made a meaningful decision/edit/fix on user's behalf
-     → {"type":"activity","kind":"decision"/"edit"/"completed", ...}
-  4. User corrects you, or you find a reusable project gotcha/rule
-     → {"type":"lesson","content":"This repo uses pnpm, never npm"}
-       Lessons are procedural ("how to work here"), high-importance, and
-       surface automatically on later recalls. Record on "no, do it this
-       way", "we always/never …", "stop doing X".
+▶ project_overview(name) — at the START of any work on a known project.
+  User says "работаю над LoadGuard / fix bug in LeanBoard / напиши код для
+  PMB". ONE call returns: lessons (RULES to follow), decisions, open
+  goals, recent activity, related entities. Replaces 5+ recall() calls.
+  7ms, graph-backed. Try this BEFORE guessing the project structure.
 
-RECALL lessons before a non-trivial coding task in a known project:
-  recall("<task> conventions lessons") once; if a lesson returns, FOLLOW it.
+▶ recall(query) — for any question about user/past/project. The response
+  now includes a `lessons` field — READ THE LESSONS FIRST and follow
+  them. Then use `results` as background.
 
-For general questions answered from your training — DO NOT call PMB.
-PMB is not a log of every interaction.
+▶ session_brief — after long sessions when your own context compacted.
+  Re-orient on what THIS session decided/built. Don't re-ask the user.
 
-WHEN you do call record_batch:
-  - Exactly ONE per turn (all items in one call)
-  - Use pin:true field, NEVER separate pin()
-  - NEVER recall after writing to verify
+▶ recent_activity / what_just_happened / list_goals — for the obvious
+  triggers ("что я недавно", "что мы только что", "какие у меня цели").
 
-Item types: fact / fact_tree / goal / activity / milestone / lesson.
+If a lesson surfaces in any of the above — it overrides your default
+behaviour. "We use pnpm, never npm" → use pnpm. No discussion.
 
-STYLE:
-- Never say "в памяти / found in memory / согласно записям / я записал".
-- Use recall results as your own knowledge, weave naturally.
-- Don't narrate tool calls.
-- ABSOLUTE dates ("On May 25, 2026"), not "today".
-- The save-content rules apply to MEMORY only. Your answer length is
-  NOT restricted — answer fully with whatever depth the question deserves.
+══════════ WRITE — only on triggers ══════════
+
+▶ record_batch(items=[…]) — exactly ONE call per turn, all items together.
+
+  Types: fact | fact_tree | goal | activity | milestone | lesson.
+
+  Triggers:
+    1. "запомни / remember / это важно" → importance=0.95, pin=true
+    2. User shares a fact ("я работаю над X", "вчера ел пиццу")
+       → importance=0.7
+    3. You completed substantive work / made a decision
+       → {"type":"activity","kind":"completed"/"decision", ...}
+    4. User corrects you, OR you discover a reusable project rule
+       → {"type":"lesson","content":"This repo uses pnpm, never npm"}
+       Lessons are PROCEDURAL ("how to work here"), high-importance.
+       They will surface in every future recall — record them so the
+       NEXT session of yourself reads them and gets smarter.
+
+══════════ RULES ══════════
+
+- ONE record_batch per turn (never multiple)
+- Use pin:true field, NEVER call pin() separately
+- NEVER recall after writing to verify
+- ABSOLUTE dates ("On May 25, 2026"), not "today"
+- Don't narrate tool calls — no "I'll save that / found in memory /
+  according to records / в памяти / я записал"
+- Read-tool results are your knowledge, weave naturally into the answer
+- Save-content rules apply to MEMORY only. Answer length is not
+  restricted — answer with whatever depth the question deserves.
 
 PMB is local-only.
 """
@@ -311,11 +324,18 @@ _MINIMAL_TOOLS = {
     "recent_activity", "list_goals", "update_goal", "workspace_info",
     "record_fact",          # one-off (when batch overkill)
     "record_fact_tree",     # one-off (event + subfacts)
+    "record_keyed_fact",    # ⭐ upsert personal attributes (city, employer, ...)
     "session_brief",        # re-orient after context compaction (long sessions)
+    "prepare",              # ⭐ one-call READ-FIRST bundle at task start
 }
 _DEFAULT_TOOLS = _MINIMAL_TOOLS | {
     "recall_smart",         # important queries with escalation
     "overview",             # structured "what do I know about <topic>"
+    "project_overview",     # graph-driven full context for a known project
+    "find_lessons",         # standalone "what procedural rules apply to X"
+    "mark_lesson_followed", # agent self-reports lesson follow-through
+    "index_pdf",            # 📄 ingest PDF into memory
+    "index_project",        # 📂 ingest code-project structure
     "record_goal",          # one-off goal
     "record_activity",      # one-off activity
     "record_milestone",     # one-off milestone
@@ -476,9 +496,44 @@ def build_server(
         Returns structured pack with results, each containing event_type,
         content, metadata, score and ranking signals (bm25, vector, importance,
         recency).
+
+        ALSO returns a top-level `lessons` field with up to 3 procedural
+        lessons relevant to the query. Lessons are project-specific rules like
+        "this repo uses pnpm, never npm" — READ THEM FIRST and FOLLOW them
+        before acting on the regular results.
         """
         pack = engine.recall(query=query, top_k=top_k)
-        return pack.to_dict()
+        out = pack.to_dict()
+        # Auto-surface relevant lessons. The agent often ignores lessons
+        # even though they're the most actionable memory. By piggy-backing
+        # on every recall(), lessons become impossible to miss. Each
+        # surfaced lesson gets a `surface_id` — agent can later call
+        # mark_lesson_followed(surface_id) to confirm follow-through.
+        try:
+            lessons = engine.find_lessons(query=query, limit=3)
+            if lessons:
+                engine._log_lesson_surfaces(lessons, query=query, source="recall")
+                out["lessons"] = lessons
+        except Exception:
+            pass
+        # Auto-attach project_overview when the query mentions a known
+        # project. ONE call gives the agent the full project context
+        # without it having to think "should I call project_overview".
+        try:
+            det = engine.detect_project_in_text(query)
+            if det:
+                ov = engine.project_overview(det["name"])
+                # Also surface-log any lessons inside the overview so
+                # follow-tracking works for them too.
+                ov_lessons = ov.get("lessons") or []
+                if ov_lessons:
+                    engine._log_lesson_surfaces(
+                        ov_lessons, query=query, source="recall.project_context",
+                    )
+                out["project_context"] = ov
+        except Exception:
+            pass
+        return out
 
     @mcp.tool()
     def overview(topic: str, max_events: int = 20) -> dict:
@@ -491,6 +546,293 @@ def build_server(
         at the start of a task to get up to speed on prior context.
         """
         return engine.topic_overview(topic, max_events=max_events)
+
+    @mcp.tool()
+    def project_overview(name: str) -> dict:
+        """⭐ Use at the START of any project work — returns the FULL project
+        context in ONE call, sourced from the entity graph (not recall):
+
+          • All key facts about the project (top by importance)
+          • LESSONS — procedural rules you MUST follow ("use pnpm not npm")
+          • DECISIONS — past architectural / design choices
+          • OPEN GOALS still in flight
+          • Recent completed work + activity timeline
+          • Related entities (tech stack, people, files mentioned with it)
+
+        Faster + more complete than overview() because it walks the
+        entity-graph directly. Best for known projects with a strong
+        entity (e.g. project_overview("LoadGuard"), project_overview("LeanBoard")).
+
+        Args:
+            name: case-insensitive substring match against entity names.
+                  Picks the highest-mention entity that matches.
+
+        Returns:
+            {entity, span, key_facts, lessons, decisions, open_goals,
+             recent_completed, related_entities, n_total, empty}
+        """
+        ov = engine.project_overview(name)
+        # Surface-log so follow-tracking works whenever the agent calls
+        # this tool directly.
+        try:
+            lessons = ov.get("lessons") or []
+            if lessons:
+                engine._log_lesson_surfaces(
+                    lessons, query=name, source="project_overview",
+                )
+        except Exception:
+            pass
+        return ov
+
+    @mcp.tool()
+    def prepare(message: str) -> dict:
+        """⭐⭐⭐ Call this ONCE at the START of any substantive user task.
+
+        Auto-detects what the task is about and pre-loads everything you'd
+        need to act on it — in ONE call. Replaces 4-5 separate
+        recall/overview/list_goals/recent_activity calls.
+
+        Returns whatever's relevant for the message:
+          • project_context — full project_overview if a known project is
+            mentioned (LoadGuard / LeanBoard / PMB / …). Includes lessons
+            (RULES to follow), decisions, open goals, recent activity,
+            related entities. Surface-logged.
+          • active_arcs — narrative arcs the project is currently living in
+            (e.g. "Postgres adoption", "Auth refactor") with their member
+            event ulids. Lets you understand the bigger story before acting.
+          • lessons — top procedural rules matching the message, surface-
+            logged so the self-improvement loop can track follow-through.
+          • recent_activity — last 24h of decisions/edits/completions for
+            session continuity.
+          • open_goals — in-flight goals so you know what user is pursuing.
+
+        WHEN to call:
+          • User starts a task with a project name ("работаю над LoadGuard")
+          • User says "fix bug in X / add feature to Y / refactor Z"
+          • Any non-trivial coding/design task that touches stored memory
+          • You feel uncertain about project conventions
+
+        WHEN to SKIP:
+          • Pure-knowledge questions ("what is X", "how does Y work")
+          • Trivial one-liners (rename a var, change a const)
+          • Continuation of a task already prepared in this session
+
+        Fast path: ~10-20ms total (SQL only, no LLM, no embedding).
+        """
+        out: dict = {"message_excerpt": (message or "")[:120]}
+        # 1. Project detection — gives the full project_overview + active
+        #    narrative arcs (the "bigger story" the project is currently
+        #    living in).
+        try:
+            det = engine.detect_project_in_text(message)
+            if det:
+                ov = engine.project_overview(det["name"])
+                lessons_in_ov = ov.get("lessons") or []
+                if lessons_in_ov:
+                    engine._log_lesson_surfaces(
+                        lessons_in_ov, query=message,
+                        source="prepare.project_context",
+                    )
+                out["project_context"] = ov
+                # Active narrative arcs that include events from this project.
+                try:
+                    arcs = engine.active_arcs_for_project(det["name"], limit=2)
+                    if arcs:
+                        out["active_arcs"] = arcs
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # 2. Lessons matching the message — even without a clear project.
+        try:
+            ls = engine.find_lessons(query=message, limit=5)
+            if ls:
+                engine._log_lesson_surfaces(
+                    ls, query=message, source="prepare.lessons",
+                )
+                out["lessons"] = ls
+        except Exception:
+            pass
+        # 3. Recent activity for session continuity.
+        try:
+            act = engine.recent_activity(minutes=1440.0, limit=8)
+            if act:
+                out["recent_activity"] = act
+        except Exception:
+            pass
+        # 4. Open goals.
+        try:
+            goals = engine.list_goals(status="in_progress", limit=5)
+            if goals:
+                out["open_goals"] = goals
+        except Exception:
+            pass
+        # If literally nothing matched, signal it explicitly so the agent
+        # doesn't sit there waiting for hidden context.
+        if len(out) == 1:
+            out["empty"] = True
+            out["hint"] = (
+                "No project / lesson / activity matched. Proceed with "
+                "normal recall(query) only if user asks about past."
+            )
+        return out
+
+    @mcp.tool()
+    def record_keyed_fact(
+        subject: str,
+        attribute: str,
+        value: str,
+        importance: float = 0.85,
+    ) -> dict:
+        """⭐ Use for SINGULAR personal attributes that CHANGE over time.
+
+        When the user states a fact about themselves (or a person/thing)
+        where there's exactly ONE current value, and that value can
+        change later — use this instead of record_fact.
+
+        Examples that fit:
+          • "I live in Warsaw" / "переехал в Варшаву"
+            → record_keyed_fact("user", "city", "Warsaw")
+          • "I work at Anthropic" / "теперь работаю в Anthropic"
+            → record_keyed_fact("user", "employer", "Anthropic")
+          • "my dog is now Pixel" (renamed)
+            → record_keyed_fact("user_dog", "name", "Pixel")
+          • "my phone number is +380..."
+            → record_keyed_fact("user", "phone", "+380...")
+
+        What happens automatically:
+          1. Any prior fact with the same (subject, attribute) is
+             ARCHIVED (not deleted) with `superseded_by` pointer and
+             `valid_to` timestamp.
+          2. Future recall returns ONLY the current value — old ones
+             disappear from results.
+          3. Historical lookup still works:
+             engine.keyed_fact_as_of('user', 'city', past_timestamp)
+             returns whichever value was current at that time
+             (Zep-style time-travel).
+
+        WRONG tool when:
+          • User describes an EVENT/activity ("I moved to Warsaw last
+            week" with date detail) — use record_activity
+          • Multi-valued ("I speak Russian, English, Ukrainian") —
+            use record_fact (each value is independently true)
+          • Facts that won't change ("user's birthday is March 14") —
+            record_fact is fine, or record_keyed_fact if you want the
+            'I corrected my birthday' upsert behaviour.
+          • You're not sure — use record_fact (safe default).
+
+        Args:
+            subject: who/what the fact is about ('user', 'user_dog',
+                'company_xyz', etc.). Lowercased internally; spaces ok.
+            attribute: the attribute name ('city', 'employer', 'phone',
+                'name'). Lowercased internally.
+            value: the current value as a short string ('Warsaw').
+            importance: 0..1, default 0.85 (high because personal attrs
+                are usually significant).
+
+        Returns:
+            {new_ulid, superseded_ulids: list[str], key: str}
+        """
+        return engine.record_keyed_fact(
+            subject=subject,
+            attribute=attribute,
+            value=value,
+            importance=importance,
+        )
+
+    @mcp.tool()
+    def index_pdf(path: str, force: bool = False, importance: float = 0.6) -> dict:
+        """📄 Extract text from a PDF and persist it as searchable memory.
+
+        Each page is chunked (~1500 chars) and written as a fact. The
+        agent can then recall any passage via the usual `recall()`. A
+        re-ingest of the same file is a no-op (idempotent via SHA1).
+
+        Use when the user says:
+          • "read this PDF and remember it"
+          • "запомни этот документ"
+          • "index <some file>.pdf"
+          • "summarise this paper" (call index_pdf first, then recall)
+
+        Returns: {file, source_hash, n_pages, n_chunks, duration_ms, ...}
+        """
+        from pmb.ingest.pdf import ingest_pdf, ingest_pdfs
+        from pathlib import Path
+        p = Path(path)
+        if p.is_dir():
+            return ingest_pdfs(engine, p, recurse=False,
+                               importance=importance, force=force)
+        return ingest_pdf(engine, p, importance=importance, force=force)
+
+    @mcp.tool()
+    def index_project(
+        path: str = ".",
+        force: bool = False,
+        max_files: int = 5000,
+    ) -> dict:
+        """📂 Index a code project's structure — per-file symbols, imports,
+        languages — so the agent can recall things like "where is the auth
+        flow", "which files import LanceDB", "show me the recall pipeline".
+
+        Respects .gitignore. Idempotent per file (SHA1). Safe to re-run.
+
+        Use when the user says:
+          • "запомни структуру проекта"
+          • "index this repo"
+          • "scan the project"
+          • "remember how the code is organised"
+
+        Returns: {project_name, n_indexed, n_skipped, by_language, ...}
+        """
+        from pmb.ingest.project import index_project as _do_index
+        from pathlib import Path
+        return _do_index(engine, Path(path), force=force, max_files=max_files)
+
+    @mcp.tool()
+    def find_lessons(query: str = "", limit: int = 5) -> list[dict]:
+        """Pull procedural lessons (project rules / gotchas) relevant to a
+        topic. Use this BEFORE making a project-shaping choice — picking a
+        library, setting up tooling, choosing an approach — to see what
+        worked or failed before.
+
+        Lessons are short rules captured from prior corrections / failures
+        ("this repo uses pnpm, never npm", "Postgres pool size must stay
+        below 30"). They override default behaviour.
+
+        Each result includes a `surface_id`. After acting on a lesson,
+        call mark_lesson_followed(surface_id) — the self-improvement loop
+        uses follow-rate to prune dead lessons.
+
+        Args:
+            query: topic to filter by (empty = recent lessons across all projects)
+            limit: max lessons to return (default 5)
+        """
+        lessons = engine.find_lessons(query=query, limit=limit)
+        if lessons:
+            engine._log_lesson_surfaces(
+                lessons, query=query, source="find_lessons",
+            )
+        return lessons
+
+    @mcp.tool()
+    def mark_lesson_followed(
+        surface_id: int,
+        followed: bool = True,
+        note: Optional[str] = None,
+    ) -> dict:
+        """Confirm whether a previously surfaced lesson actually changed
+        your behaviour on the current task. Call this AFTER acting on a
+        lesson — the self-improvement loop uses this signal to identify
+        useful vs dead lessons.
+
+        Args:
+            surface_id: the `surface_id` field returned with the lesson
+            followed: True if you followed the lesson, False if ignored
+            note: optional one-line explanation (esp. useful for ignored)
+        """
+        return engine.mark_lesson_followed(
+            surface_id=surface_id, followed=followed, note=note,
+        )
 
     @mcp.tool()
     def session_brief(minutes: Optional[int] = None) -> dict:
@@ -1222,14 +1564,141 @@ def build_server(
     return mcp
 
 
+def _build_bearer_middleware(token: str):
+    """Build a Starlette ASGI middleware that requires
+    `Authorization: Bearer <token>` on every request except CORS
+    preflights and the health endpoint.
+
+    Returns None when token is empty. The wrapper does a constant-time
+    compare so a leaked log line can't side-channel a partial match.
+    """
+    if not token:
+        return None
+    import hmac
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
+
+    expected = f"Bearer {token}"
+
+    class _BearerAuthMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            # CORS preflight + health probe: pass through.
+            if request.method == "OPTIONS" or request.url.path in ("/healthz", "/"):
+                return await call_next(request)
+            got = request.headers.get("authorization", "")
+            if not got or not hmac.compare_digest(got, expected):
+                return JSONResponse(
+                    {"error": "unauthorized",
+                     "hint": "send `Authorization: Bearer <PMB_MCP_BEARER_TOKEN>`"},
+                    status_code=401,
+                )
+            return await call_next(request)
+
+    return _BearerAuthMiddleware
+
+
 def main():
-    """Entry point for `pmb-mcp` script."""
+    """Entry point for `pmb-mcp` script.
+
+    Defaults to stdio (per-developer). Set env-vars to expose HTTP for
+    team-shared deployments:
+
+      PMB_MCP_TRANSPORT=streamable-http     # or `stdio` (default)
+      PMB_MCP_HOST=0.0.0.0                  # 127.0.0.1 by default
+      PMB_MCP_PORT=8765
+      PMB_MCP_PATH=/mcp                     # mount path
+      PMB_MCP_BEARER_TOKEN=<secret>         # optional shared secret
+
+    On stdio, the agent's host spawns `pmb-mcp` per session. On HTTP, run
+    one persistent process (systemd, Docker, etc.) and point every IDE at
+    its URL — they share one workspace, one entity graph, one memory.
+    """
+    import sys
     workspace_id = os.environ.get("PMB_WORKSPACE")
     cwd_env = os.environ.get("PMB_CWD")
     cwd = Path(cwd_env) if cwd_env else None
 
+    transport = (os.environ.get("PMB_MCP_TRANSPORT") or "stdio").strip().lower()
+    if transport in ("http", "https"):
+        transport = "streamable-http"
+
     server = build_server(cwd=cwd, workspace_id=workspace_id)
-    server.run()
+
+    if transport == "stdio":
+        server.run()
+        return
+
+    if transport != "streamable-http":
+        sys.stderr.write(
+            f"[pmb-mcp] unknown PMB_MCP_TRANSPORT={transport!r}. "
+            f"Use 'stdio' or 'streamable-http'.\n"
+        )
+        sys.exit(2)
+
+    host = os.environ.get("PMB_MCP_HOST", "127.0.0.1")
+    try:
+        port = int(os.environ.get("PMB_MCP_PORT", "8765"))
+    except ValueError:
+        sys.stderr.write("[pmb-mcp] PMB_MCP_PORT must be an integer\n")
+        sys.exit(2)
+    path = os.environ.get("PMB_MCP_PATH", "/mcp")
+    token = os.environ.get("PMB_MCP_BEARER_TOKEN", "").strip()
+
+    auth_status = "bearer-token enabled" if token else "UNAUTHENTICATED (network ACL only)"
+    sys.stderr.write(
+        f"[pmb-mcp] streamable-http on http://{host}:{port}{path}  ·  {auth_status}\n"
+        f"  workspace: {server.name}\n"
+    )
+
+    # Build the Starlette ASGI app from the fastmcp server, then attach
+    # our middleware before handing off to uvicorn. fastmcp's own
+    # server.run(transport=...) calls the same thing internally, but
+    # bypasses our chance to inject middleware — so we do it ourselves.
+    auth_mw = _build_bearer_middleware(token)
+    app = None
+    last_err: Exception | None = None
+    for builder_name in ("http_app", "streamable_http_app"):
+        builder = getattr(server, builder_name, None)
+        if builder is None:
+            continue
+        try:
+            app = builder(path=path)
+            break
+        except TypeError:
+            try:
+                app = builder()
+                break
+            except Exception as e:
+                last_err = e
+        except Exception as e:
+            last_err = e
+
+    if app is None:
+        sys.stderr.write(
+            f"[pmb-mcp] fastmcp version doesn't expose http_app/streamable_http_app "
+            f"({last_err}). Falling back to server.run() — bearer auth WILL NOT "
+            f"work; set PMB_MCP_BEARER_TOKEN='' or upgrade fastmcp.\n"
+        )
+        server.run(transport="streamable-http", host=host, port=port, path=path)
+        return
+
+    if auth_mw is not None:
+        try:
+            app.add_middleware(auth_mw)
+        except Exception as e:
+            sys.stderr.write(
+                f"[pmb-mcp] middleware install failed: {e} — server will run UNAUTHENTICATED\n"
+            )
+
+    try:
+        import uvicorn
+    except ImportError:
+        sys.stderr.write(
+            "[pmb-mcp] uvicorn is required for streamable-http. Install with: "
+            "pip install 'uvicorn[standard]'\n"
+        )
+        sys.exit(2)
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":

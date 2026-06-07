@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -349,6 +350,748 @@ class WriteMixin:
                     "content": content,
                 }
         return best
+
+    # ──────────────────────────────────────────────────────────────────
+    # Lesson surface tracking (self-improvement loop)
+    # ──────────────────────────────────────────────────────────────────
+
+    def _log_lesson_surfaces(
+        self,
+        lessons: list[dict],
+        query: str,
+        source: str,
+        session_id: Optional[str] = None,
+    ) -> list[dict]:
+        """Log that these lessons were shown to the agent. Mutates the
+        lesson dicts in place, adding a `surface_id` so the agent can later
+        confirm follow-through via mark_lesson_followed. Returns the list."""
+        if not lessons:
+            return lessons
+        import sqlite3, time as _t
+        now = _t.time()
+        ws = self.workspace.id
+        try:
+            with sqlite3.connect(self.workspace.db_path) as conn:
+                for L in lessons:
+                    ulid = L.get("ulid")
+                    if not ulid:
+                        continue
+                    cur = conn.execute(
+                        """
+                        INSERT INTO lesson_surfaces
+                        (workspace_id, lesson_ulid, query, source,
+                         surfaced_at, session_id)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (ws, ulid, (query or "")[:500], source, now, session_id),
+                    )
+                    L["surface_id"] = cur.lastrowid
+                conn.commit()
+        except Exception:
+            # Surface logging is best-effort — never break recall on it
+            import logging
+            logging.getLogger(__name__).debug(
+                "lesson surface logging failed", exc_info=True
+            )
+        return lessons
+
+    def mark_lesson_followed(
+        self,
+        surface_id: int,
+        followed: bool = True,
+        note: Optional[str] = None,
+    ) -> dict:
+        """Agent confirms whether a surfaced lesson actually changed its
+        behaviour on the current task. Powers the dashboard "follow rate"
+        and identifies dead lessons that always surface but never help."""
+        import sqlite3, time as _t
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            cur = conn.execute(
+                """
+                UPDATE lesson_surfaces
+                SET followed = ?, follow_note = ?, followed_at = ?
+                WHERE id = ? AND workspace_id = ?
+                """,
+                (1 if followed else 0, (note or "")[:500], _t.time(),
+                 surface_id, self.workspace.id),
+            )
+            conn.commit()
+        return {"ok": cur.rowcount > 0, "surface_id": surface_id,
+                "followed": followed}
+
+    def adherence_stats(self, days: float = 7.0) -> dict:
+        """How well is the AI agent FOLLOWING the READ-FIRST workflow?
+
+        Computes adherence metrics over a recent window:
+          • prepare_rate — fraction of write-active days where prepare() was
+            called at least once. The READ-FIRST rule says prepare() should
+            run at the start of every substantive task.
+          • lesson_followthrough — fraction of surfaced lessons the agent
+            marked as followed via mark_lesson_followed.
+          • read_write_ratio — read tool calls / write tool calls. A healthy
+            memory tool sees ~2:1 reads-to-writes.
+
+        Used by:
+          • The _nudge field in record_batch_async responses — when scores
+            are low, agent sees a one-line reminder.
+          • The dashboard "Adherence" tab — surfaces leaking sessions.
+
+        Returns floats in [0.0, 1.0] for the rate fields plus the raw
+        counts so the caller can render however they want.
+        """
+        import sqlite3, time as _t
+        cutoff = _t.time() - days * 86400.0
+        ws = self.workspace.id
+        out = {
+            "days": days,
+            "prepare_calls": 0,
+            "write_calls": 0,
+            "read_calls": 0,
+            "write_active_days": 0,
+            "prepare_days": 0,
+            "prepare_rate": 0.0,
+            "read_write_ratio": 0.0,
+            "lesson_surfaces": 0,
+            "lesson_followed": 0,
+            "lesson_followthrough": 0.0,
+        }
+        read_tools = (
+            "recall", "prepare", "project_overview", "find_lessons",
+            "overview", "recent_activity", "what_just_happened",
+            "session_brief", "list_goals", "recall_smart",
+            "get_subfacts", "list_recent",
+        )
+        write_tools = (
+            "record_batch", "record_fact", "record_fact_tree",
+            "record_keyed_fact", "record_goal", "record_activity",
+            "record_milestone", "remember", "index_pdf", "index_project",
+        )
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            # MCP-call metrics (prepare_rate / read_write_ratio) come from the
+            # mcp_calls table, which only exists once the MCP server has run.
+            # On a fresh / non-MCP workspace it's absent — that must NOT zero
+            # out the lesson-surface metrics below, which live in their own
+            # table. So each block gets its own try/except.
+            try:
+                rows = conn.execute(
+                    "SELECT DATE(timestamp, 'unixepoch') AS d, tool_name, COUNT(*) "
+                    "FROM mcp_calls WHERE workspace_id=? AND timestamp >= ? "
+                    "GROUP BY d, tool_name",
+                    (ws, cutoff),
+                ).fetchall()
+                write_days, prep_days = set(), set()
+                prep_total = write_total = read_total = 0
+                for d, tool, n in rows:
+                    if tool in write_tools:
+                        write_total += n
+                        write_days.add(d)
+                    if tool in read_tools:
+                        read_total += n
+                    if tool == "prepare":
+                        prep_total += n
+                        prep_days.add(d)
+                out["write_calls"] = write_total
+                out["read_calls"]  = read_total
+                out["prepare_calls"] = prep_total
+                out["write_active_days"] = len(write_days)
+                out["prepare_days"] = len(prep_days & write_days)
+                if write_days:
+                    out["prepare_rate"] = len(prep_days & write_days) / len(write_days)
+                if write_total > 0:
+                    out["read_write_ratio"] = read_total / write_total
+            except Exception:
+                pass
+
+            # Lesson follow-through — independent of mcp_calls.
+            try:
+                surf = conn.execute(
+                    "SELECT COUNT(*) FROM lesson_surfaces WHERE workspace_id=? AND surfaced_at >= ?",
+                    (ws, cutoff),
+                ).fetchone()[0]
+                flw = conn.execute(
+                    "SELECT COUNT(*) FROM lesson_surfaces WHERE workspace_id=? AND surfaced_at >= ? AND followed=1",
+                    (ws, cutoff),
+                ).fetchone()[0]
+                out["lesson_surfaces"] = surf
+                out["lesson_followed"] = flw
+                if surf > 0:
+                    out["lesson_followthrough"] = flw / surf
+            except Exception:
+                pass
+        return out
+
+    def _adherence_nudge(self) -> Optional[str]:
+        """One-line consequence-framed reminder when adherence is poor.
+
+        Used by record_batch_async to inject a `_nudge` field in its
+        response when the agent has been writing without reading.
+        Returns None if adherence is fine — no need to nag.
+        """
+        try:
+            s = self.adherence_stats(days=7.0)
+        except Exception:
+            return None
+        prep_rate = s.get("prepare_rate", 0.0)
+        rw       = s.get("read_write_ratio", 0.0)
+        lt       = s.get("lesson_followthrough", 0.0)
+        n_surf   = s.get("lesson_surfaces", 0)
+        # Quiet on cold workspace: no surfaced lessons / no history.
+        if s.get("write_calls", 0) < 5 and n_surf < 5:
+            return None
+        problems = []
+        if prep_rate < 0.30:
+            problems.append(
+                f"prepare() rate {prep_rate*100:.0f}% this week (target ≥ 60%) — "
+                f"you are writing without reading."
+            )
+        if rw < 0.50:
+            problems.append(
+                f"read/write ratio {rw:.2f} (target ≥ 0.80) — "
+                f"the memory tool is being used as a logbook, not a memory."
+            )
+        if n_surf >= 5 and lt < 0.10:
+            problems.append(
+                f"lesson follow-through {lt*100:.0f}% of {n_surf} surfaced — "
+                f"call mark_lesson_followed(surface_id, True/False) after acting."
+            )
+        if not problems:
+            return None
+        return "⚠ adherence: " + " · ".join(problems)
+
+    def lesson_follow_stats(self, days: float = 7.0) -> dict:
+        """Aggregate follow-rate stats over a recent window. Used by
+        dashboard and `pmb lessons stats`."""
+        import sqlite3, time as _t
+        cutoff = _t.time() - days * 86400.0
+        ws = self.workspace.id
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            tot = conn.execute(
+                "SELECT COUNT(*) AS n FROM lesson_surfaces "
+                "WHERE workspace_id = ? AND surfaced_at >= ?",
+                (ws, cutoff),
+            ).fetchone()
+            followed = conn.execute(
+                "SELECT COUNT(*) AS n FROM lesson_surfaces "
+                "WHERE workspace_id = ? AND surfaced_at >= ? AND followed = 1",
+                (ws, cutoff),
+            ).fetchone()
+            ignored = conn.execute(
+                "SELECT COUNT(*) AS n FROM lesson_surfaces "
+                "WHERE workspace_id = ? AND surfaced_at >= ? AND followed = 0",
+                (ws, cutoff),
+            ).fetchone()
+            per_lesson = conn.execute(
+                """
+                SELECT ls.lesson_ulid,
+                       COUNT(*) AS surfaces,
+                       SUM(CASE WHEN ls.followed = 1 THEN 1 ELSE 0 END) AS followed,
+                       SUM(CASE WHEN ls.followed = 0 THEN 1 ELSE 0 END) AS ignored,
+                       e.content AS content
+                FROM lesson_surfaces ls
+                LEFT JOIN events e ON e.ulid = ls.lesson_ulid
+                WHERE ls.workspace_id = ? AND ls.surfaced_at >= ?
+                GROUP BY ls.lesson_ulid
+                ORDER BY surfaces DESC
+                LIMIT 30
+                """,
+                (ws, cutoff),
+            ).fetchall()
+        return {
+            "days": days,
+            "total_surfaces": tot["n"] if tot else 0,
+            "followed": followed["n"] if followed else 0,
+            "ignored": ignored["n"] if ignored else 0,
+            "unknown": (tot["n"] - (followed["n"] + ignored["n"])) if tot else 0,
+            "follow_rate": (followed["n"] / max(1, tot["n"])) if tot and tot["n"] else 0.0,
+            "per_lesson": [
+                {"lesson_ulid": r["lesson_ulid"],
+                 "surfaces": r["surfaces"],
+                 "followed": r["followed"] or 0,
+                 "ignored": r["ignored"] or 0,
+                 "content": (r["content"] or "")[:200]}
+                for r in per_lesson
+            ],
+        }
+
+    def active_arcs_for_project(self, project_name: str, limit: int = 2) -> list[dict]:
+        """Return the top narrative arcs whose member events overlap with
+        the project entity's events. Used by `prepare()` so the agent
+        sees the bigger story (e.g. "Postgres adoption", "Auth refactor")
+        when picking up project work.
+
+        Output: list of {arc_id, title, summary, n_events, status,
+        last_updated, event_ulids, overlap_count}.
+        """
+        import sqlite3
+        ws = self.workspace.id
+        nm = (project_name or "").strip().lower()
+        if not nm:
+            return []
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            ent = conn.execute(
+                """
+                SELECT id FROM graph_entities
+                WHERE workspace_id = ? AND LOWER(name) LIKE ?
+                ORDER BY n_mentions DESC LIMIT 1
+                """,
+                (ws, f"%{nm}%"),
+            ).fetchone()
+            if not ent:
+                return []
+            # Project events
+            ev_rows = conn.execute(
+                "SELECT event_ulid FROM graph_event_entities WHERE entity_id = ?",
+                (ent["id"],),
+            ).fetchall()
+            ev_ulids = {r["event_ulid"] for r in ev_rows}
+            if not ev_ulids:
+                return []
+            # Active arcs ranked by overlap with project events.
+            arc_rows = conn.execute(
+                """
+                SELECT a.id, a.title, a.summary, a.status, a.n_events,
+                       a.last_updated, a.first_event_ulid, a.last_event_ulid
+                FROM arcs a
+                WHERE a.workspace_id = ? AND a.status = 'active'
+                ORDER BY a.last_updated DESC
+                LIMIT 50
+                """,
+                (ws,),
+            ).fetchall()
+            scored = []
+            for ar in arc_rows:
+                mem = conn.execute(
+                    "SELECT event_ulid FROM arc_events WHERE arc_id = ?",
+                    (ar["id"],),
+                ).fetchall()
+                ulids = [r["event_ulid"] for r in mem]
+                overlap = len([u for u in ulids if u in ev_ulids])
+                if overlap == 0:
+                    continue
+                scored.append({
+                    "arc_id": ar["id"],
+                    "title": ar["title"],
+                    "summary": (ar["summary"] or "")[:300],
+                    "status": ar["status"],
+                    "n_events": ar["n_events"],
+                    "last_updated": ar["last_updated"],
+                    "event_ulids": ulids,
+                    "overlap_count": overlap,
+                })
+        scored.sort(key=lambda a: -a["overlap_count"])
+        return scored[:limit]
+
+    def detect_project_in_text(self, text: str, min_mentions: int = 3) -> Optional[dict]:
+        """Look for an auto-detected project name inside arbitrary text.
+        Returns the matching entity dict or None. Used to enrich recall:
+        when the query mentions a known project, attach project_overview
+        automatically so the agent gets the full context."""
+        if not text:
+            return None
+        import sqlite3, re as _re
+        ws = self.workspace.id
+        text_lc = text.lower()
+        # Limit candidates to entities with non-trivial mentions — same
+        # threshold as the dashboard's project heuristic.
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT id, kind, name, n_mentions FROM graph_entities
+                WHERE workspace_id = ? AND n_mentions >= ?
+                ORDER BY n_mentions DESC LIMIT 50
+                """,
+                (ws, min_mentions),
+            ).fetchall()
+        blacklist = {
+            'auth','design','docs','engine','deploys','deploy','issue','integrated',
+            'fix','built','installed','code','done','config','sources','tests',
+            'test','file','script','endpoint','tool','tools','feature','features',
+            'agent','agents','session','sessions','model','models','user','users',
+            'project','projects','data','memory','memories','event','events',
+            'log','logs','task','tasks','idea','ideas','update','updates','time',
+            'work','core','source','main','module','modules','options','option',
+        }
+        for r in rows:
+            nm = (r["name"] or "").lower()
+            if len(nm) < 4 or len(nm) > 30: continue
+            if nm in blacklist: continue
+            if '.' in nm or '/' in nm or '\\' in nm: continue
+            # Word-boundary match — "node" matches "node" but not "nodejs"
+            if _re.search(rf"\b{_re.escape(nm)}\b", text_lc):
+                return {"id": r["id"], "name": r["name"],
+                        "kind": r["kind"], "n_mentions": r["n_mentions"]}
+        return None
+
+    def find_lessons(self, query: str = "", limit: int = 5) -> list[dict]:
+        """Return procedural lessons relevant to a query (or all recent
+        lessons if query is empty). A "lesson" is an event with
+        `metadata.kind == 'lesson'` or `event_type == 'lesson'` — it captures
+        a project-specific rule ("we use pnpm, never npm") that should
+        change agent behaviour.
+
+        Used by:
+          - MCP recall(): auto-attaches relevant lessons so the agent
+            cannot miss them
+          - topic_overview / project_overview: explicit lessons section
+          - pmb overview CLI
+
+        Implementation: scan recent active events on the lesson kind
+        (cheap SQL filter), then for non-empty query rank by simple
+        case-folded token-overlap with the query. We deliberately don't run
+        the full recall pipeline — lessons are few (rarely >100) so a
+        linear pass + token scoring is faster and avoids dragging in the
+        whole embedding stack on tools that just want lessons.
+        """
+        import sqlite3
+        ws = self.workspace.id
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT ulid, event_type, content, timestamp, importance,
+                       metadata_json
+                FROM events
+                WHERE workspace_id = ?
+                  AND archived_at IS NULL
+                  AND (event_type = 'lesson'
+                       OR (metadata_json LIKE '%"kind":"lesson"%'
+                           OR metadata_json LIKE '%"kind": "lesson"%'))
+                ORDER BY timestamp DESC
+                LIMIT 500
+                """,
+                (ws,),
+            ).fetchall()
+        items: list[dict] = []
+        for r in rows:
+            try:
+                md = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
+            except Exception:
+                md = {}
+            items.append({
+                "ulid": r["ulid"],
+                "content": (r["content"] or "")[:300],
+                "timestamp": r["timestamp"],
+                "importance": r["importance"],
+                "metadata": md,
+            })
+        if not query.strip():
+            return items[:limit]
+        # Query-aware ranking: count case-folded token overlaps.
+        import re as _re
+        q_tokens = set(t for t in _re.split(r"\W+", query.lower()) if len(t) >= 3)
+        if not q_tokens:
+            return items[:limit]
+        def _score(item: dict) -> float:
+            content = (item["content"] or "").lower()
+            c_tokens = set(t for t in _re.split(r"\W+", content) if len(t) >= 3)
+            return len(q_tokens & c_tokens)
+        items.sort(key=_score, reverse=True)
+        # Only return items with at least one match — irrelevant lessons
+        # are worse than no lessons (noise → agent ignores the field).
+        return [it for it in items if _score(it) >= 1][:limit]
+
+    def find_decisions(self, query: str = "", limit: int = 5) -> list[dict]:
+        """Return past DECISIONS (the "why we did X" rationale) relevant to a
+        query. A "decision" is an event with `metadata.kind == 'decision'`
+        (recorded via record_batch activity kind='decision' or record_activity
+        kind='decision'). It captures a choice + reasoning ("chose Postgres
+        over Mongo for JSONB") so the agent doesn't re-litigate settled calls.
+
+        Mirrors find_lessons: cheap SQL scan filtered to the decision kind,
+        then token-overlap ranking for non-empty queries. No embedding stack —
+        decisions are few and a linear pass is faster + dependency-free.
+
+        Used by the auto-recall hook to answer "before doing X, did we already
+        decide something about X?" without the agent having to think to ask.
+        """
+        import sqlite3
+        ws = self.workspace.id
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT ulid, event_type, content, timestamp, importance,
+                       metadata_json
+                FROM events
+                WHERE workspace_id = ?
+                  AND archived_at IS NULL
+                  AND (metadata_json LIKE '%"kind":"decision"%'
+                       OR metadata_json LIKE '%"kind": "decision"%'
+                       OR metadata_json LIKE '%"activity_kind":"decision"%'
+                       OR metadata_json LIKE '%"activity_kind": "decision"%')
+                ORDER BY timestamp DESC
+                LIMIT 500
+                """,
+                (ws,),
+            ).fetchall()
+        items: list[dict] = []
+        seen_content: set[str] = set()
+        for r in rows:
+            try:
+                md = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
+            except Exception:
+                md = {}
+            content = (r["content"] or "")[:300]
+            # Dedup near-identical decisions (the same call recorded across
+            # sessions) by a normalized content key — surfacing the same
+            # rationale 3× is noise.
+            key = " ".join(content.lower().split())[:120]
+            if key in seen_content:
+                continue
+            seen_content.add(key)
+            items.append({
+                "ulid": r["ulid"],
+                "content": content,
+                "timestamp": r["timestamp"],
+                "importance": r["importance"],
+                "metadata": md,
+            })
+        if not query.strip():
+            return items[:limit]
+        import re as _re
+        q_tokens = set(t for t in _re.split(r"\W+", query.lower()) if len(t) >= 3)
+        if not q_tokens:
+            return items[:limit]
+        def _score(item: dict) -> float:
+            content = (item["content"] or "").lower()
+            c_tokens = set(t for t in _re.split(r"\W+", content) if len(t) >= 3)
+            return len(q_tokens & c_tokens)
+        items.sort(key=_score, reverse=True)
+        return [it for it in items if _score(it) >= 1][:limit]
+
+    def recent_unconfirmed_surfaces(
+        self, minutes: float = 30.0, limit: int = 50,
+    ) -> list[dict]:
+        """Lesson surfaces in the last `minutes` that have NO follow verdict
+        yet (followed IS NULL). Used by the Stop-hook follow-through checker
+        to decide which surfaced lessons to auto-assess for follow-through.
+
+        Joins lesson_surfaces → events so the caller gets the lesson content
+        (for token matching) without a second query. Returns newest first.
+        """
+        import sqlite3, time as _t
+        cutoff = _t.time() - minutes * 60.0
+        ws = self.workspace.id
+        out: list[dict] = []
+        try:
+            with sqlite3.connect(self.workspace.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """
+                    SELECT s.id AS surface_id, s.lesson_ulid, s.surfaced_at,
+                           s.source, e.content AS content
+                    FROM lesson_surfaces s
+                    LEFT JOIN events e ON e.ulid = s.lesson_ulid
+                                      AND e.workspace_id = s.workspace_id
+                    WHERE s.workspace_id = ?
+                      AND s.surfaced_at >= ?
+                      AND s.followed IS NULL
+                    ORDER BY s.surfaced_at DESC
+                    LIMIT ?
+                    """,
+                    (ws, cutoff, limit),
+                ).fetchall()
+            for r in rows:
+                out.append({
+                    "surface_id": r["surface_id"],
+                    "lesson_ulid": r["lesson_ulid"],
+                    "surfaced_at": r["surfaced_at"],
+                    "source": r["source"],
+                    "content": r["content"] or "",
+                })
+        except Exception:
+            import logging
+            logging.getLogger(__name__).debug(
+                "recent_unconfirmed_surfaces failed", exc_info=True
+            )
+        return out
+
+    def project_overview(self, name: str, max_per_section: int = 8) -> dict:
+        """Graph-driven overview of one project / entity. Faster + more
+        complete than topic_overview because we go directly via
+        graph_event_entities instead of running the full recall pipeline.
+
+        Use this when the agent (re)starts work on a known project — ONE
+        call returns the full context: top facts, lessons, decisions, open
+        goals, recent completions, related sub-entities (tech stack /
+        people / files), and project span.
+
+        `name` is matched case-insensitively against entity names; we pick
+        the highest-mention entity that contains the query as a substring.
+        """
+        import sqlite3
+        ws = self.workspace.id
+        nm = (name or "").strip().lower()
+        if not nm:
+            return {"empty": True, "error": "empty name"}
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            # Pick the dominant entity matching the name.
+            ent = conn.execute(
+                """
+                SELECT id, kind, name, n_mentions FROM graph_entities
+                WHERE workspace_id = ? AND LOWER(name) LIKE ?
+                ORDER BY n_mentions DESC LIMIT 1
+                """,
+                (ws, f"%{nm}%"),
+            ).fetchone()
+            if not ent:
+                return {"empty": True, "name_query": name,
+                        "hint": "no entity matched; try a shorter name or use overview() for hybrid search"}
+            eid = ent["id"]
+            # All linked events (cheap SQL JOIN, no recall).
+            ev_rows = conn.execute(
+                """
+                SELECT ev.ulid, ev.event_type, ev.content, ev.timestamp,
+                       ev.importance, ev.metadata_json
+                FROM graph_event_entities ee
+                JOIN events ev ON ev.ulid = ee.event_ulid
+                WHERE ee.entity_id = ?
+                  AND ev.workspace_id = ?
+                  AND ev.archived_at IS NULL
+                ORDER BY ev.timestamp DESC
+                LIMIT 500
+                """,
+                (eid, ws),
+            ).fetchall()
+            # Top related entities — neighbours in the co-occurrence graph,
+            # by edge weight. Gives the "tech stack" feel without LLM.
+            nbr_rows = conn.execute(
+                """
+                SELECT e.id, e.kind, e.name, e.n_mentions, ed.weight
+                FROM graph_edges ed
+                JOIN graph_entities e
+                  ON (e.id = CASE WHEN ed.entity_a = ? THEN ed.entity_b ELSE ed.entity_a END)
+                WHERE ed.workspace_id = ?
+                  AND (ed.entity_a = ? OR ed.entity_b = ?)
+                ORDER BY ed.weight DESC LIMIT 30
+                """,
+                (eid, ws, eid, eid),
+            ).fetchall()
+
+        # Bucket events by event_type / metadata.kind.
+        facts, lessons, decisions, completed, goals_open, goals_done, activity, other = [], [], [], [], [], [], [], []
+        timestamps = []
+        for r in ev_rows:
+            try:
+                md = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
+            except Exception:
+                md = {}
+            kind = md.get("kind") or md.get("activity_kind") or r["event_type"]
+            item = {
+                "ulid": r["ulid"],
+                "content": (r["content"] or "")[:240],
+                "timestamp": r["timestamp"],
+                "importance": r["importance"],
+                "kind": kind,
+            }
+            timestamps.append(r["timestamp"])
+            if r["event_type"] == "lesson" or kind == "lesson":
+                lessons.append(item)
+            elif kind == "decision":
+                decisions.append(item)
+            elif kind == "completed":
+                completed.append(item)
+            elif r["event_type"] == "goal":
+                status = md.get("status", "in_progress")
+                (goals_open if status == "in_progress" else goals_done).append({**item, "status": status})
+            elif r["event_type"] == "fact":
+                facts.append(item)
+            elif r["event_type"] == "activity":
+                activity.append(item)
+            else:
+                other.append(item)
+
+        # Hybrid: ALSO pull lessons / decisions that mention the project
+        # name in content but weren't linked by the graph extractor. This
+        # rescues real project rules that the regex / LLM extractor missed.
+        try:
+            with sqlite3.connect(self.workspace.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                seen_ulids = {x["ulid"] for x in (lessons + decisions)}
+                extra = conn.execute(
+                    """
+                    SELECT ulid, event_type, content, timestamp, importance,
+                           metadata_json
+                    FROM events
+                    WHERE workspace_id = ?
+                      AND archived_at IS NULL
+                      AND LOWER(content) LIKE ?
+                      AND (event_type = 'lesson'
+                           OR metadata_json LIKE '%"kind":"lesson"%'
+                           OR metadata_json LIKE '%"kind":"decision"%'
+                           OR metadata_json LIKE '%"kind": "lesson"%'
+                           OR metadata_json LIKE '%"kind": "decision"%')
+                    ORDER BY timestamp DESC LIMIT 50
+                    """,
+                    (ws, f"%{nm}%"),
+                ).fetchall()
+                for r in extra:
+                    if r["ulid"] in seen_ulids:
+                        continue
+                    try:
+                        md = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
+                    except Exception:
+                        md = {}
+                    kind = md.get("kind") or r["event_type"]
+                    item = {
+                        "ulid": r["ulid"],
+                        "content": (r["content"] or "")[:240],
+                        "timestamp": r["timestamp"],
+                        "importance": r["importance"],
+                        "kind": kind,
+                    }
+                    if r["event_type"] == "lesson" or kind == "lesson":
+                        lessons.append(item)
+                    elif kind == "decision":
+                        decisions.append(item)
+        except Exception:
+            pass
+
+        # Sort facts by importance to surface the most-pinned first.
+        facts.sort(key=lambda i: -(i.get("importance") or 0))
+
+        # Span.
+        import time as _t
+        span = None
+        if timestamps:
+            span = {
+                "from": _t.strftime("%Y-%m-%d", _t.gmtime(min(timestamps))),
+                "to": _t.strftime("%Y-%m-%d", _t.gmtime(max(timestamps))),
+                "n_events": len(timestamps),
+            }
+
+        # Related entities — keep variety across kinds, prune the project
+        # entity itself.
+        related = [
+            {"name": r["name"], "kind": r["kind"],
+             "mentions": r["n_mentions"], "weight": r["weight"]}
+            for r in nbr_rows
+        ]
+
+        return {
+            "entity": {
+                "id": ent["id"],
+                "name": ent["name"],
+                "kind": ent["kind"],
+                "n_mentions": ent["n_mentions"],
+            },
+            "span": span,
+            "key_facts": facts[:max_per_section],
+            "lessons": lessons[:max_per_section],
+            "decisions": decisions[:max_per_section],
+            "open_goals": goals_open[:max_per_section],
+            "completed_goals": goals_done[:max_per_section],
+            "recent_completed": completed[:max_per_section],
+            "recent_activity": activity[:max_per_section],
+            "other": other[:5],
+            "related_entities": related[:15],
+            "n_total": len(ev_rows),
+            "empty": len(ev_rows) == 0,
+        }
 
     def topic_overview(self, topic: str, max_events: int = 40) -> dict:
         """Structured "what do I know about <topic>?" overview - no LLM.
@@ -753,17 +1496,24 @@ class WriteMixin:
 
         import threading
 
+        # Counter+condition: wait_for_writes() blocks until this reaches 0.
+        # Increment BEFORE spawning so a fast caller can still see "in flight".
+        with self._async_writes_cv:
+            self._async_writes_in_flight += 1
+
         def _process():
             try:
                 self.record_batch(items)
             except Exception as e:
                 # Last-resort log — silent failure is dangerous
                 import logging
-
                 logging.getLogger(__name__).exception(
-                    "async batch processing failed: %s",
-                    e,
+                    "async batch processing failed: %s", e,
                 )
+            finally:
+                with self._async_writes_cv:
+                    self._async_writes_in_flight -= 1
+                    self._async_writes_cv.notify_all()
 
         threading.Thread(
             target=_process,
@@ -774,7 +1524,53 @@ class WriteMixin:
         # Improvement II: minimal response. Smaller payload, faster Codex
         # UI processing. Background flag suppressed because the caller
         # doesn't need it (we always run in background by default).
-        return {"ok": True, "n": n_items}
+        out = {"ok": True, "n": n_items}
+        # Adherence nudge — short consequence-framed reminder when the
+        # agent has been writing without reading. The agent SEES this in
+        # the response payload and self-corrects. Quiet when adherence is
+        # fine. This is the cheapest way to lift prepare-call rate on
+        # agents that "forget" the READ-FIRST workflow.
+        try:
+            n = self._adherence_nudge()
+            if n: out["_nudge"] = n
+        except Exception:
+            pass
+        return out
+
+    def wait_for_writes(self, timeout: float = 120.0) -> bool:
+        """Block the current thread until ALL in-flight async batches
+        (queued via record_batch_async) have finished writing.
+
+        Why you need this:
+          record_batch_async spawns `daemon=True` threads. When the main
+          process exits before they finish, Python tears them down and
+          the queued items are silently lost. Long-running services (MCP
+          server, dashboard) never hit this, but CLI scripts and
+          fixtures absolutely do.
+
+        Pattern for any seed / import / test script:
+            for batch in batches:
+                eng.record_batch_async(items=batch)
+            eng.wait_for_writes()            # ← critical
+            sys.exit(0)
+
+        Args:
+            timeout: max seconds to wait. Returns False if not drained
+                in time (you should treat that as an error — investigate).
+
+        Returns:
+            True if drained cleanly, False on timeout.
+        """
+        import time as _t
+        deadline = _t.time() + timeout
+        with self._async_writes_cv:
+            while self._async_writes_in_flight > 0:
+                remaining = deadline - _t.time()
+                if remaining <= 0:
+                    return False
+                # `wait()` releases the lock while waiting; re-acquired on wake.
+                self._async_writes_cv.wait(timeout=min(remaining, 1.0))
+        return True
 
     def record_batch(self, items: list[dict]) -> dict:
         """Improvement T: single-shot batch write across all record_* APIs.
@@ -825,6 +1621,20 @@ class WriteMixin:
             # N sequential embed calls.
             self._batch_defer = True
             self._batch_pending = []
+
+            # Pre-extract entities for the whole batch in ONE LLM call.
+            # Only fires when (a) backend is non-regex (LLM/spaCy benefit from
+            # batching) and (b) there are ≥2 items (no win for solo). Failures
+            # silently fall through to per-event extract in _index_event_in_graph,
+            # so this is a pure best-effort speedup.
+            self._extract_cache.clear()
+            try:
+                if (len(items or []) >= 2
+                        and getattr(self.entity_extractor, "backend_name", "regex") != "regex"
+                        and hasattr(self.entity_extractor, "extract_batch")):
+                    self._prefetch_batch_entities(items)
+            except Exception:  # pragma: no cover - defensive
+                self._extract_cache.clear()
 
             for idx, item in enumerate(items or []):
                 if not isinstance(item, dict):
@@ -1023,12 +1833,69 @@ class WriteMixin:
                     for ulid, text in pending:
                         self._enqueue_embed(ulid, text)
 
+        # Clear the batch-extract cache so a non-batch write right after this
+        # one doesn't accidentally reuse stale entities.
+        self._extract_cache.clear()
+
         return {
             "results": results,
             "n_ok": n_ok,
             "n_failed": len(errors),
             "errors": errors,
         }
+
+    def _prefetch_batch_entities(self, items: list[dict]) -> None:
+        """Pre-extract entities for the whole batch in ONE LLM call.
+
+        Pulls the user-supplied text from each item (different field per type
+        — content / fact / main / title / summary), redacts it the same way
+        record_event will, then sends the whole list to
+        `entity_extractor.extract_batch`. Results land in `self._extract_cache`
+        keyed by the cleaned text so `_index_event_in_graph` (called later
+        from inside record_event for each item) hits the cache instead of
+        making N more LLM calls.
+
+        N=5 events ≈ one 30 s LLM call vs five 30 s calls = ~5× speed-up.
+        """
+        from pmb.security.redact import redact
+
+        def _text_of(it: dict) -> str:
+            t = (it.get("type") or "").lower().strip()
+            if t == "fact_tree" or t == "tree":
+                return it.get("main") or it.get("content") or ""
+            if t == "goal":
+                return it.get("title") or it.get("content") or ""
+            if t == "milestone":
+                return it.get("title") or it.get("content") or ""
+            if t in ("preference", "summary"):
+                return it.get(t) or it.get("content") or ""
+            if t in ("lesson", "failure"):
+                return it.get("content") or it.get(t) or ""
+            if t in ("keyed_fact", "key_fact"):
+                return it.get("value") or it.get("content") or ""
+            # fact / activity / unknown — content is the primary field.
+            return it.get("content") or it.get("fact") or ""
+
+        pairs: list[tuple[str, tuple]] = []
+        cleaned_texts: list[str] = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            raw = _text_of(item)
+            if not raw or len(raw.strip()) < 4:
+                continue
+            clean, _ = redact(raw)
+            cleaned_texts.append(clean)
+            pairs.append((clean, ()))
+
+        if len(pairs) < 2:
+            return  # not worth the round-trip overhead
+
+        results = self.entity_extractor.extract_batch(pairs)
+        # Map cleaned-text → ExtractedEntities. Same `clean` string is passed
+        # to record_event → _index_event_in_graph below, so lookups hit.
+        for text, ext in zip(cleaned_texts, results):
+            self._extract_cache[text] = ext
 
     def get_subfacts(self, parent_ulid: str) -> list[dict]:
         """Return all subfacts linked to a parent event."""

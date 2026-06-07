@@ -322,3 +322,44 @@ class GraphStore:
                 )
                 for r in rows
             ]
+
+    def viz_graph(
+        self, workspace_id: str, limit: int = 300, max_edges: int = 4000
+    ) -> dict:
+        """Nodes + edges for the memory visualization: the top `limit` entities
+        by mention count and the edges among them. Read-only — never touches
+        recall ranking. Returns plain JSON-ready dicts.
+        """
+        with self._conn() as conn:
+            node_rows = conn.execute(
+                "SELECT id, kind, name, n_mentions, last_seen FROM graph_entities "
+                "WHERE workspace_id = ? ORDER BY n_mentions DESC, last_seen DESC "
+                "LIMIT ?",
+                (workspace_id, limit),
+            ).fetchall()
+            ids = [r["id"] for r in node_rows]
+            edge_rows = []
+            if ids:
+                ph = ",".join("?" * len(ids))
+                edge_rows = conn.execute(
+                    f"SELECT entity_a, entity_b, weight FROM graph_edges "
+                    f"WHERE workspace_id = ? AND entity_a IN ({ph}) "
+                    f"AND entity_b IN ({ph}) ORDER BY weight DESC LIMIT ?",
+                    (workspace_id, *ids, *ids, max_edges),
+                ).fetchall()
+        return {
+            "nodes": [
+                {
+                    "id": r["id"],
+                    "kind": r["kind"] or "other",
+                    "name": r["name"],
+                    "mentions": int(r["n_mentions"] or 0),
+                    "last_seen": float(r["last_seen"] or 0.0),
+                }
+                for r in node_rows
+            ],
+            "edges": [
+                {"a": r["entity_a"], "b": r["entity_b"], "w": int(r["weight"] or 1)}
+                for r in edge_rows
+            ],
+        }

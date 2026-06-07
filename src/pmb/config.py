@@ -45,6 +45,82 @@ class _Setting:
     max: Optional[float] = None
 
 
+# ----------------------------------------------------------------------
+# Tier curation — keep `pmb config list` short and signal-dense
+# ----------------------------------------------------------------------
+#
+# PMB has ~100 tunables. Most users only need to know the 25 below; the
+# rest are quality-tuned defaults that "just work" on a fresh install.
+#
+# When you run `pmb config list` (no flags) you only see the DEFAULT-tier
+# keys. `pmb config list --pro` shows every tunable; `pmb config list
+# --all` is its alias. Same for `pmb config <key>` lookups — every key
+# is still readable, just hidden from the default list.
+DEFAULT_TIER_KEYS: frozenset[str] = frozenset({
+    # ── Recall (the 7 you'll actually want to touch) ─────────────
+    "recall.top_k",
+    "recall.bm25_weight",
+    "recall.recency_half_life_days",
+    "recall.rerank",
+    "recall.rerank_when_close",
+    "recall.ppr_enabled",
+    "recall.keyed_fact_boost",
+
+    # ── MCP transport ─────────────────────────────────────────────
+    "mcp.record_batch_async",
+
+    # ── Auto-recall hook (zero-cooperation memory injection) ──────
+    "auto_recall.enabled",
+    "auto_recall.budget_chars",
+
+    # ── Agent behaviour (rules in CLAUDE.md / AGENTS.md) ──────────
+    "agent.active_mode",
+    "agent.apply_lessons",
+    "agent.context_continuity",
+    "agent.log_decisions",
+    "agent.log_completed",
+    "agent.log_lessons",
+    "agent.log_failures",
+    "agent.log_goals",
+
+    # ── Embeddings + graph extraction ─────────────────────────────
+    "embedding.backend",
+    "embedding.model",
+    "graph.extractor",
+
+    # ── Lifecycle ─────────────────────────────────────────────────
+    "dedup.enable",
+    "decay.factor_per_day",
+    "consolidate.auto_trigger",
+    "lessons.auto_distill_on_session_end",
+
+    # ── Chat (pmb-chat) ───────────────────────────────────────────
+    "chat.model",
+    "chat.window",
+})
+
+
+def is_default_tier(key: str) -> bool:
+    """True if KEY is in the curated default-tier (visible in plain `pmb
+    config list`). Pro / experimental knobs are hidden behind --pro."""
+    return key in DEFAULT_TIER_KEYS
+
+
+def tier_of(key: str) -> str:
+    return "default" if key in DEFAULT_TIER_KEYS else "pro"
+
+
+def keys_by_tier(tier: str) -> list[str]:
+    """List config keys at TIER ('default' | 'pro' | 'all')."""
+    if tier == "all":
+        return sorted(SCHEMA.keys())
+    if tier == "default":
+        return sorted(DEFAULT_TIER_KEYS & SCHEMA.keys())
+    if tier == "pro":
+        return sorted(SCHEMA.keys() - DEFAULT_TIER_KEYS)
+    raise ValueError(f"unknown tier {tier!r}")
+
+
 # A single source of truth - every knob in PMB lives here. Adding a key
 # here is the only step needed to expose it as `pmb config <key>`.
 SCHEMA: dict[str, _Setting] = {
@@ -81,6 +157,63 @@ SCHEMA: dict[str, _Setting] = {
         bool, True,
         "Active mode: tell the agent to call session_brief to re-orient after "
         "its OWN context compacts in a long session (PMB as durable session memory)"),
+
+    # ── Auto-recall (the hook that bypasses agent cooperation) ─────
+    # The UserPromptSubmit hook (`pmb hooks install claude-code`) runs
+    # `pmb prepare-context --stdin --auto`. The classifier in
+    # pmb.hooks.auto_recall decides — without asking the model — which
+    # PMB calls to pre-execute and inject as context. Sub-100ms on a
+    # warm workspace. Knobs here control the dispatcher.
+    "auto_recall.enabled": _Setting(
+        bool, True,
+        "Master switch for the auto-recall hook. When True (default), "
+        "`pmb prepare-context` classifies the user message and dispatches "
+        "matching PMB queries. When False, the hook falls back to the "
+        "legacy always-on bundle (project_overview + find_lessons + "
+        "recent_activity + list_goals).",
+    ),
+    "auto_recall.min_message_chars": _Setting(
+        int, 5,
+        "Messages shorter than this are treated as trivial (greeting / "
+        "ack / single emoji) and the hook injects nothing. Lower it for "
+        "languages with many short questions; raise it to suppress more "
+        "noise.",
+        min=1, max=200,
+    ),
+    "auto_recall.budget_chars": _Setting(
+        int, 4000,
+        "Hard cap on the formatted context block size. Hosts truncate "
+        "long hook output anyway; this gives us a controlled cut with a "
+        "marker instead of a silent chop.",
+        min=200, max=20000,
+    ),
+    "auto_recall.recall_top_k": _Setting(
+        int, 5,
+        "When PAST_QUERY or GENERIC_FACTUAL fires, ask recall for this "
+        "many hits. Lower = faster + less prompt bloat; higher = better "
+        "coverage on multi-fact questions.",
+        min=1, max=25,
+    ),
+    "auto_recall.recall_min_score": _Setting(
+        float, 0.30,
+        "For GENERIC_FACTUAL fallback (no explicit pattern, just a '?'), "
+        "surface a recall hit only if its top score clears this floor. "
+        "Set to 0.0 to always surface; raise to 0.5 to suppress noisy hits.",
+        min=0.0, max=1.0,
+    ),
+    "auto_recall.include_trace": _Setting(
+        bool, True,
+        "Include `[intents=...,latency=...ms]` in the injected context "
+        "header. Useful for adherence debugging; turn off to make the "
+        "block look more natural in transcripts.",
+    ),
+    "auto_recall.surface_decisions": _Setting(
+        bool, True,
+        "Also surface past DECISIONS (the 'why we did X' rationale) next to "
+        "lessons in the auto-recall block. Lets the agent see settled calls "
+        "before re-deciding them. Turn off if your workspace doesn't record "
+        "decisions and the extra query is wasted.",
+    ),
     "overview.max_events": _Setting(
         int, 40,
         "How many memories `pmb overview` / the MCP overview tool synthesize "
@@ -134,11 +267,12 @@ SCHEMA: dict[str, _Setting] = {
         "list returns the actual source events with their dia_ids/metadata.",
     ),
     "recall.ppr_enabled": _Setting(
-        bool, False,
-        "HippoRAG-style Personalized PageRank over the entity graph. "
-        "Diffuses relevance through graph for multi-hop unlock. Off by "
-        "default - adds noise to single-entity lookups. Enable for "
-        "multi-hop-heavy workloads; combine with intent gating.",
+        bool, True,
+        "Personalized PageRank over the entity graph — diffuses relevance "
+        "for multi-hop questions. Gated by intent detection (`ppr_always` "
+        "off), so single-entity lookups skip it. Default ON since the gate "
+        "keeps cost ~0 for non-multi-hop queries and the upside on "
+        "narrative questions is real.",
     ),
     "recall.ppr_weight": _Setting(
         float, 0.5,
@@ -188,6 +322,14 @@ SCHEMA: dict[str, _Setting] = {
     "recall.temporal_boost": _Setting(
         float, 0.20,
         "Weight of temporal-proximity contribution to final score.",
+        min=0.0, max=2.0,
+    ),
+    "recall.keyed_fact_boost": _Setting(
+        float, 0.35,
+        "Additive boost for facts recorded via record_keyed_fact. Raises the "
+        "current canonical personal-attribute value (e.g. 'user.city=Warsaw') "
+        "above generic facts that share vocabulary on queries like 'where do "
+        "I live'. Set 0 to disable.",
         min=0.0, max=2.0,
     ),
     "recall.temporal_half_life_days": _Setting(
@@ -591,6 +733,47 @@ SCHEMA: dict[str, _Setting] = {
         "Trade-off: ULIDs not returned synchronously, and recall called "
         "within ~1s of the write may miss the new events. Set False for "
         "synchronous semantics (testing/debugging).",
+    ),
+    # ------------------------------------------------------------------
+    # Graph extractor backend (the thing that turns event text into
+    # entities + edges). Default is fast offline regex; opt-in to spaCy
+    # POS-filter / NER, or a local LLM CLI for cleaner concept nodes.
+    # ------------------------------------------------------------------
+    "graph.extractor": _Setting(
+        str, "regex",
+        "Entity-extraction backend. 'regex' = fast, offline, no deps "
+        "(default). 'spacy' = POS-filter + NER (needs spacy + a model). "
+        "'llm:claude' = Claude Code CLI extracts concepts at write time. "
+        "'llm:ollama' = local Ollama model. 'llm:codex' = OpenAI Codex CLI. "
+        "LLM backends give the cleanest 'knowledge graph' but add a CLI "
+        "round-trip per write; off by default to preserve the no-LLM hot path.",
+        choices=["regex", "spacy", "llm:claude", "llm:ollama", "llm:codex"],
+    ),
+    "graph.llm_max_concepts": _Setting(
+        int, 5,
+        "Max concept entities the LLM extractor may return per event. "
+        "Higher = denser graph, longer prompt. Only used when "
+        "graph.extractor starts with 'llm:'.",
+        min=1, max=20,
+    ),
+    "graph.llm_timeout_s": _Setting(
+        float, 30.0,
+        "Per-event timeout (seconds) for the LLM extractor CLI. On timeout "
+        "we silently fall back to the regex extractor — never block a write.",
+        min=3.0, max=300.0,
+    ),
+    "graph.llm_model": _Setting(
+        str, "haiku",
+        "Model identifier passed to the LLM CLI. For graph.extractor=llm:claude "
+        "use 'haiku' (cheap+fast, default), 'sonnet' (better quality), or a "
+        "full Anthropic model id. For llm:ollama use the local model name like "
+        "'qwen2.5:3b'. For llm:codex leave empty.",
+    ),
+    "graph.viz_min_mentions": _Setting(
+        int, 1,
+        "In the dashboard memory graph, hide entities with fewer than N "
+        "mentions. Set to 2 to skip one-off concepts; 1 (default) shows all.",
+        min=1, max=20,
     ),
 }
 

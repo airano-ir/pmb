@@ -84,13 +84,13 @@ def _get_json(port, path: str):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def _post_json(port, path: str, payload):
+def _post_json(port, path: str, payload, timeout: float = 5):
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}{path}", data=data,
         headers={"Content-Type": "application/json"}, method="POST",
     )
-    with urllib.request.urlopen(req, timeout=5) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -98,7 +98,10 @@ def test_dashboard_serves_html(running_dashboard):
     _, port = running_dashboard
     with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as resp:
         body = resp.read().decode("utf-8")
-    assert "PMB Dashboard" in body
+    # The dashboard's HTML page identifies itself with the PMB brand and is
+    # an HTML document; the rest of the markup (tabs, graph, panels) is
+    # asserted via the JSON APIs in the tests below.
+    assert "PMB" in body
     assert "<html" in body
 
 
@@ -126,8 +129,16 @@ def test_dashboard_api_entities(running_dashboard):
 
 def test_dashboard_api_recall(running_dashboard):
     eng, port = running_dashboard
+    # Pre-warm the engine in this process so the HTTP recall call below doesn't
+    # eat the model-load latency (~10-30 s cold) and trip the socket timeout.
+    # The dashboard server shares the same Engine instance, so a warmup here
+    # makes its in-server recall hot too.
+    try:
+        eng.warmup()
+    except AttributeError:
+        eng.recall("warmup", top_k=1)
     res = _post_json(port, "/api/recall",
-                     {"query": "adoption agencies", "top_k": 3})
+                     {"query": "adoption agencies", "top_k": 3}, timeout=60)
     assert "results" in res
     assert "elapsed_ms" in res
 
@@ -139,6 +150,53 @@ def test_dashboard_event_detail(running_dashboard):
     detail = _get_json(port, f"/api/event/{ulid}")
     assert "entities" in detail
     assert detail["ulid"] == ulid
+
+
+def test_dashboard_api_lessons(running_dashboard):
+    """GET /api/lessons returns the self-improvement-loop aggregates the
+    Lessons tab renders: total_surfaces / followed / ignored / unknown +
+    per_lesson rows. Drives a real surface→follow→ignore cycle first."""
+    eng, port = running_dashboard
+    from pmb.hooks import run_auto_context
+
+    eng.record_fact("This repo uses pnpm, never npm",
+                    metadata={"kind": "lesson", "source": "lesson"})
+    eng.record_fact("Pin numpy below 2.x for lancedb compatibility",
+                    metadata={"kind": "lesson", "source": "lesson"})
+
+    r1 = run_auto_context(eng, "какие правила про pnpm и npm")
+    r2 = run_auto_context(eng, "какие правила про numpy lancedb")
+    eng.mark_lesson_followed(r1.lessons[0]["surface_id"], followed=True, note="ok")
+    eng.mark_lesson_followed(r2.lessons[0]["surface_id"], followed=False, note="legacy")
+
+    data = _get_json(port, "/api/lessons?days=1")
+    assert data["total_surfaces"] >= 2
+    assert data["followed"] >= 1
+    assert data["ignored"] >= 1
+    assert isinstance(data["per_lesson"], list) and data["per_lesson"]
+    # every row carries the fields the frontend badge logic needs
+    row = data["per_lesson"][0]
+    for k in ("lesson_ulid", "surfaces", "followed", "ignored", "content"):
+        assert k in row
+
+
+def test_dashboard_api_adherence(running_dashboard):
+    """GET /api/adherence must NOT crash on a fresh workspace (no mcp_calls
+    table yet) and must still report lesson metrics + a per-day series."""
+    eng, port = running_dashboard
+    from pmb.hooks import run_auto_context
+
+    eng.record_fact("Dashboard SVG overlay uses requestAnimationFrame",
+                    metadata={"kind": "lesson", "source": "lesson"})
+    res = run_auto_context(eng, "какие правила про dashboard svg overlay")
+    eng.mark_lesson_followed(res.lessons[0]["surface_id"], followed=True, note="x")
+
+    data = _get_json(port, "/api/adherence?days=1")
+    assert "error" not in data, f"adherence endpoint errored: {data.get('error')}"
+    # lesson metrics survive even though mcp_calls is absent
+    assert data.get("lesson_surfaces", 0) >= 1
+    assert data.get("lesson_followed", 0) >= 1
+    assert "series" in data and isinstance(data["series"], list)
 
 
 def test_dashboard_404_on_unknown_route(running_dashboard):

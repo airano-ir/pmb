@@ -143,3 +143,9 @@ NOTES.md
 # Created on demand by scripts/_bench_data.py; never committed.
 # --------------------------------------------------------------
 /scripts/data/
+
+# --------------------------------------------------------------
+# Generated memory visualization (`pmb dashboard --export` output)
+# --------------------------------------------------------------
+/memory.html
+pmb_memory.html

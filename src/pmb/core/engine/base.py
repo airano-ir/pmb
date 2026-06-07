@@ -7,10 +7,16 @@ from pmb.config import Config
 from pmb.core.events import (
     EventStore,
 )
+from pmb.core.sqlite_helper import patch_global_sqlite3
+# Patch sqlite3.connect once at engine import — every subsequent
+# sqlite3.connect() in PMB code automatically gets busy_timeout +
+# WAL pragmas. Without this, concurrent writes from MCP + dashboard +
+# seed scripts on the same DB fail with 'database is locked'.
+patch_global_sqlite3()
 from pmb.core.recall_cache import RecallCache
 from pmb.core.search import HybridSearch
 from pmb.core.workspace import Workspace, detect_workspace
-from pmb.graph.entities import EntityExtractor
+from pmb.graph.entities import EntityExtractor, make_extractor
 from pmb.graph.store import GraphStore
 from pmb.signals.session import SessionTracker
 from pmb.reasoning.pamvr import (
@@ -111,7 +117,16 @@ class Engine(
         self.session_tracker = SessionTracker(self.workspace)
         # Graph layer: same DB file, extra tables (migration v2)
         self.graph = GraphStore(self.workspace.db_path)
-        self.entity_extractor = EntityExtractor()
+        # Pluggable extractor — `graph.extractor` config picks the backend.
+        # Defaults to fast regex; users can switch to "spacy" or "llm:claude"
+        # / "llm:ollama" / "llm:codex" without recall code changes.
+        self.entity_extractor = make_extractor(self.config)
+        # Cache populated by record_batch's pre-extraction step. Maps the
+        # CLEANED content text → ExtractedEntities. _index_event_in_graph
+        # consults it FIRST so when an LLM backend is configured, a batch of
+        # N events pays one CLI call total instead of N. Cleared after each
+        # record_batch. Empty (and ignored) for non-batch writes.
+        self._extract_cache: dict = {}
         # Recall LRU cache — "working memory" buffer in front of the hybrid
         # pipeline. Invalidated on every event write.
         self.recall_cache = RecallCache(
@@ -151,6 +166,13 @@ class Engine(
         import threading as _threading
 
         self._batch_lock = _threading.Lock()
+
+        # In-flight async write counter — lets callers (CLI scripts,
+        # tests, fixtures) block until daemon threads actually finish.
+        # Without this, `record_batch_async` spawns a daemon thread that
+        # gets killed on process exit, silently dropping writes.
+        self._async_writes_in_flight = 0
+        self._async_writes_cv = _threading.Condition(_threading.Lock())
 
         # Improvement #5: bulk-import mode. When True, every per-item
         # cross-cutting step (dedup L1+L2, graph indexing, temporal
