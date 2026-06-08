@@ -40,7 +40,10 @@ _HOOK_SCRIPT_NAME = "pmb-session-start"
 
 # Substrings that identify a PMB-installed hook command, so install is
 # idempotent and uninstall can find every one we added.
-_PMB_MARKERS = ("prepare-context", "session-restore", "lesson-followcheck")
+_PMB_MARKERS = (
+    "prepare-context", "session-restore", "lesson-followcheck",
+    "track-action", "autowrite",
+)
 
 
 def _pmb_entry() -> str:
@@ -66,9 +69,21 @@ def _claude_hook_specs() -> list[dict]:
             "event": "SessionStart",
             "command": f'"{pmb}" session-restore --max-chars 3000 --quiet',
         },
+        # PostToolUse: ambient observer — log the agent's action (instant).
+        {
+            "event": "PostToolUse",
+            "command": f'"{pmb}" track-action --quiet',
+        },
         {
             "event": "Stop",
             "command": f'"{pmb}" lesson-followcheck --window 30 --quiet',
+        },
+        # Stop: ambient auto-write — journal the turn if the agent didn't.
+        # No-op unless `autowrite.enabled` is true in config, so installing
+        # the hook is safe; it stays silent until the user opts in.
+        {
+            "event": "Stop",
+            "command": f'"{pmb}" autowrite --window 30 --quiet',
         },
     ]
 
@@ -178,6 +193,49 @@ def _codex_hooks_dir() -> Path:
     return Path.home() / ".codex" / "hooks"
 
 
+def _codex_config_path() -> Path:
+    return Path.home() / ".codex" / "config.toml"
+
+
+def _install_codex_notify() -> dict:
+    """Wire `notify` in ~/.codex/config.toml to `pmb codex-notify`, which is
+    the ambient observer + auto-write for Codex (parses the rollout log on
+    each agent-turn-complete). Best-effort: needs tomllib (read) + a TOML
+    writer (write); if either is missing we skip notify but keep the
+    session-start script."""
+    p = _codex_config_path()
+    pmb = _pmb_entry()
+    notify_value = [pmb, "codex-notify"]
+    try:
+        try:
+            import tomllib as _toml_r  # py3.11+
+        except Exception:
+            import tomli as _toml_r  # type: ignore
+        import tomli_w as _toml_w  # type: ignore
+    except Exception:
+        return {"notify": "skipped", "reason": "no TOML reader/writer"}
+    data = {}
+    if p.exists():
+        try:
+            data = _toml_r.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    existing = data.get("notify")
+    # Only overwrite if it's absent or already a pmb notify (don't clobber a
+    # user's own notify program).
+    if existing and not (isinstance(existing, list)
+                         and any("codex-notify" in str(x) for x in existing)):
+        return {"notify": "skipped",
+                "reason": f"existing non-pmb notify: {existing}"}
+    data["notify"] = notify_value
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_toml_w.dumps(data), encoding="utf-8")
+    except Exception as e:
+        return {"notify": "failed", "reason": str(e)}
+    return {"notify": "installed", "value": notify_value, "path": str(p)}
+
+
 def _install_codex_hook() -> dict:
     d = _codex_hooks_dir()
     d.mkdir(parents=True, exist_ok=True)
@@ -194,34 +252,135 @@ def _install_codex_hook() -> dict:
         os.chmod(script, 0o755)
     except Exception:
         pass
+    # Also wire the ambient observer + auto-write via Codex's notify.
+    notify = _install_codex_notify()
     return {"agent": "codex", "path": str(script), "action": "installed",
-            "command": cmd}
+            "command": cmd, "notify": notify}
 
 
 def _uninstall_codex_hook() -> dict:
     d = _codex_hooks_dir()
     script = d / f"{_HOOK_SCRIPT_NAME}.sh"
-    if not script.exists():
+    removed_script = False
+    if script.exists():
+        script.unlink()
+        removed_script = True
+    # Remove our notify from config.toml (only if it's ours).
+    notify_removed = False
+    p = _codex_config_path()
+    if p.exists():
+        try:
+            try:
+                import tomllib as _toml_r
+            except Exception:
+                import tomli as _toml_r  # type: ignore
+            import tomli_w as _toml_w  # type: ignore
+            data = _toml_r.loads(p.read_text(encoding="utf-8"))
+            nv = data.get("notify")
+            if isinstance(nv, list) and any("codex-notify" in str(x) for x in nv):
+                data.pop("notify", None)
+                p.write_text(_toml_w.dumps(data), encoding="utf-8")
+                notify_removed = True
+        except Exception:
+            pass
+    if not removed_script and not notify_removed:
         return {"agent": "codex", "action": "not_installed", "path": str(script)}
-    script.unlink()
-    return {"agent": "codex", "path": str(script), "action": "removed"}
+    return {"agent": "codex", "path": str(script), "action": "removed",
+            "notify_removed": notify_removed}
+
+
+# ── capability registry ────────────────────────────────────────────
+# Ambient memory needs to OBSERVE the agent's actions. How (or whether) we
+# can depends entirely on what the host exposes:
+#
+#   "hooks"    — rich lifecycle hooks (PostToolUse + Stop + SessionStart).
+#                Full ambient: auto-recall, session-restore, follow-through,
+#                ambient auto-write. (Claude Code.)
+#   "rollout"  — no per-tool hook, but the host writes an action log we can
+#                parse + a turn-complete notify. Auto-recall + ambient
+#                auto-write. (Codex.)
+#   "mcp-only" — MCP works (recall/record via tools + CLAUDE.md/AGENTS.md
+#                rules), but there's no way to observe file edits / shell
+#                commands. Auto-recall works; ambient auto-write does NOT
+#                (nothing to observe). (Cursor, Windsurf, VS Code, Zed,
+#                Gemini, opencode, continue.)
+_AGENT_CAP: dict[str, str] = {
+    "claude": "hooks",
+    "claude-code": "hooks",
+    "codex": "rollout",
+    "cursor": "mcp-only",
+    "windsurf": "mcp-only",
+    "vscode": "mcp-only",
+    "zed": "mcp-only",
+    "gemini": "mcp-only",
+    "opencode": "mcp-only",
+    "continue": "mcp-only",
+}
+
+
+def ambient_capability(agent: str) -> str:
+    """What ambient mechanism is available for `agent`:
+    'hooks' | 'rollout' | 'mcp-only' | 'unknown'."""
+    return _AGENT_CAP.get(agent, "unknown")
+
+
+def capability_report() -> list[dict]:
+    """Per-agent ambient capability + what works, for `pmb hooks capabilities`."""
+    feature = {
+        "hooks": ("auto-recall + session-restore + follow-through + "
+                  "ambient auto-write"),
+        "rollout": "auto-recall + ambient auto-write (via rollout log + notify)",
+        "mcp-only": ("auto-recall via rules + ambient via the project "
+                     "observer (`pmb ambient-watch .`) — watches git for "
+                     "file changes since the host gives no hooks"),
+        "unknown": "unknown agent",
+    }
+    out = []
+    for ag in ("claude-code", "codex", "cursor", "windsurf", "vscode",
+               "zed", "gemini", "opencode", "continue"):
+        cap = ambient_capability(ag)
+        # Ambient is available everywhere now: directly via hooks/rollout, or
+        # via the project observer for mcp-only hosts.
+        mech = {"hooks": "hooks", "rollout": "rollout",
+                "mcp-only": "project-observer"}.get(cap, "none")
+        out.append({
+            "agent": ag,
+            "capability": cap,
+            "ambient": cap in ("hooks", "rollout", "mcp-only"),
+            "ambient_mechanism": mech,
+            "details": feature[cap],
+        })
+    return out
 
 
 # ── public ─────────────────────────────────────────────────────────
 
 def install_hook(agent: str) -> dict:
-    """Install the lifecycle hooks for one agent."""
-    if agent in ("claude", "claude-code"):
+    """Install the best available ambient mechanism for `agent`.
+
+    Dispatches on capability: rich hooks (Claude Code), rollout+notify
+    (Codex), or — for MCP-only hosts — reports that ambient observation
+    isn't available there (auto-recall still works via `pmb connect`).
+    """
+    cap = ambient_capability(agent)
+    if cap == "hooks":
         return _install_claude_hook()
-    if agent == "codex":
+    if cap == "rollout":
         return _install_codex_hook()
-    if agent == "cursor":
+    if cap == "mcp-only":
         return {
-            "agent": "cursor",
-            "action": "not_supported",
-            "reason": "Cursor lacks a generic user-prompt shell hook. "
-                      "PMB context is still injected via CLAUDE.md rules "
-                      "installed by `pmb connect cursor`.",
+            "agent": agent,
+            "action": "mcp_only",
+            "capability": "mcp-only",
+            "reason": (
+                f"{agent} exposes MCP but no hooks / action log, so we can't "
+                f"observe the agent directly. Two steps for full PMB:\n"
+                f"  1. `pmb connect {agent}`   — MCP + auto-recall rules\n"
+                f"  2. `pmb ambient-watch .`   — ambient auto-write by "
+                f"watching the project's git changes (run it next to your "
+                f"editor). Coordination still holds: silent if the agent "
+                f"journaled via MCP."
+            ),
         }
     raise ValueError(f"unknown agent {agent!r}")
 
@@ -231,6 +390,9 @@ def uninstall_hook(agent: str) -> dict:
         return _uninstall_claude_hook()
     if agent == "codex":
         return _uninstall_codex_hook()
+    if ambient_capability(agent) == "mcp-only":
+        return {"agent": agent, "action": "not_installed",
+                "reason": "mcp-only agent — nothing was hook-installed"}
     raise ValueError(f"unknown agent {agent!r}")
 
 

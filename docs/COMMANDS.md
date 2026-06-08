@@ -243,6 +243,36 @@ pmb distill                           # turn a session into lessons
 
 ---
 
+## Hooks & ambient memory
+
+Hooks force-feed PMB at the protocol level, so memory works without the
+model remembering to call anything. `pmb hooks install claude-code` wires
+all four lifecycle hooks; Codex and MCP-only hosts get the equivalent via
+their own mechanisms (check `pmb hooks capabilities`).
+
+| Command | What it does |
+|---|---|
+| `pmb hooks install <agent>` 🟢 | Wire the lifecycle hooks. Claude Code: UserPromptSubmit + PostToolUse + SessionStart + Stop. Codex: a `notify` → `pmb codex-notify`. |
+| `pmb hooks list` 🟢 | Show which hooks are installed. |
+| `pmb hooks capabilities` 🟢 | What ambient mechanism each agent supports: `hooks` (Claude Code) / `rollout` (Codex) / `mcp-only` (git observer). |
+| `pmb hooks uninstall <agent>` 🟢 | Remove the hooks. |
+| `pmb auto-context "..."` 🟢 | Preview the per-turn memory a UserPromptSubmit hook would inject. |
+| `pmb session-restore [-m MIN]` 🟢 | Preview the "where you left off" digest a SessionStart hook injects after a compaction. |
+| `pmb lesson-followcheck --dry-run` 🟢 | Preview deterministic follow-through scoring for surfaced lessons. |
+| `pmb autowrite [--dry-run]` 🟢🧠 | Ambient auto-write for the current turn: if the agent didn't call a `record_*` tool, synthesize ONE activity entry from observed actions. No-op unless `autowrite.enabled`. 🧠 only if `autowrite.synthesizer` is an LLM backend — the default template needs no model. |
+| `pmb track-action` 🟢 | (Hook-invoked.) Append one observed action to the ambient journal — the PostToolUse hot path (single SQLite INSERT, no model). |
+| `pmb ambient-watch <dir>` 🟢🧠 | Ambient auto-write for MCP-only hosts (Cursor/Zed/VS Code): poll git for changes, auto-write once the project goes idle. |
+| `pmb codex-notify` 🟢🧠 | (Hook-invoked by Codex on `agent-turn-complete`.) Parse the session rollout, then run ambient auto-write. |
+| `pmb forget-auto [--minutes N]` 🟢 | Archive memory the ambient layer wrote itself (`source=autowrite`). Reversible — archived, not hard-deleted. |
+
+Ambient auto-write is **ON by default** and never duplicates the agent's
+own `record_*` calls — it only fills the gap when the agent stays silent.
+A turn is journaled only if it clears an outcome-based quality bar (tests
+passed, a failure fixed, a deploy ran), so mechanical churn is dropped.
+Tune everything via `autowrite.*` (`pmb config list`).
+
+---
+
 ## How it embeds into your workflow (no lock-in)
 
 - **Lazy by default.** After `pmb connect`, the agent ignores PMB for general

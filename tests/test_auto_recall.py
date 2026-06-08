@@ -120,6 +120,15 @@ def test_recent_query(msg):
     "current goals",
     "what am I working on",
     "які у мене цілі",
+    # 'what's left to do' phrasings (regression: usefulness-bench finding)
+    "что мне доделать по auth",
+    "что осталось сделать",
+    "что делать дальше",
+    "todo list",
+    "what's left to do",
+    "what should I do next",
+    "remaining tasks",
+    "що залишилось зробити",
 ])
 def test_goals_query(msg):
     assert Intent.GOALS_QUERY in detect_intents(msg)

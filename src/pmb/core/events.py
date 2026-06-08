@@ -32,7 +32,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 # Memory tiers (loose analogy to STM/MTM/LTM in human memory).

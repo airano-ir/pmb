@@ -377,6 +377,7 @@ def make_local_entry(
     workspace_cwd: Path,
     workspace_id: Optional[str] = None,
     pmb_home: Optional[Path] = None,
+    tool_profile: Optional[str] = None,
 ) -> dict:
     """The local pmb MCP server entry.
 
@@ -386,6 +387,11 @@ def make_local_entry(
 
     pmb_home overrides PMB_HOME (where workspaces live on disk). Useful for
     multi-user shared memory (point at a shared NAS path).
+
+    tool_profile (minimal | lean | default | full) is written as
+    PMB_TOOL_PROFILE in the server env — `pmb connect` sets "lean" for a
+    hook-enabled host so the agent isn't offered MCP tools the hooks already
+    cover. None = leave it to the server default.
     """
     venv_python = sys.executable
     pmb_mcp = shutil.which("pmb-mcp")
@@ -394,6 +400,8 @@ def make_local_entry(
         env["PMB_WORKSPACE"] = workspace_id
     if pmb_home:
         env["PMB_HOME"] = str(pmb_home)
+    if tool_profile:
+        env["PMB_TOOL_PROFILE"] = tool_profile
     if pmb_mcp:
         return {"command": pmb_mcp, "env": env}
     return {
@@ -842,6 +850,22 @@ def probe_mcp(timeout_seconds: float = 6.0) -> tuple[bool, str]:
 # ----------------------------------------------------------------------
 
 
+# Hosts with real lifecycle hooks. Installing them lets the reflexive
+# read/write run out-of-band, so we can trim the MCP surface (see _lean_for).
+_HOOK_HOSTS = {"claude-code", "codex"}
+
+
+def _lean_for(agent: str) -> Optional[str]:
+    """MCP tool profile to set when hooks ARE installed for `agent`.
+
+    Only claude-code has a per-turn auto-recall HOOK (UserPromptSubmit) that
+    makes the read-status tools redundant → "lean". Codex installs hooks for
+    AMBIENT (rollout + notify) but has NO per-turn read hook, so it still needs
+    the full read surface (prepare / session_brief) → leave the server default.
+    """
+    return "lean" if agent == "claude-code" else None
+
+
 def connect(
     agent: str,
     *,
@@ -855,6 +879,7 @@ def connect(
     active: bool = False,
     active_toggles: Optional[dict] = None,
     bearer_token: Optional[str] = None,
+    install_hooks: bool = False,
 ) -> dict:
     """Write the MCP entry into the right config file.
 
@@ -891,12 +916,20 @@ def connect(
 
     path = next((p for p in target.config_paths if p.exists()), target.fallback_path)
 
+    # Install hooks (reflexive read/write) for hook-capable hosts, and trim the
+    # MCP surface accordingly. Lean profile is set ONLY when the hooks that
+    # cover those tools are actually installed (else the agent would lose both
+    # the tool AND the hook). Remote servers manage their own profile.
+    will_install_hooks = install_hooks and agent in _HOOK_HOSTS and not remote
+    tool_profile = _lean_for(agent) if will_install_hooks else None
+
     if remote:
         entry = make_remote_entry(remote, bearer_token=bearer_token)
         name = name_override or "pmb-remote"
     else:
         entry = make_local_entry(
             cwd, workspace_id=workspace_id, pmb_home=pmb_home,
+            tool_profile=tool_profile,
         )
         name = name_override or ("pmb-shared" if workspace_id else "pmb")
 
@@ -931,6 +964,17 @@ def connect(
     except Exception as e:
         rules_written.append({"error": str(e)})
 
+    # Install the lifecycle hooks (auto-recall + ambient + restore + follow-
+    # through). This is what makes the lean MCP profile safe. Best-effort:
+    # never crash connect if the host's settings file is unusual.
+    hooks_result = None
+    if will_install_hooks:
+        try:
+            from pmb.cli.hooks import install_hook
+            hooks_result = install_hook(agent)
+        except Exception as e:  # noqa: BLE001
+            hooks_result = {"error": str(e)}
+
     return {
         "agent": agent,
         "scope": scope,
@@ -940,4 +984,6 @@ def connect(
         "entry": entry,
         "workspace_id": workspace_id,
         "instruction_rules": rules_written,
+        "hooks": hooks_result,
+        "tool_profile": tool_profile,
     }

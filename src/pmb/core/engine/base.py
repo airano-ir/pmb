@@ -36,6 +36,7 @@ from pmb.core.engine.graph import GraphMixin
 from pmb.core.engine.recall import RecallMixin
 from pmb.core.engine.reasoning import ReasoningMixin
 from pmb.core.engine.health import HealthMixin
+from pmb.core.engine.ambient import AmbientMixin
 
 
 class Engine(
@@ -47,6 +48,7 @@ class Engine(
     RecallMixin,
     ReasoningMixin,
     HealthMixin,
+    AmbientMixin,
 ):
     """
     Главный orchestrator. Держит workspace + storage + search index.
@@ -308,8 +310,28 @@ class Engine(
         return sess.to_dict() if sess else None
 
     def close(self):
-        """Закрыть открытые ресурсы (LanceDB, native handles)."""
-        # Drain any pending touch updates before letting the engine die.
+        """Закрыть открытые ресурсы (LanceDB, native handles).
+
+        Drain the three async side-channels first, in dependency order, so a
+        process that exits right after close() doesn't silently drop in-flight
+        work. Each wait is bounded, so close() can't hang on a stuck worker:
+
+          1. async batch writes  — record_batch_async daemon threads; these
+             may themselves enqueue graph + touch work, so drain them first.
+          2. deferred graph index — the graph.async_llm background worker.
+          3. touch buffer         — access_count / importance reinforcement.
+
+        Each drain returns immediately when nothing is pending, so the common
+        close() stays ~instant.
+        """
+        try:
+            self.wait_for_writes(timeout=30.0)
+        except Exception:
+            pass
+        try:
+            self.wait_for_graph_queue(timeout_seconds=30.0)
+        except Exception:
+            pass
         try:
             self._drain_touch_buffer()
         except Exception:

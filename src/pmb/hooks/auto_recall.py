@@ -94,7 +94,14 @@ _GOALS_QUERY = re.compile(
     r"\bоткрытые\s+(?:цели|задачи)|"
     r"\bяк[іи]\s+у\s+мене\s+цілі|"
     r"\bmy\s+(?:open\s+)?goals?|\bopen\s+goals?|\bin\s+flight|"
-    r"\bwhat\s+am\s+i\s+working\s+on|\bcurrent\s+goals?)",
+    r"\bwhat\s+am\s+i\s+working\s+on|\bcurrent\s+goals?|"
+    # 'what's left to do' — a natural goals question the old patterns missed
+    r"\bдодела\w+|\bнедодела\w*|\bчто\s+остал\w+|"
+    r"\bчто\s+(?:дел\w+\s+)?дальше\b|"
+    r"\bщо\s+(?:залиш\w+|дал[іи]|дороб\w+)|"
+    r"\bto-?do\b|\bwhat'?s\s+(?:left|next)\b|\bwhat\s+is\s+left\b|"
+    r"\bremaining\s+(?:tasks?|work|items?)\b|"
+    r"\bwhat\s+(?:do\s+i\s+still\s+need|should\s+i\s+do\s+next))",
     re.IGNORECASE,
 )
 
@@ -342,6 +349,21 @@ def run_auto_context(
         res.intents = [Intent.SKIP]
         res.skipped = True
         res.skip_reason = "empty message"
+        res.latency_ms = int((time.perf_counter() - t0) * 1000)
+        return res
+
+    # Non-message noise: task-notification / system-reminder / raw tool-output
+    # blocks get routed through the hook the same as user text, but they are
+    # NOT requests. Surfacing memory on them is pure noise — on the real
+    # workspace this was ~half of all lesson surfaces. Skip before classifying.
+    _head = msg.lstrip()[:120].lower()
+    if any(mk in _head for mk in (
+        "<task-notification>", "<system-reminder>", "[system notification",
+        "<tool-use-id>", "<command-name>", "<local-command",
+    )):
+        res.intents = [Intent.SKIP]
+        res.skipped = True
+        res.skip_reason = "non-message (system/tool block)"
         res.latency_ms = int((time.perf_counter() - t0) * 1000)
         return res
 
@@ -627,6 +649,13 @@ def format_context(
         buf.append(
             "call mark_lesson_followed(surface_id=N, followed=True, note=\"...\")."
         )
+
+    # Coordinate with the deliberate MCP channel: this block was injected by the
+    # auto-recall HOOK, not requested. Tell the agent so it doesn't spend a turn
+    # re-calling prepare()/recall() for what's already here.
+    buf.append("")
+    buf.append("(auto-recall ran for this message — only call recall() / "
+               "find_lessons() for specifics not shown above.)")
 
     text = "\n".join(buf)
     if len(text) > max_chars:

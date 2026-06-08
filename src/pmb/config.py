@@ -73,6 +73,11 @@ DEFAULT_TIER_KEYS: frozenset[str] = frozenset({
     "auto_recall.enabled",
     "auto_recall.budget_chars",
 
+    # ── Ambient auto-write (memory journals the agent) ────────────
+    "autowrite.enabled",
+    "autowrite.synthesizer",
+    "autowrite.min_importance",
+
     # ── Agent behaviour (rules in CLAUDE.md / AGENTS.md) ──────────
     "agent.active_mode",
     "agent.apply_lessons",
@@ -213,6 +218,73 @@ SCHEMA: dict[str, _Setting] = {
         "lessons in the auto-recall block. Lets the agent see settled calls "
         "before re-deciding them. Turn off if your workspace doesn't record "
         "decisions and the extra query is wasted.",
+    ),
+
+    # ── Ambient memory (auto-write) — memory journals the agent itself ──
+    # PostToolUse logs the agent's actions; the Stop hook synthesizes an
+    # activity entry ONLY if the agent didn't journal its own work this turn.
+    # ON by default: a memory that captures work the agent forgot to record
+    # is PMB's signature. Enabling writes-on-its-own is a trust decision, so
+    # every entry is tagged source=autowrite, shown as auto, and removable in
+    # one command (`pmb forget-auto`).
+    "autowrite.enabled": _Setting(
+        bool, True,
+        "Ambient auto-write: the Stop hook journals what the agent did this "
+        "turn — but ONLY if the agent didn't call record_* itself (so it "
+        "never duplicates the agent's own, richer summary). Observes actions "
+        "via the PostToolUse hook. ON by default: this is PMB's signature — "
+        "memory that captures work even when the agent stays silent. Every "
+        "entry is tagged source=autowrite, shown as auto, and removable in "
+        "one command (`pmb forget-auto`). Turn off with "
+        "`pmb config set autowrite.enabled false` if you'd rather record "
+        "everything explicitly.",
+    ),
+    "autowrite.min_actions": _Setting(
+        int, 2,
+        "Minimum number of SIGNIFICANT observed actions (edits / tests / "
+        "commits — not reads or ls) before ambient memory bothers to write. "
+        "2 is the sweet spot: catches a real unit of work (an edit + a test, "
+        "or a couple of edits) without journaling trivial one-offs. Higher = "
+        "fewer, chunkier entries.",
+        min=1, max=50,
+    ),
+    "autowrite.min_importance": _Setting(
+        float, 0.45,
+        "Quality bar, not just a count: a turn is journaled only if its "
+        "estimated importance clears this. Importance comes from OUTCOME "
+        "signals — tests passed, an error got fixed, a deploy/migrate ran, "
+        "the breadth of edits — NOT from how many files were touched alone. "
+        "So 'edited two files and nothing else' (score ~0.30) is skipped, "
+        "while 'edited + tests green' (~0.55) is kept and ranks higher in "
+        "recall. Lower it to capture more; raise it to keep only clear "
+        "milestones. 0 disables the bar (count gate only).",
+        min=0.0, max=1.0,
+    ),
+    "autowrite.window_minutes": _Setting(
+        float, 30.0,
+        "How far back the Stop hook looks for this turn's actions and for "
+        "whether the agent already journaled. Roughly 'one turn'.",
+        min=1.0, max=240.0,
+    ),
+    "autowrite.synthesizer": _Setting(
+        str, "template",
+        "How the journal line is written. 'template' = instant, "
+        "deterministic, no model ('edited 3 files; ran tests; committed'). "
+        "'llm:ollama' / 'llm:claude' / 'llm:codex' = a nicer human summary "
+        "via the local/CLI model, with a timeout and automatic fallback to "
+        "the template so it never blocks the turn.",
+        choices=["template", "llm:ollama", "llm:claude", "llm:codex"],
+    ),
+    "autowrite.llm_model": _Setting(
+        str, "",
+        "Model id for autowrite.synthesizer when it's an LLM backend. "
+        "Empty = backend default (ollama → qwen2.5:3b, claude → haiku).",
+    ),
+    "autowrite.llm_timeout_s": _Setting(
+        float, 20.0,
+        "Timeout for the LLM synthesizer. On timeout we fall back to the "
+        "template — the turn is never blocked.",
+        min=3.0, max=120.0,
     ),
     "overview.max_events": _Setting(
         int, 40,
@@ -392,6 +464,49 @@ SCHEMA: dict[str, _Setting] = {
     "recall.cache_size": _Setting(
         int, 128, "LRU cache size for recall queries (0 disables)",
         min=0, max=10000,
+    ),
+    "recall.touch_async": _Setting(
+        bool, True,
+        "Apply recall's reinforcement side-effects (access_count, importance "
+        "boost, last_accessed) via a deferred ~250ms background flusher instead "
+        "of synchronously. ON by default: under concurrent recalls this turns "
+        "~16 SQLite write-lock acquisitions per second into ~4. Set False when "
+        "recall's side-effects must be visible IMMEDIATELY after the call "
+        "(deterministic tests, single-shot CLI scripts) — recall then drains "
+        "the touch buffer inline before returning.",
+    ),
+    "recall.lesson_min_overlap": _Setting(
+        int, 1,
+        "Min DISTINCTIVE shared tokens (stopword-filtered, length>=4, "
+        "identifiers kept) between a message and a lesson for that lesson to "
+        "surface (find_lessons / auto-recall). 1 is the sweet spot: the "
+        "stopword set already strips generic/path noise, so a single "
+        "distinctive overlap (pnpm, numpy, lancedb) is a real signal. Raise to "
+        "2 for stricter precision — fewer, surer lessons, which is what makes "
+        "the adherence follow-rate meaningful instead of drowning in noise.",
+        min=1, max=5,
+    ),
+    "recall.lesson_semantic": _Setting(
+        bool, False,
+        "EXPERIMENTAL semantic tier for lesson surfacing: alongside the lexical "
+        "token gate, score lessons by cosine on the embeddings recall already "
+        "uses, to catch paraphrase / synonym / cross-lingual matches. Not an "
+        "LLM call, just a vector cosine. OFF by default — and a real-workspace "
+        "eval (June 8 2026) with the default MiniLM embedder showed it did NOT "
+        "reliably beat the lexical tier: it MISSED obvious matches (e.g. a "
+        "LanceDB lesson for an 'apple-silicon vector store' query) and added "
+        "off-topic noise, with no clean cosine threshold. Revisit only with a "
+        "stronger embedder (bge-m3) or the cross-encoder reranker; until then "
+        "the lexical gate + stopwords are the reliable noise fix. Enabling also "
+        "loads the embedding model on the per-turn hook path.",
+    ),
+    "recall.lesson_semantic_min": _Setting(
+        float, 0.45,
+        "Cosine-similarity threshold for the semantic lesson tier "
+        "(recall.lesson_semantic). Higher = stricter (fewer paraphrase "
+        "matches). 0.45 is a sane start for bge-m3 / MiniLM; tune against your "
+        "own lessons.",
+        min=0.0, max=1.0,
     ),
     "recall.cache_ttl_seconds": _Setting(
         float, 300.0,
@@ -761,6 +876,17 @@ SCHEMA: dict[str, _Setting] = {
         "Per-event timeout (seconds) for the LLM extractor CLI. On timeout "
         "we silently fall back to the regex extractor — never block a write.",
         min=3.0, max=300.0,
+    ),
+    "graph.async_llm": _Setting(
+        bool, True,
+        "When the extractor is an LLM backend (graph.extractor starts with "
+        "'llm:'), run entity extraction in a BACKGROUND worker so the write "
+        "returns immediately instead of blocking on the CLI round-trip "
+        "(up to graph.llm_timeout_s PER event). The graph becomes "
+        "eventually-consistent; `pmb regraph` rebuilds it if the process "
+        "dies before the worker drains. Regex/spaCy backends are fast and "
+        "always run inline regardless of this flag. Set False only for "
+        "deterministic tests that need the graph populated synchronously.",
     ),
     "graph.llm_model": _Setting(
         str, "haiku",

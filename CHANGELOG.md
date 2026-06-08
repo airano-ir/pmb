@@ -2,6 +2,65 @@
 
 All notable changes to PMB are documented here.
 
+## [0.4.0]
+
+### Added
+
+- **Ambient memory (auto-write).** PMB journals the agent's work even when it
+  forgets to call `record_batch`. A PostToolUse hook logs significant actions
+  (`pmb track-action`); a Stop hook synthesizes one activity entry per turn
+  *only if* the agent didn't record its own (`pmb autowrite`), gated by a
+  git-free, outcome-based importance score (tests passed / failure fixed /
+  deploy ran — not raw file count). Every entry is tagged `source=autowrite`,
+  shown as auto, and removable with `pmb forget-auto`. Works on Claude Code
+  (hooks), OpenAI Codex (rollout parse, `pmb codex-notify`), and MCP-only hosts
+  (git observer, `pmb ambient-watch`). `pmb hooks capabilities` reports
+  per-agent support. ON by default (`autowrite.enabled`).
+- **`lean` MCP tool profile** (25 tools): the default set minus the read-status
+  browse tools a host hook already covers, set automatically by
+  `pmb connect claude-code` so the agent isn't offered slow MCP versions of what
+  auto-recall / session-restore already inject for free.
+- **Lesson follow-through `not_applicable` state.** The Stop-hook followcheck
+  classifies a surfaced lesson with zero overlap with the turn's work as
+  not-applicable and excludes it from the adherence denominator, instead of
+  counting it as a phantom "not followed". Follow-rate is now over *applicable*
+  surfaces — it reflects relevant lessons, not surfacing volume.
+- **Opt-in semantic lesson tier** (`recall.lesson_semantic`, experimental, off
+  by default): cosine over the existing embeddings to catch paraphrase /
+  cross-lingual lesson matches the lexical gate can't.
+
+### Changed
+
+- **Lesson-surfacing precision.** Surfacing uses a shared tokenizer + stopword
+  set (`pmb.core.text_match`, symmetric with followcheck): generic and
+  filesystem-path noise is filtered, and a relevance gate
+  (`recall.lesson_min_overlap`, default 1) replaces the old "any shared 3-char
+  word" match. Auto-recall also skips non-message blocks (task-notifications /
+  system reminders). Materially cuts irrelevant surfacing on real workspaces.
+- **`graph.async_llm`** (default on): LLM entity extraction runs in a background
+  worker off the write hot path, so records return instantly; `pmb regraph` is
+  the backstop.
+
+### Fixed
+
+- **`lean` profile was silently ignored** — the post-registration tool filter
+  fell back to the full default set; it now selects the lean set correctly.
+- **`Engine.close()` drains the async batch-write, deferred-graph, and touch
+  queues** (each bounded) so in-flight work isn't dropped on shutdown.
+- **Persistent WAL no longer forced on non-PMB databases** — the global
+  `sqlite3.connect` pragma patch applies `journal_mode=WAL` only to PMB-owned
+  DBs (under `PMB_HOME` / named `events.sqlite` / `:memory:`); third-party
+  connections in the same process get only the ephemeral pragmas.
+- Hyphenated compound words (`lesson-surfacing`) are matched by their parts.
+- `SCHEMA_VERSION` bumped to 6 to match the shipped `lesson_surfaces` table.
+
+## [0.3.0]
+
+### Added
+
+- Auto-recall, session-restore, and lesson follow-through lifecycle hooks;
+  optional HTTP transport with bearer-token auth for shared/team workspaces.
+
 ## [0.2.1]
 
 ### Added

@@ -309,9 +309,15 @@ idle. You don't trigger them. This keeps every turn fast.
 # config.toml env block to control which tools the LLM sees. Fewer tool
 # definitions = faster LLM thinking + less choice confusion.
 #
-#   "minimal" — 10 tools, the absolute essentials
-#   "default" — 14 tools, day-to-day usage (this is the default)
-#   "full"    — all 55 tools incl. admin (consolidate, compact, run_self_test,
+#   "minimal" — 13 tools, the absolute essentials
+#   "lean"    — 25 tools: default MINUS the pure read-status browse tools a
+#               host HOOK already covers (what_just_happened, recent_activity,
+#               list_recent, overview). KEEPS session_brief. Set by
+#               `pmb connect claude-code` when it installs the hooks, so the
+#               agent isn't offered a slow MCP version of what auto-recall /
+#               session-restore already inject for free.
+#   "default" — 29 tools, day-to-day usage (this is the default)
+#   "full"    — all 64 tools incl. admin (consolidate, compact, run_self_test,
 #               graph_stats, dedupe_run_pending, …). Use for debugging/dev.
 #
 # Even when an admin tool is HIDDEN from the agent, you can still call it
@@ -348,12 +354,29 @@ _DEFAULT_TOOLS = _MINIMAL_TOOLS | {
 }
 
 
+# "lean" = the default set MINUS the read-status tools a host HOOK already
+# delivers for free, AND that nothing else (rules / deliberate use) needs.
+# We KEEP `prepare`, `recall`, `record_batch`, `project_overview`,
+# `find_lessons`, goals, `mark_lesson_followed` — deliberate, agent-composed
+# calls no hook can make — and `session_brief`, which the agent may invoke
+# mid-session to re-orient (and which the CLAUDE.md rules reference). Only the
+# pure-duplicate browse tools are trimmed. See `pmb connect claude-code`.
+_LEAN_TOOLS = _DEFAULT_TOOLS - {
+    "what_just_happened",   # auto-recall RECENT_QUERY + ambient cover it
+    "recent_activity",      # same
+    "list_recent",          # low-value browse; ambient/recent cover the need
+    "overview",             # project_overview is the deliberate one to keep
+}
+
+
 def _should_register(tool_name: str) -> bool:
     """True if `tool_name` should be visible to the LLM under current profile."""
     if _TOOL_PROFILE == "full":
         return True
     if _TOOL_PROFILE == "minimal":
         return tool_name in _MINIMAL_TOOLS
+    if _TOOL_PROFILE == "lean":
+        return tool_name in _LEAN_TOOLS
     # default
     return tool_name in _DEFAULT_TOOLS
 
@@ -1531,7 +1554,13 @@ def build_server(
     # This reduces what Codex sees in the tool list — fewer descriptions to
     # parse each turn = faster + sharper LLM responses.
     if _TOOL_PROFILE != "full":
-        allowed = _MINIMAL_TOOLS if _TOOL_PROFILE == "minimal" else _DEFAULT_TOOLS
+        # Resolve the active profile's tool set. NOTE: this must mirror
+        # `_should_register` — a missing 'lean' key here is what silently
+        # demoted the lean profile to the full default set.
+        allowed = {
+            "minimal": _MINIMAL_TOOLS,
+            "lean": _LEAN_TOOLS,
+        }.get(_TOOL_PROFILE, _DEFAULT_TOOLS)
         try:
             import asyncio
             # list_tools() is async. The stdio server path builds the server

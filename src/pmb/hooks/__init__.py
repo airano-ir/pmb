@@ -22,6 +22,13 @@ from pmb.hooks.followcheck import (
     FollowCheckResult,
     FollowVerdict,
 )
+from pmb.hooks.autowrite import (
+    run_autowrite,
+    autowrite_gate,
+    synthesize_template,
+    synthesize_llm,
+    AutoWriteResult,
+)
 
 __all__ = [
     "Intent",
@@ -34,4 +41,9 @@ __all__ = [
     "run_followcheck",
     "FollowCheckResult",
     "FollowVerdict",
+    "run_autowrite",
+    "autowrite_gate",
+    "synthesize_template",
+    "synthesize_llm",
+    "AutoWriteResult",
 ]

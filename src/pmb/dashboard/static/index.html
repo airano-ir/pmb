@@ -2301,9 +2301,14 @@ async function loadLessons(days){
     {n: data.unknown,        lbl: 'Not marked',       c: 'dim',
      hint: 'Agent never called mark_lesson_followed. This is the adherence '
          + 'gap — not a sign the lessons are bad.'},
+    {n: data.not_applicable || 0, lbl: 'Not relevant', c: 'dim',
+     hint: 'Surfaced but had zero overlap with what the agent did this turn — '
+         + 'the lesson didn\'t pertain to the work. Excluded from the follow '
+         + 'rate so irrelevant matches don\'t drag it down.'},
     trackingActive
       ? {n: `${followRate.toFixed(0)}%`, lbl: 'Follow rate', c: 'amber',
-         hint: 'Of lessons the agent acknowledged, fraction followed'}
+         hint: 'Of surfaces that were RELEVANT to the work (excludes '
+             + '"not relevant"), the fraction confirmed followed'}
       : {n: 'n/a', lbl: 'Follow rate', c: 'dim',
          hint: `Only ${marksTotal} lesson(s) ever marked — too little signal `
              + 'to compute a meaningful follow rate.'},

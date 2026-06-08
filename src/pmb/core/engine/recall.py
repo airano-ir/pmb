@@ -1140,6 +1140,12 @@ class RecallMixin:
         # of writing synchronously. Under concurrent recalls this turns
         # 16 lock-acquisitions per second into ~4 (one per flush tick).
         self._enqueue_touches(touches, importance_updates)
+        # ...unless touch_async is off: drain inline so access_count /
+        # importance / last_accessed are visible the instant recall() returns.
+        # Keeps tier promotion + importance boosts deterministic for tests and
+        # single-shot CLI callers that read side-effects right after recall.
+        if not self.config.get("recall.touch_async"):
+            self._drain_touch_buffer()
         for ulid_p, new_tier in tier_promotions:
             self.events.update_tier(ulid_p, new_tier)
 
