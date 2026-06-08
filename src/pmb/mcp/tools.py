@@ -13,7 +13,7 @@ from pmb.mcp._toolspec import _maybe_tool  # noqa: F401
 
 def register_all(mcp, engine):
     @mcp.tool()
-    def recall(query: str, top_k: int = 5) -> dict:
+    def recall(query: str, top_k: int = 5, project: str = "") -> dict:
         """Search PMB long-term memory. CALL THIS FIRST when user asks about:
         - past decisions (why did we choose X, what port did we set)
         - project history (when did we, what happened with)
@@ -22,6 +22,10 @@ def register_all(mcp, engine):
 
         Trust results with score > 0.2 — they are the user's recorded history,
         more authoritative than inferring from code/docker/env.
+
+        Optional `project`: scope results to a single project (a filter over
+        the one user memory — not a separate store). Leave empty to search
+        everything.
 
         Returns structured pack with results, each containing event_type,
         content, metadata, score and ranking signals (bm25, vector, importance,
@@ -32,7 +36,7 @@ def register_all(mcp, engine):
         "this repo uses pnpm, never npm" — READ THEM FIRST and FOLLOW them
         before acting on the regular results.
         """
-        pack = engine.recall(query=query, top_k=top_k)
+        pack = engine.recall_scoped(query=query, top_k=top_k, project=project or None)
         out = pack.to_dict()
         # Auto-surface relevant lessons. The agent often ignores lessons
         # even though they're the most actionable memory. By piggy-backing
@@ -716,17 +720,37 @@ def register_all(mcp, engine):
 
     @mcp.tool()
     def recall_smart(query: str, top_k: int = 5, confidence_threshold: float = 0.5) -> dict:
-        """Auto-escalating recall (Improvement G). Starts cheap, retries
-        with decomposition + bigger top_k + rerank if confidence < threshold.
+        """Auto-escalating recall, but FAST and deadline-bounded. Starts with
+        a normal local recall; if confidence is low it escalates only with
+        cheap local steps (wider pool + a local rerank when that model is
+        already warm). It NEVER blocks on an LLM / Claude CLI on this path and
+        always returns within `recall.smart_deadline_ms` (default 15s),
+        returning the best result found so far if the budget is hit.
 
-        Use this for important / hard queries where you want best results
-        rather than fastest. For routine lookups, use `recall` instead.
+        The result includes an `escalation` field (stages run + why it
+        stopped) so you can see there's no point re-querying. For routine
+        lookups use `recall`; for a genuinely hard multi-hop question where
+        you accept extra latency, use `recall_deep`.
         """
         pack = engine.recall_smart(
             query, top_k=top_k,
             confidence_threshold=confidence_threshold,
         )
         return pack.to_dict()
+
+    @mcp.tool()
+    def recall_deep(query: str, top_k: int = 5) -> dict:
+        """DEEP recall — explicitly opt into the slow, thorough path.
+
+        Unlike `recall` / `recall_smart` (fast, local, bounded), this ATTEMPTS
+        LLM query-decomposition (RAG-Fusion: split → retrieve each → fuse) and
+        may take several seconds. It is still bounded by a deadline so it
+        cannot hang, and falls back to a normal local recall if the LLM
+        backend is unavailable. Use ONLY when a hard multi-hop question
+        genuinely needs it and the latency is acceptable — never for routine
+        lookups.
+        """
+        return engine.recall_deep(query, top_k=top_k).to_dict()
 
     @mcp.tool()
     def reflect_batch(limit: int = 10, backend: str = "auto") -> dict:

@@ -24,6 +24,124 @@ from pmb.cli._common import (  # noqa: F401
 from pmb.core.engine import Engine
 
 
+@app.command("repair-keyed")
+def repair_keyed(
+    apply: bool = typer.Option(
+        False, "--apply",
+        help="Actually archive/retag (default is a dry-run preview).",
+    ),
+):
+    """Collapse competing keyed facts onto one canonical value per attribute.
+
+    Fixes stale personal attributes that out-rank the live value (e.g. an old
+    `user::city = Warsaw` and a duplicate `user::current_city_2026 = Warsaw`
+    both beating `lives in Tampa`). Keeps the newest value, archives the rest
+    (never deletes), and rewrites survivors to the canonical key. Dry-run by
+    default — pass --apply to write.
+    """
+    eng = Engine()
+    mode = "APPLIED" if apply else "DRY-RUN (no changes written)"
+    console.print(f"[bold]Keyed-fact repair — {mode}[/]")
+
+    # Pass 1 — backfill: promote current-state statements buried in plain facts
+    # ("the user currently lives in Tampa") into keyed facts, so a stale keyed
+    # value stops out-ranking the real one. Runs first so Pass 2 collapses the
+    # already-corrected state.
+    bf = eng.backfill_keyed_from_facts(dry_run=not apply)
+    if bf.get("promotions"):
+        bt = Table(show_header=True, header_style="bold magenta",
+                   title="Pass 1 · promote current-state fact → keyed")
+        bt.add_column("Attribute"); bt.add_column("New (current)"); bt.add_column("Was")
+        for p in bf["promotions"]:
+            bt.add_row(esc(p["attribute"]), esc(str(p["new_value"])),
+                       esc(str(p["old_value"]) if p["old_value"] is not None else "—"))
+        console.print(bt)
+
+    # Pass 2 — collapse alias / duplicate keys onto one canonical value.
+    res = eng.repair_keyed_facts(dry_run=not apply)
+    if res.get("error"):
+        console.print(f"[red]repair failed: {res['error']}[/]")
+        raise typer.Exit(1)
+    plan = res["groups"]
+    if plan:
+        table = Table(show_header=True, header_style="bold magenta",
+                      title="Pass 2 · collapse alias/duplicate keys")
+        table.add_column("Canonical key"); table.add_column("Keep (current)")
+        table.add_column("Archive (stale)"); table.add_column("Recanon", justify="center")
+        for p in plan:
+            archived = ", ".join(esc(str(v)) for v in p["archive_values"]) or "—"
+            table.add_row(esc(p["canonical_key"]), esc(str(p["keep_value"])),
+                          archived, "✓" if p["recanonicalize"] else "")
+        console.print(table)
+
+    if not bf.get("promotions") and not plan:
+        console.print("[green]Nothing to repair — keyed facts are consistent.[/]")
+        return
+    console.print(
+        f"\n{'[green]Applied[/]' if apply else '[yellow]Would apply[/]'}: "
+        f"promote [bold]{bf['n']}[/] current-state fact(s); "
+        f"archive [bold]{res['n_archived']}[/] stale value(s); "
+        f"recanonicalize [bold]{res['n_recanonicalized']}[/] key(s)."
+    )
+    if not apply:
+        console.print(
+            "[dim]Re-run with --apply to write these changes (archive-only; "
+            "old values kept as history).[/]"
+        )
+
+
+@app.command("migrate-workspaces")
+def migrate_workspaces(
+    source: str = typer.Argument(
+        ..., help="Source workspace id or name to merge memory FROM."),
+    project: Optional[str] = typer.Option(
+        None, "--project",
+        help="Project tag applied to migrated events (default: source name). "
+             "Filter later with recall(project=...)."),
+    into: Optional[str] = typer.Option(
+        None, "--into",
+        help="Target workspace id (default: the current workspace)."),
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually copy (default is a dry-run preview)."),
+):
+    """Merge a per-project workspace into a unified memory (issue #7).
+
+    Copies active events from SOURCE into the target (current unless --into),
+    tagged project=<name> so you keep ONE memory and use project as a FILTER.
+    The SOURCE workspace is left fully intact — this is reversible. Dry-run by
+    default; pass --apply to write."""
+    import os as _os
+    if into:
+        _os.environ["PMB_WORKSPACE"] = into
+    eng = Engine()
+    res = eng.migrate_workspace_into(source, project=project, dry_run=not apply)
+    if res.get("error"):
+        console.print(f"[red]{res['error']}[/]")
+        raise typer.Exit(1)
+    tgt = eng.workspace
+    if not apply:
+        console.print(Panel.fit(
+            f"DRY-RUN — no changes written\n"
+            f"source:  [cyan]{res['source_name']}[/] ({res['source'][:12]})\n"
+            f"target:  [cyan]{tgt.name}[/] ({tgt.id[:12]})\n"
+            f"project: {res['project']}\n"
+            f"active in source: {res['n_source_active']}\n"
+            f"already migrated: {res['n_already']}\n"
+            f"would migrate:    [bold]{res['n_to_migrate']}[/]",
+            title="pmb migrate-workspaces",
+        ))
+        for s in res.get("sample", []):
+            console.print(f"  [dim]· {esc(s)}[/]")
+        console.print("[dim]Re-run with --apply to copy. Source stays intact.[/]")
+    else:
+        console.print(
+            f"[green]Migrated[/] [bold]{res['n_migrated']}[/] events from "
+            f"[cyan]{res['source_name']}[/] into [cyan]{tgt.name}[/] "
+            f"(project={res['project']}); {res['n_already']} already present. "
+            f"Source workspace left intact."
+        )
+
+
 @app.command()
 def sync(
     days: Optional[int] = typer.Option(None, "--days",

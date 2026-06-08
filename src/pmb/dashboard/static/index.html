@@ -879,7 +879,7 @@
     </table>
     <h3>Recent calls</h3>
     <table>
-      <thead><tr><th>Time</th><th>Tool</th><th>Duration</th><th>Status</th></tr></thead>
+      <thead><tr><th>Time</th><th>Tool</th><th>Duration</th><th>Stages</th><th>Status</th></tr></thead>
       <tbody id="perf-recent"></tbody>
     </table>
   </div>
@@ -2551,7 +2551,8 @@ async function loadPerf(hours){
   $('#perf-meta').textContent = 'loading…';
   const data = await api('/api/perf?hours='+hours).catch(_=>({error:'failed'}));
   if(data.error){$('#perf-meta').textContent = 'error: '+data.error; return;}
-  $('#perf-meta').innerHTML = `window: <b>${data.window_hours}h</b> · calls: <b>${data.total_calls}</b> · errors: <b style="color:${data.error_count>0?'var(--bad)':'inherit'}">${data.error_count}</b>`;
+  $('#perf-meta').innerHTML = `window: <b>${data.window_hours}h</b> · calls: <b>${data.total_calls}</b> · errors: <b style="color:${data.error_count>0?'var(--bad)':'inherit'}">${data.error_count}</b>`
+    + (data.client_timeout_count ? ` · client-timeouts: <b style="color:var(--bad)">${data.client_timeout_count}</b>` : '');
 
   const tb = $('#perf-tool-stats');
   tb.innerHTML = (data.by_tool && data.by_tool.length) ? data.by_tool.map(t=>`
@@ -2581,13 +2582,25 @@ async function loadPerf(hours){
     </tr>`;
   }).join('') : '<tr><td colspan="4" class="empty">No turns yet.</td></tr>';
 
+  const stagesCell = r=>{
+    if(!r.stages) return '<span style="color:var(--faint)">—</span>';
+    const st = (r.stages.stages||[]).join(' → ');
+    const cache = r.cache_hit===true ? ' · cache' : '';
+    return `<span title="stopped: ${esc(r.stages.stopped||'')}" style="font-size:11px">${esc(st)}${esc(cache)}</span>`;
+  };
+  const statusCell = r=>{
+    if(!r.success) return `<span style="color:var(--bad)" title="${esc(r.error||'')}">err</span>`;
+    if(r.client_timeout) return '<span style="color:var(--bad)" title="server finished AFTER the client timed out">⏱ client-timeout</span>';
+    return '<span style="color:var(--good)">ok</span>';
+  };
   const recentTb = $('#perf-recent');
   recentTb.innerHTML = (data.recent && data.recent.length) ? data.recent.map(r=>`
     <tr><td style="color:var(--faint);font-size:11px">${fmtT(r.ts)}</td>
       <td><code>${esc(r.tool)}</code></td>
       <td><span class="latency">${fmtMs(r.ms)}</span></td>
-      <td>${r.success?'<span style="color:var(--good)">ok</span>':`<span style="color:var(--bad)" title="${esc(r.error||'')}">err</span>`}</td>
-    </tr>`).join('') : '<tr><td colspan="4" class="empty">No recent calls.</td></tr>';
+      <td>${stagesCell(r)}</td>
+      <td>${statusCell(r)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="empty">No recent calls.</td></tr>';
 }
 
 /* ============= RECALL ============= */

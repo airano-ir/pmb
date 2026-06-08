@@ -97,6 +97,23 @@ def mcp_serve_cmd(
         os.environ["PMB_MCP_BEARER_TOKEN"] = bearer_token
 
     if transport == "streamable-http":
+        # Issue #6 singleton: don't start a second heavy server on a live port.
+        try:
+            from pmb.mcp.registry import find_live_http
+            _existing = find_live_http(host, port)
+        except Exception:
+            _existing = None
+        if _existing:
+            console.print(Panel.fit(
+                f"A PMB MCP server is already running here:\n"
+                f"  url: http://{host}:{port}{path}\n"
+                f"  pid: {_existing.get('pid')}\n\n"
+                f"Not starting a second (saves a model + LanceDB load).\n"
+                f"Point clients at the URL above, or stop it first.\n"
+                f"See: [cyan]pmb mcp status[/]",
+                title="PMB · mcp serve — already running",
+            ))
+            return
         url = f"http://{host}:{port}{path}"
         auth = (
             f"[green]bearer-token enabled[/]"
@@ -120,6 +137,50 @@ def mcp_serve_cmd(
 
     from pmb.mcp.server import main as _server_main
     _server_main()
+
+
+@mcp_app.command("status")
+def mcp_status_cmd():
+    """Show PMB MCP servers currently registered as running (issue #6).
+
+    stdio servers are spawned per-session by your agent; a shared one is
+    started with `pmb mcp serve`. Each row shows the process + its memory so
+    you can spot duplicate heavy servers eating RAM."""
+    from pmb.mcp.registry import list_servers
+    servers = list_servers(prune=True)
+    if not servers:
+        console.print("[yellow]No PMB MCP servers registered as running.[/]")
+        console.print(
+            "[dim]Agents spawn a stdio server per session; start a shared one "
+            "with `pmb mcp serve`.[/]"
+        )
+        return
+    table = Table(show_header=True, header_style="bold magenta",
+                  title="PMB MCP servers")
+    table.add_column("PID")
+    table.add_column("Transport")
+    table.add_column("Endpoint")
+    table.add_column("Workspace")
+    table.add_column("RSS", justify="right")
+    table.add_column("Alive", justify="center")
+    for s in servers:
+        endpoint = (
+            f"http://{s.get('host')}:{s.get('port')}{s.get('path') or ''}"
+            if s.get("transport") == "streamable-http" else "stdio"
+        )
+        rss = f"{s['rss_mb']:.0f} MB" if s.get("rss_mb") is not None else "—"
+        alive = "[green]✓[/]" if s.get("alive") else "[red]✗[/]"
+        table.add_row(
+            str(s.get("pid")), s.get("transport") or "?", endpoint,
+            str(s.get("workspace") or "—"), rss, alive,
+        )
+    console.print(table)
+    http_n = sum(1 for s in servers if s.get("transport") == "streamable-http")
+    stdio_n = len(servers) - http_n
+    console.print(
+        f"\n[dim]{len(servers)} server(s): {stdio_n} stdio, {http_n} http. "
+        f"Each stdio server holds its own model + LanceDB in RAM.[/]"
+    )
 
 
 @hooks_app.command("install")

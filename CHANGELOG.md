@@ -2,6 +2,50 @@
 
 All notable changes to PMB are documented here.
 
+## [0.5.0]
+
+### Fixed
+
+- **recall_smart no longer hangs the interactive path.** It is bounded by an
+  overall wall-clock deadline (`recall.smart_deadline_ms`, default 15s) with a
+  local-only fast path — it never resolves an LLM / spawns the Claude CLI on the
+  foreground path (the cause of 120s timeouts). LLM query-decomposition is opt-in
+  (`recall.smart_allow_llm`) and, when on, is clamped to the remaining budget. A
+  new explicit `recall_deep` tool/method runs the slow, thorough pass on demand.
+  Each pack carries an `escalation` field (stages run + why it stopped) so callers
+  don't fan out redundant recalls.
+- **Stale personal attributes no longer out-rank the current value.** Keyed-fact
+  attribute names are canonicalized (`city` / `current_city` / `current_city_2026`
+  / `lives_in` / `город` → one key), so an update supersedes the old value instead
+  of creating a competing key. Old values are kept as history.
+- **Current-state facts become keyed facts.** A plain "I now live in X" / "сейчас
+  живу в X" is detected (conservatively, with a negation guard so a "do not say X"
+  instruction is never promoted) and upserts the matching keyed attribute.
+
+### Added
+
+- **`pmb repair-keyed`** — two-pass keyed-fact repair: promote current-state facts
+  buried in plain text into keyed facts, then collapse alias/duplicate keys onto
+  one canonical value. Archive-only, dry-run by default.
+- **`pmb migrate-workspaces`** — merge a per-project workspace into a unified
+  memory, tagged `project=<name>`; the source is left intact (reversible). The
+  `recall` tool gains an optional `project` filter over the one memory.
+- **`pmb mcp status`** + a running-server registry — see how many MCP servers are
+  live and their memory; an HTTP `pmb mcp serve` refuses to start a second instance
+  on a live host:port (per-session servers each load the model + LanceDB).
+- **Backend circuit breaker** — a repeatedly-failing/slow deep backend is
+  temporarily disabled for the interactive path (`recall.breaker_threshold`,
+  `recall.breaker_cooldown_s`); state exposed via `breaker_status`.
+- **Performance dashboard** now records & shows per-call recall_smart stages,
+  client-timeout (vs server completion), backend, and cache hit/miss.
+
+### Changed
+
+- New (additive) config keys: `recall.smart_deadline_ms`, `recall.smart_allow_llm`,
+  `keyed.auto_detect_current_state`, `recall.breaker_threshold`,
+  `recall.breaker_cooldown_s`. Defaults preserve prior behaviour.
+- MCP tool profiles: default now 30 tools, lean 26 (added `recall_deep`).
+
 ## [0.4.0]
 
 ### Added
