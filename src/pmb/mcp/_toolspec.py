@@ -10,14 +10,14 @@ import os
 # definitions = faster LLM thinking + less choice confusion.
 #
 #   "minimal" — 13 tools, the absolute essentials
-#   "lean"    — 25 tools: default MINUS the pure read-status browse tools a
+#   "lean"    — 26 tools: default MINUS the pure read-status browse tools a
 #               host HOOK already covers (what_just_happened, recent_activity,
 #               list_recent, overview). KEEPS session_brief. Set by
 #               `pmb connect claude-code` when it installs the hooks, so the
 #               agent isn't offered a slow MCP version of what auto-recall /
 #               session-restore already inject for free.
-#   "default" — 29 tools, day-to-day usage (this is the default)
-#   "full"    — all 64 tools incl. admin (consolidate, compact, run_self_test,
+#   "default" — 30 tools, day-to-day usage (this is the default)
+#   "full"    — all 65 tools incl. admin (consolidate, compact, run_self_test,
 #               graph_stats, dedupe_run_pending, …). Use for debugging/dev.
 #
 # Even when an admin tool is HIDDEN from the agent, you can still call it
@@ -35,7 +35,8 @@ _MINIMAL_TOOLS = {
     "prepare",              # ⭐ one-call READ-FIRST bundle at task start
 }
 _DEFAULT_TOOLS = _MINIMAL_TOOLS | {
-    "recall_smart",         # important queries with escalation
+    "recall_smart",         # important queries with escalation (fast, bounded)
+    "recall_deep",          # explicit slow/deep LLM-decomposition path (#13)
     "overview",             # structured "what do I know about <topic>"
     "project_overview",     # graph-driven full context for a known project
     "find_lessons",         # standalone "what procedural rules apply to X"

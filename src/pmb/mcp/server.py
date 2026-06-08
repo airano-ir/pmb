@@ -527,13 +527,7 @@ def main():
     if transport in ("http", "https"):
         transport = "streamable-http"
 
-    server = build_server(cwd=cwd, workspace_id=workspace_id)
-
-    if transport == "stdio":
-        server.run()
-        return
-
-    if transport != "streamable-http":
+    if transport not in ("stdio", "streamable-http"):
         sys.stderr.write(
             f"[pmb-mcp] unknown PMB_MCP_TRANSPORT={transport!r}. "
             f"Use 'stdio' or 'streamable-http'.\n"
@@ -548,6 +542,45 @@ def main():
         sys.exit(2)
     path = os.environ.get("PMB_MCP_PATH", "/mcp")
     token = os.environ.get("PMB_MCP_BEARER_TOKEN", "").strip()
+
+    # Issue #6 — HTTP singleton: if a healthy PMB server already serves this
+    # host:port, don't spawn a SECOND heavy process (model + LanceDB). Point
+    # clients at the existing one instead.
+    if transport == "streamable-http":
+        try:
+            from pmb.mcp.registry import find_live_http
+            existing = find_live_http(host, port)
+        except Exception:
+            existing = None
+        if existing:
+            sys.stderr.write(
+                f"[pmb-mcp] already running on http://{host}:{port} "
+                f"(pid {existing.get('pid')}). Not starting a second — point "
+                f"clients at the existing URL, or stop it (`pmb mcp status`).\n"
+            )
+            return
+
+    server = build_server(cwd=cwd, workspace_id=workspace_id)
+
+    # Register this process so `pmb mcp status` can see it (best-effort).
+    try:
+        import atexit
+
+        from pmb.mcp.registry import register_server, unregister_server
+        _entry = register_server(
+            transport=transport,
+            host=host if transport == "streamable-http" else None,
+            port=port if transport == "streamable-http" else None,
+            path=path if transport == "streamable-http" else None,
+            workspace=getattr(server, "name", None) or workspace_id,
+        )
+        atexit.register(unregister_server, _entry["pid"])
+    except Exception:
+        pass
+
+    if transport == "stdio":
+        server.run()
+        return
 
     auth_status = "bearer-token enabled" if token else "UNAUTHENTICATED (network ACL only)"
     sys.stderr.write(

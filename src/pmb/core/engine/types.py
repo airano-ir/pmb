@@ -76,9 +76,15 @@ class RecallPack:
     results: list[RecallResult]
     n_total_in_workspace: int
     elapsed_ms: float
+    # Optional escalation diagnostics, set by recall_smart / recall_deep:
+    #   {"stages": [...], "stopped": "confidence_met"|"deadline_hit"|...,
+    #    "elapsed_ms": ..., "deadline_ms": ..., "confidence": ...}
+    # Lets a caller see what ran and why it stopped, so it doesn't fan out
+    # redundant recalls after a low-confidence / timed-out result (#10).
+    escalation: Optional[dict] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "query": self.query,
             "workspace": {"id": self.workspace_id, "name": self.workspace_name},
             "n_results": len(self.results),
@@ -87,6 +93,9 @@ class RecallPack:
             "confidence": self.confidence,
             "results": [r.to_dict() for r in self.results],
         }
+        if self.escalation is not None:
+            d["escalation"] = self.escalation
+        return d
 
     @property
     def confidence(self) -> float:

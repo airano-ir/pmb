@@ -8,6 +8,11 @@ from pmb.core.events import (
     Event,
     default_tier_for_event_type,
 )
+from pmb.reasoning.attributes import (
+    canonicalize_attribute,
+    detect_current_state,
+    keyed_fact_key,
+)
 from pmb.security.redact import redact, redact_metadata
 
 
@@ -185,8 +190,49 @@ class WriteMixin:
             except Exception:
                 pass
 
+        # Current-state promotion (#9): if this plain user fact states a
+        # CURRENT personal attribute ("I now live in Tampa"), also upsert the
+        # matching keyed fact so the live value supersedes any stale one. The
+        # plain fact above stays as history.
+        self._maybe_promote_current_state(clean_fact, clean_metadata, importance)
+
         self.recall_cache.bump_generation()
         return ev.ulid
+
+    # User-origin sources that may carry a personal current-state statement;
+    # internal pipelines (reflection / project index / autowrite / …) excluded.
+    _CURRENT_STATE_SOURCES = frozenset(
+        {None, "", "cli", "cli-note", "mcp", "chat", "user", "note"}
+    )
+
+    def _maybe_promote_current_state(self, content, metadata, importance) -> None:
+        """If CONTENT is a user statement of a current personal attribute,
+        upsert the matching keyed fact so the live value supersedes the stale
+        one. Best-effort + tightly gated; never breaks a normal record_fact."""
+        try:
+            meta = metadata if isinstance(metadata, dict) else {}
+            if meta.get("keyed_fact_key"):
+                return  # already a keyed fact — don't re-key (prevents recursion)
+            if not self.config.get("keyed.auto_detect_current_state"):
+                return
+            if meta.get("source") not in self._CURRENT_STATE_SOURCES:
+                return  # only user-origin facts, never internal pipelines
+            hit = detect_current_state(content)
+            if not hit:
+                return
+            attribute, value = hit
+            self.record_keyed_fact(
+                subject=meta.get("keyed_fact_subject") or "user",
+                attribute=attribute,
+                value=value,
+                importance=max(float(importance), 0.7),
+                metadata={
+                    "source": "current_state_auto",
+                    "derived_from": content[:200],
+                },
+            )
+        except Exception:
+            pass  # promotion is best-effort
 
     def record_keyed_fact(
         self,
@@ -219,9 +265,10 @@ class WriteMixin:
         """
         if not subject or not attribute or not value:
             raise ValueError("subject, attribute, value all required")
-        subject_norm = subject.strip().lower()
-        attribute_norm = attribute.strip().lower()
-        key = f"{subject_norm}::{attribute_norm}"
+        # Canonical key: synonymous attribute labels (city / current_city /
+        # current_city_2026 / lives_in / город) collapse to ONE key, so a new
+        # value supersedes the old instead of creating a competing key.
+        key = keyed_fact_key(subject, attribute)
 
         # 1. Find any prior facts with the same key (active only)
         prior_ulids: list[str] = []
@@ -309,7 +356,7 @@ class WriteMixin:
         recall ranking or latency. Returns {value, valid_from, valid_to,
         ulid, content} for the version valid at `at_time`, else None.
         """
-        key = f"{subject.strip().lower()}::{attribute.strip().lower()}"
+        key = keyed_fact_key(subject, attribute)
         versions: list[tuple] = []
         try:
             import json as _json
@@ -392,7 +439,7 @@ class WriteMixin:
         """Return current + all prior values for a keyed fact, newest first.
         Useful for "what did I say about X before?" introspection.
         """
-        key = f"{subject.strip().lower()}::{attribute.strip().lower()}"
+        key = keyed_fact_key(subject, attribute)
         try:
             import json as _json
             import sqlite3 as _sql
@@ -422,6 +469,306 @@ class WriteMixin:
             return out
         except Exception:
             return []
+
+    def repair_keyed_facts(self, dry_run: bool = True) -> dict:
+        """Collapse competing keyed facts onto ONE canonical value per
+        (subject, canonical-attribute). For each group of ACTIVE keyed facts
+        that canonicalize to the same key (e.g. ``user::city`` and the stale
+        ``user::current_city_2026``), keep the newest value active, archive the
+        rest (``superseded_by`` + ``valid_to``), and rewrite the survivor's key
+        to canonical so future upserts supersede it correctly.
+
+        Non-destructive — only archives + retags, never deletes. ``dry_run``
+        (default True) reports the plan without writing.
+
+        Returns {groups, n_archived, n_recanonicalized, dry_run}.
+        """
+        import json as _json
+        import sqlite3 as _sql
+
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                rows = conn.execute(
+                    "SELECT ulid, content, metadata_json, timestamp FROM events "
+                    "WHERE workspace_id = ? AND archived_at IS NULL "
+                    "AND event_type = 'fact' "
+                    "AND metadata_json LIKE '%\"keyed_fact_key\"%' "
+                    "ORDER BY timestamp ASC",
+                    (self.workspace.id,),
+                ).fetchall()
+        except Exception:
+            return {"groups": [], "n_archived": 0, "n_recanonicalized": 0,
+                    "dry_run": dry_run, "error": "scan_failed"}
+
+        groups: dict[str, list[dict]] = {}
+        for r in rows:
+            try:
+                meta = _json.loads(r["metadata_json"] or "{}")
+            except Exception:
+                meta = {}
+            old_key = meta.get("keyed_fact_key") or ""
+            subject = meta.get("keyed_fact_subject")
+            attribute = meta.get("keyed_fact_attribute")
+            if subject and attribute:
+                canon = keyed_fact_key(subject, attribute)
+            elif "::" in old_key:
+                s, a = old_key.split("::", 1)
+                canon = keyed_fact_key(s, a)
+            else:
+                continue
+            groups.setdefault(canon, []).append({
+                "ulid": r["ulid"],
+                "value": meta.get("keyed_fact_value"),
+                "timestamp": r["timestamp"],
+                "old_key": old_key,
+            })
+
+        plan: list[dict] = []
+        for canon, members in groups.items():
+            members.sort(key=lambda m: m["timestamp"])
+            keep = members[-1]            # newest wins
+            losers = members[:-1]
+            needs_recanon = keep["old_key"] != canon
+            if len(members) == 1 and not needs_recanon:
+                continue                  # already clean
+            plan.append({
+                "canonical_key": canon,
+                "keep_ulid": keep["ulid"],
+                "keep_value": keep["value"],
+                "archive_ulids": [m["ulid"] for m in losers],
+                "archive_values": [m["value"] for m in losers],
+                "recanonicalize": needs_recanon,
+            })
+            if dry_run:
+                continue
+            now_ts = time.time()
+            for m in losers:
+                try:
+                    self.events.archive(m["ulid"])
+                    with _sql.connect(str(self.workspace.db_path)) as conn:
+                        row = conn.execute(
+                            "SELECT metadata_json FROM events WHERE ulid = ?",
+                            (m["ulid"],),
+                        ).fetchone()
+                        om = _json.loads(row[0] or "{}") if row else {}
+                        om["superseded_by"] = keep["ulid"]
+                        om["valid_to"] = now_ts
+                        om["repaired_by"] = "repair_keyed_facts"
+                        conn.execute(
+                            "UPDATE events SET metadata_json = ? WHERE ulid = ?",
+                            (_json.dumps(om), m["ulid"]),
+                        )
+                except Exception:
+                    continue
+            if needs_recanon:
+                try:
+                    with _sql.connect(str(self.workspace.db_path)) as conn:
+                        row = conn.execute(
+                            "SELECT metadata_json FROM events WHERE ulid = ?",
+                            (keep["ulid"],),
+                        ).fetchone()
+                        km = _json.loads(row[0] or "{}") if row else {}
+                        km["keyed_fact_key"] = canon
+                        conn.execute(
+                            "UPDATE events SET metadata_json = ? WHERE ulid = ?",
+                            (_json.dumps(km), keep["ulid"]),
+                        )
+                except Exception:
+                    pass
+
+        if not dry_run and plan:
+            self.recall_cache.bump_generation()
+        return {
+            "groups": plan,
+            "n_archived": sum(len(p["archive_ulids"]) for p in plan),
+            "n_recanonicalized": sum(1 for p in plan if p["recanonicalize"]),
+            "dry_run": dry_run,
+        }
+
+    def backfill_keyed_from_facts(self, dry_run: bool = True) -> dict:
+        """Retroactively promote current-state statements buried in plain facts
+        into keyed facts (issue #9, for PRE-EXISTING corpora).
+
+        Auto-promotion only fires on NEW writes, so a corpus written before it
+        existed can have the truth ("the user currently lives in Tampa") sitting
+        in a plain fact while a STALE keyed fact (user::city = Warsaw) wins
+        recall. This scans active plain facts with the same conservative
+        detector, takes the NEWEST current-state value per canonical attribute,
+        and upserts it (superseding the stale keyed value) when it differs.
+
+        Non-destructive: the old keyed value is archived (history), never
+        deleted. ``dry_run`` (default) only reports the planned promotions.
+        """
+        import json as _json
+        import sqlite3 as _sql
+
+        best: dict[str, tuple] = {}  # canon_key -> (ts, attribute, value, ulid)
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                rows = conn.execute(
+                    "SELECT ulid, content, metadata_json, timestamp FROM events "
+                    "WHERE workspace_id = ? AND archived_at IS NULL "
+                    "AND event_type = 'fact' ORDER BY timestamp ASC",
+                    (self.workspace.id,),
+                ).fetchall()
+        except Exception:
+            return {"promotions": [], "n": 0, "dry_run": dry_run, "error": "scan_failed"}
+
+        for r in rows:
+            try:
+                meta = _json.loads(r["metadata_json"] or "{}")
+            except Exception:
+                meta = {}
+            if isinstance(meta, dict) and (
+                meta.get("keyed_fact_key")       # already a keyed fact
+                or meta.get("is_subfact")         # supplementary atom, not the primary statement
+                or meta.get("kind") == "lesson"   # an instruction, not a user state
+                or meta.get("source") == "lesson"
+            ):
+                continue
+            hit = detect_current_state(r["content"] or "")
+            if not hit:
+                continue
+            attribute, value = hit
+            ck = keyed_fact_key("user", attribute)
+            prev = best.get(ck)
+            if prev is None or r["timestamp"] > prev[0]:
+                best[ck] = (r["timestamp"], attribute, value, r["ulid"])
+
+        plan = []
+        for ck, (_ts, attribute, value, ulid) in best.items():
+            active = [h for h in self.get_keyed_fact_history("user", attribute)
+                      if h["is_current"]]
+            cur = active[0]["value"] if active else None
+            if cur is not None and str(cur).strip().lower() == str(value).strip().lower():
+                continue  # keyed value already correct
+            plan.append({
+                "attribute": attribute, "canonical_key": ck,
+                "new_value": value, "old_value": cur, "from_ulid": ulid,
+            })
+
+        if not dry_run:
+            for p in plan:
+                self.record_keyed_fact(
+                    "user", p["attribute"], p["new_value"], importance=0.85,
+                    metadata={"source": "current_state_backfill",
+                              "derived_from_ulid": p["from_ulid"]},
+                )
+
+        return {"promotions": plan, "n": len(plan), "dry_run": dry_run}
+
+    def migrate_workspace_into(
+        self,
+        source: str,
+        project: Optional[str] = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """Merge a per-project workspace's memory INTO this one (issue #7).
+
+        Copies active events from `source` (workspace id or name) into the
+        current workspace, tagged ``project=<name>`` so they can be filtered
+        with recall_scoped. The SOURCE is read-only here (raw SQL) and never
+        modified — so this is fully reversible: the original workspace stays
+        intact. Idempotent: events already migrated (matched by
+        ``migrated_ulid``) are skipped. ``dry_run`` (default) only reports.
+
+        Returns {source, source_name, project, n_source_active, n_already,
+        n_to_migrate / n_migrated, dry_run}.
+        """
+        import json as _json
+        import sqlite3 as _sql
+
+        from pmb.core.workspace import Workspace, list_workspaces
+
+        src = None
+        for ws in list_workspaces(self.workspace.pmb_home):
+            if ws.id == source or ws.name == source:
+                src = ws
+                break
+        if src is None:
+            cand = self.workspace.pmb_home / "workspaces" / source
+            if (cand / "events.sqlite").exists():
+                src = Workspace(id=source, name=source, root=cand,
+                                pmb_home=self.workspace.pmb_home)
+        if src is None:
+            return {"error": f"source workspace {source!r} not found"}
+        if src.id == self.workspace.id:
+            return {"error": "source and target are the same workspace"}
+
+        project_tag = project or src.name or src.id
+
+        with _sql.connect(str(src.db_path)) as conn:
+            conn.row_factory = _sql.Row
+            rows = conn.execute(
+                "SELECT ulid, event_type, content, metadata_json, importance, "
+                "timestamp FROM events WHERE archived_at IS NULL "
+                "ORDER BY timestamp ASC"
+            ).fetchall()
+
+        # Idempotency: which source ulids did a prior run already bring over?
+        already: set[str] = set()
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                for r in conn.execute(
+                    "SELECT metadata_json FROM events WHERE workspace_id = ? "
+                    "AND metadata_json LIKE ?",
+                    (self.workspace.id, f'%"migrated_from": "{src.id}"%'),
+                ):
+                    try:
+                        m = _json.loads(r["metadata_json"] or "{}")
+                        if m.get("migrated_ulid"):
+                            already.add(m["migrated_ulid"])
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        to_migrate = [r for r in rows if r["ulid"] not in already]
+
+        if dry_run:
+            return {
+                "source": src.id, "source_name": src.name, "project": project_tag,
+                "n_source_active": len(rows), "n_already": len(already),
+                "n_to_migrate": len(to_migrate), "dry_run": True,
+                "sample": [(r["content"] or "")[:80] for r in to_migrate[:5]],
+            }
+
+        n = 0
+        for r in to_migrate:
+            try:
+                meta = _json.loads(r["metadata_json"] or "{}")
+            except Exception:
+                meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+            meta.setdefault("project", project_tag)
+            meta["project_name"] = meta.get("project_name") or project_tag
+            meta["migrated_from"] = src.id
+            meta["migrated_ulid"] = r["ulid"]
+            ev = Event(
+                workspace_id=self.workspace.id,
+                event_type=r["event_type"] or "fact",
+                content=r["content"] or "",
+                metadata=meta,
+                importance=(r["importance"] if r["importance"] is not None else 0.5),
+                timestamp=r["timestamp"],
+                tier=default_tier_for_event_type(r["event_type"] or "fact"),
+            )
+            ev = self.events.append(ev)
+            try:
+                self._embed_or_defer(ev.ulid, ev.to_text())
+            except Exception:
+                pass
+            n += 1
+        self.recall_cache.bump_generation()
+        return {
+            "source": src.id, "source_name": src.name, "project": project_tag,
+            "n_source_active": len(rows), "n_already": len(already),
+            "n_migrated": n, "dry_run": False,
+        }
 
     def record_fact_tree(
         self,

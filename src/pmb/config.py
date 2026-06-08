@@ -376,6 +376,46 @@ SCHEMA: dict[str, _Setting] = {
         "LLM call per multi-hop query (cached on disk). Off by default - "
         "enable for multi-hop heavy workloads. Single-hop queries unaffected.",
     ),
+    "recall.smart_deadline_ms": _Setting(
+        int, 15000,
+        "Overall wall-clock budget (ms) for recall_smart escalation. The "
+        "interactive path returns its best-so-far result the moment this is "
+        "exceeded — no stage may start past the deadline. This is a safety "
+        "ceiling, not a target: the fast path still returns in milliseconds "
+        "when confidence is high. Set 30000 to allow up to 30s.",
+        min=200, max=120000,
+    ),
+    "recall.smart_allow_llm": _Setting(
+        bool, False,
+        "Allow recall_smart to escalate into LLM query-decomposition INSIDE "
+        "the deadline (each LLM call is bounded to the remaining budget). Off "
+        "by default: the interactive path stays local-only "
+        "(BM25+vec+graph+local rerank) and never spawns the Claude CLI / "
+        "Ollama, so a hung backend can't stall recall. Deep LLM recall is "
+        "always available explicitly via recall_deep() / the recall_deep tool.",
+    ),
+    "keyed.auto_detect_current_state": _Setting(
+        bool, True,
+        "When a user fact plainly states a CURRENT personal attribute "
+        "(\"I now live in Tampa\", \"my current employer is X\", \"сейчас живу "
+        "в …\"), also upsert the matching keyed fact so the live value "
+        "supersedes any stale one; the original fact is kept as history. "
+        "Conservative: fires only on explicit present-state phrasing from "
+        "user-origin facts — never reflections / project index / autowrite.",
+    ),
+    "recall.breaker_threshold": _Setting(
+        int, 2,
+        "Circuit breaker: consecutive backend failures (timeouts/errors) "
+        "before that backend (LLM / reranker / …) is temporarily disabled for "
+        "the interactive path. Lower = trip sooner.",
+        min=1, max=20,
+    ),
+    "recall.breaker_cooldown_s": _Setting(
+        float, 60.0,
+        "Circuit breaker: how long (seconds) a tripped backend stays disabled "
+        "before PMB tries it again. A single success closes it early.",
+        min=1.0, max=3600.0,
+    ),
     "recall.reflection_to_edges": _Setting(
         bool, True,
         "Improvement B (HippoRAG 2 inspired): during reflection, link the "

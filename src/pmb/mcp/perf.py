@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -37,6 +38,16 @@ _INDEX_DDLS = [
 
 _schema_ready_paths: set = set()
 
+# Columns added after the original schema (issue #11 — recall_smart stage
+# visibility). Added via idempotent ALTER so existing perf DBs upgrade in place.
+_MIGRATION_COLUMNS = [
+    ("stages_json", "TEXT"),       # recall_smart/recall_deep escalation diag
+    ("backend", "TEXT"),           # which LLM/embedding backend ran (if known)
+    ("cache_hit", "INTEGER"),      # 1 = served from a cache, 0 = computed
+    ("client_timeout", "INTEGER"), # 1 = server ran past the client's timeout
+    ("outcome", "TEXT"),           # ok | error | client_timeout
+]
+
 
 def _ensure_schema(db_path: Path) -> None:
     if str(db_path) in _schema_ready_paths:
@@ -45,6 +56,11 @@ def _ensure_schema(db_path: Path) -> None:
         conn.execute(_DDL)
         for d in _INDEX_DDLS:
             conn.execute(d)
+        for col, typ in _MIGRATION_COLUMNS:
+            try:
+                conn.execute(f"ALTER TABLE mcp_calls ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.commit()
     _schema_ready_paths.add(str(db_path))
 
@@ -57,6 +73,11 @@ def record_call(
     success: bool = True,
     error: Optional[str] = None,
     args_size: int = 0,
+    stages_json: Optional[str] = None,
+    backend: Optional[str] = None,
+    cache_hit: Optional[bool] = None,
+    client_timeout: Optional[bool] = None,
+    outcome: Optional[str] = None,
 ) -> None:
     """Insert one MCP-call row. Silent on failure (perf tracking must never
     break MCP itself)."""
@@ -65,10 +86,15 @@ def record_call(
         with sqlite3.connect(db_path, timeout=2.0) as conn:
             conn.execute(
                 "INSERT INTO mcp_calls "
-                "(workspace_id, tool_name, timestamp, duration_ms, success, error, args_size) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(workspace_id, tool_name, timestamp, duration_ms, success, "
+                "error, args_size, stages_json, backend, cache_hit, "
+                "client_timeout, outcome) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (workspace_id, tool_name, time.time(), duration_ms,
-                 1 if success else 0, error, args_size),
+                 1 if success else 0, error, args_size, stages_json, backend,
+                 (None if cache_hit is None else (1 if cache_hit else 0)),
+                 (None if client_timeout is None else (1 if client_timeout else 0)),
+                 outcome),
             )
             # Auto-cleanup rows older than 7 days every ~100 calls
             if int(time.time() * 1000) % 100 == 0:
@@ -88,6 +114,14 @@ def make_timing_wrapper(db_path: Path, workspace_id: Optional[str]):
         def recall(query: str, top_k: int = 5) -> dict:
             ...
     """
+    # The server's client-side timeout (ms): a call finishing AFTER this had
+    # already elapsed means the client gave up — flag it, don't count it as a
+    # clean success (#11).
+    try:
+        _client_to_ms = float(os.environ.get("PMB_MCP_CLIENT_TIMEOUT_MS") or 120000)
+    except Exception:
+        _client_to_ms = 120000.0
+
     def decorator(fn: Callable) -> Callable:
         tool_name = fn.__name__
 
@@ -96,6 +130,7 @@ def make_timing_wrapper(db_path: Path, workspace_id: Optional[str]):
             t0 = time.perf_counter()
             success = True
             err_msg: Optional[str] = None
+            result = None
             try:
                 args_size = len(json.dumps(kwargs, default=str)) if kwargs else 0
             except Exception:
@@ -109,6 +144,24 @@ def make_timing_wrapper(db_path: Path, workspace_id: Optional[str]):
                 raise
             finally:
                 dt_ms = (time.perf_counter() - t0) * 1000.0
+                # Pull recall_smart/recall_deep stage diagnostics + cache flag
+                # straight out of the returned pack dict (issue #11).
+                stages_json = None
+                cache_hit = None
+                try:
+                    if isinstance(result, dict):
+                        esc = result.get("escalation")
+                        if esc:
+                            stages_json = json.dumps(esc, default=str)
+                        if "cache_hit" in result:
+                            cache_hit = bool(result.get("cache_hit"))
+                except Exception:
+                    pass
+                client_timeout = dt_ms >= _client_to_ms
+                outcome = (
+                    "error" if not success
+                    else ("client_timeout" if client_timeout else "ok")
+                )
                 record_call(
                     db_path=db_path,
                     workspace_id=workspace_id,
@@ -117,6 +170,10 @@ def make_timing_wrapper(db_path: Path, workspace_id: Optional[str]):
                     success=success,
                     error=err_msg,
                     args_size=args_size,
+                    stages_json=stages_json,
+                    cache_hit=cache_hit,
+                    client_timeout=client_timeout,
+                    outcome=outcome,
                 )
         return wrapper
     return decorator
@@ -148,7 +205,8 @@ def get_perf_stats(db_path: Path, workspace_id: Optional[str] = None,
 
         # Per-tool aggregates (compute p50/p95 in Python since SQLite has no native percentile)
         rows = conn.execute(
-            f"SELECT tool_name, duration_ms, success, error, timestamp "
+            f"SELECT tool_name, duration_ms, success, error, timestamp, "
+            f"stages_json, backend, cache_hit, client_timeout, outcome "
             f"FROM mcp_calls WHERE timestamp >= ?{ws_clause} "
             f"ORDER BY timestamp DESC",
             params,
@@ -182,6 +240,14 @@ def get_perf_stats(db_path: Path, workspace_id: Optional[str] = None,
         })
     tool_stats.sort(key=lambda t: -t["count"])
 
+    def _parse_stages(s):
+        if not s:
+            return None
+        try:
+            return json.loads(s)
+        except Exception:
+            return None
+
     recent = [
         {
             "tool": r["tool_name"],
@@ -189,6 +255,15 @@ def get_perf_stats(db_path: Path, workspace_id: Optional[str] = None,
             "ms": round(r["duration_ms"], 2),
             "success": bool(r["success"]),
             "error": r["error"],
+            "outcome": r["outcome"],
+            "client_timeout": (
+                None if r["client_timeout"] is None else bool(r["client_timeout"])
+            ),
+            "cache_hit": (
+                None if r["cache_hit"] is None else bool(r["cache_hit"])
+            ),
+            "backend": r["backend"],
+            "stages": _parse_stages(r["stages_json"]),
         }
         for r in rows[:50]
     ]
@@ -222,6 +297,7 @@ def get_perf_stats(db_path: Path, workspace_id: Optional[str] = None,
         "window_hours": hours,
         "total_calls": len(rows),
         "error_count": sum(errors_by_tool.values()),
+        "client_timeout_count": sum(1 for r in rows if r["client_timeout"]),
         "by_tool": tool_stats,
         "recent": recent,
         "timeline_buckets": timeline,

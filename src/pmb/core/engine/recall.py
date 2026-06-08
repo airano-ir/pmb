@@ -9,6 +9,7 @@ from pmb.core.events import (
     Event,
 )
 from pmb.core.recall_cache import make_recall_cache_key
+from pmb.core import circuit_breaker as _breaker
 from pmb.core.search import SearchHit
 from pmb.signals.decay import boost_on_recall
 from pmb.reasoning.pamvr import (
@@ -25,6 +26,18 @@ from pmb.core.engine.types import (
     _looks_multihop,
     _collapse_reflections,
 )
+
+
+def _result_in_project(r, project_lc: str) -> bool:
+    """True if a RecallResult is tied to `project_lc` (case-insensitive
+    substring against project_name / project / project_path metadata)."""
+    meta = r.metadata if isinstance(r.metadata, dict) else {}
+    for k in ("project_name", "project"):
+        v = meta.get(k)
+        if isinstance(v, str) and project_lc in v.lower():
+            return True
+    pp = meta.get("project_path")
+    return isinstance(pp, str) and project_lc in pp.lower()
 
 
 class RecallMixin:
@@ -1197,69 +1210,223 @@ class RecallMixin:
         top_k: Optional[int] = None,
         confidence_threshold: float = 0.5,
         max_escalations: int = 2,
+        deadline_ms: Optional[float] = None,
         **kwargs,
     ) -> RecallPack:
-        """Auto-escalating recall: cheap first, retry with more effort if
-        confidence is low.
+        """Deadline-bounded auto-escalating recall for the INTERACTIVE path.
 
-        Stage 1 (fast):  current default pipeline (PPR/causation/arc gated)
-        Stage 2 (escalate if low conf): force adaptive decomposition pass
-        Stage 3 (escalate further):     enlarge top_k 2x, enable rerank
+        Contract (the fix for the 120s foreground hang):
+          * ONE wall-clock budget (`recall.smart_deadline_ms`, default 15s).
+            No stage may START once it's exhausted; the best result we
+            already have is returned immediately.
+          * The fast path is LOCAL ONLY — BM25+vec+graph, plus a local
+            cross-encoder rerank only if that model is already warm. It
+            never resolves an LLM client / spawns the Claude CLI, so a hung
+            backend cannot stall an interactive answer.
+          * LLM query-decomposition is OPT-IN (`recall.smart_allow_llm`)
+            and, when enabled, runs strictly inside the remaining budget
+            (the LLM call's own timeout is clamped to the time left). For an
+            unconditional deep pass, call `recall_deep()`.
 
-        Returns the best (highest-confidence) result across stages.
-        Never silently fails: if all stages produce zero results, returns
-        whatever the first stage gave (empty pack).
+        The returned pack carries `.escalation` diagnostics (which stages
+        ran + why we stopped) so a caller knows NOT to fan out more recalls.
         """
+        # We set _skip_decompose explicitly on every internal recall() call;
+        # drop any caller-supplied value so it can't collide as a dup kwarg.
+        kwargs.pop("_skip_decompose", None)
         if top_k is None:
             top_k = self.config.get("recall.top_k")
+        if deadline_ms is None:
+            deadline_ms = self.config.get("recall.smart_deadline_ms") or 15000
+        t0 = time.perf_counter()
+        deadline = t0 + (float(deadline_ms) / 1000.0)
 
-        # Stage 1: normal recall
-        pack = self.recall(query, top_k=top_k, **kwargs)
-        best = pack
-        if pack.confidence >= confidence_threshold:
+        def _budget_left() -> float:
+            return deadline - time.perf_counter()
+
+        stages: list[str] = []
+
+        def _finish(pack: RecallPack, reason: str) -> RecallPack:
+            try:
+                pack.escalation = {
+                    "stages": stages,
+                    "stopped": reason,
+                    "elapsed_ms": (time.perf_counter() - t0) * 1000.0,
+                    "deadline_ms": float(deadline_ms),
+                    "confidence": pack.confidence,
+                }
+            except Exception:
+                pass
             return pack
 
-        # Stage 2: force decomposition (only useful if multi-hop intent)
-        if max_escalations >= 1:
+        # Stage 1 — fast LOCAL recall. _skip_decompose guarantees we never
+        # drop into the LLM decomposition path even if recall.adaptive_
+        # decompose is enabled globally; the interactive answer stays local.
+        stages.append("local")
+        pack = self.recall(query, top_k=top_k, _skip_decompose=True, **kwargs)
+        best = pack
+        if pack.confidence >= confidence_threshold:
+            return _finish(best, "confidence_met")
+
+        # Stage 2 — cheap local escalation: wider candidate pool + a local
+        # cross-encoder rerank, but ONLY if the reranker model is already
+        # loaded (never block the interactive path on a cold model load).
+        if max_escalations >= 1 and _budget_left() > 0:
+            if getattr(self.search, "reranker", None) is not None:
+                stages.append("local_rerank")
+                try:
+                    pack2 = self.recall(
+                        query,
+                        top_k=max(top_k * 2, 25),
+                        rerank=True,
+                        _skip_decompose=True,
+                    )
+                    if pack2.confidence > best.confidence:
+                        best = pack2
+                    if best.confidence >= confidence_threshold:
+                        return _finish(best, "confidence_met")
+                except Exception:
+                    pass
+            else:
+                stages.append("rerank_skipped_cold")
+
+        # Stage 3 — OPT-IN bounded LLM decomposition. OFF by default. Even
+        # when on it runs inside the remaining budget, and is skipped while
+        # the LLM backend is in cooldown after a recent timeout.
+        if (
+            max_escalations >= 2
+            and self.config.get("recall.smart_allow_llm")
+            and _budget_left() > 2.0
+        ):
+            if _breaker.is_open("llm"):
+                # backend tripped (#12) → don't pay the latency, stay local
+                stages.append("llm_skipped_breaker_open")
+            else:
+                stages.append("llm_decompose")
+                try:
+                    rh = kwargs.get("recency_half_life_days") or self.config.get(
+                        "recall.recency_half_life_days"
+                    )
+                    gb = kwargs.get("graph_boost")
+                    gb = gb if gb is not None else self.config.get("recall.graph_boost")
+                    rr = kwargs.get("rerank")
+                    rr = rr if rr is not None else self.config.get("recall.rerank")
+                    rtn = kwargs.get("rerank_top_n") or self.config.get("recall.rerank_top_n")
+                    packd = self._recall_with_decomposition(
+                        query,
+                        top_k=top_k,
+                        recency_half_life_days=rh,
+                        graph_boost=gb,
+                        rerank=rr,
+                        rerank_top_n=rtn,
+                        budget_s=_budget_left(),
+                    )
+                    if packd and packd.confidence > best.confidence:
+                        best = packd
+                except Exception:
+                    pass  # breaker bookkeeping happens inside the call
+
+        reason = "deadline_hit" if _budget_left() <= 0 else "exhausted_escalations"
+        return _finish(best, reason)
+
+    def breaker_status(self) -> dict:
+        """Circuit-breaker state per backend (#12). Surfaced via the `stats`
+        tool / dashboard so a temporarily-disabled deep backend is visible."""
+        return _breaker.status()
+
+    def recall_deep(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        deadline_ms: Optional[float] = None,
+        **kwargs,
+    ) -> RecallPack:
+        """Explicit DEEP recall: always ATTEMPTS LLM query-decomposition
+        (RAG-Fusion), bounded by a deadline (default 2x the interactive
+        budget). Use only when the caller knowingly wants the slow, thorough
+        pass — never on the latency-sensitive interactive path. Falls back
+        to a single-shot local recall if decomposition is unavailable."""
+        kwargs.pop("_skip_decompose", None)
+        if top_k is None:
+            top_k = self.config.get("recall.top_k")
+        if deadline_ms is None:
+            deadline_ms = (self.config.get("recall.smart_deadline_ms") or 15000) * 2.0
+        t0 = time.perf_counter()
+        budget_s = float(deadline_ms) / 1000.0
+        rh = kwargs.get("recency_half_life_days") or self.config.get(
+            "recall.recency_half_life_days"
+        )
+        gb = kwargs.get("graph_boost")
+        gb = gb if gb is not None else self.config.get("recall.graph_boost")
+        rr = kwargs.get("rerank")
+        rr = rr if rr is not None else self.config.get("recall.rerank")
+        rtn = kwargs.get("rerank_top_n") or self.config.get("recall.rerank_top_n")
+        try:
+            packd = self._recall_with_decomposition(
+                query,
+                top_k=top_k,
+                recency_half_life_days=rh,
+                graph_boost=gb,
+                rerank=rr,
+                rerank_top_n=rtn,
+                budget_s=budget_s,
+            )
+        except Exception:
+            packd = None
+        if packd is not None and packd.results:
             try:
-                rh = kwargs.get("recency_half_life_days") or self.config.get(
-                    "recall.recency_half_life_days"
-                )
-                gb = kwargs.get("graph_boost")
-                gb = gb if gb is not None else self.config.get("recall.graph_boost")
-                rr = kwargs.get("rerank")
-                rr = rr if rr is not None else self.config.get("recall.rerank")
-                rtn = kwargs.get("rerank_top_n") or self.config.get("recall.rerank_top_n")
-                pack2 = self._recall_with_decomposition(
-                    query,
-                    top_k=top_k,
-                    recency_half_life_days=rh,
-                    graph_boost=gb,
-                    rerank=rr,
-                    rerank_top_n=rtn,
-                )
-                if pack2 and pack2.confidence > best.confidence:
-                    best = pack2
-                if best.confidence >= confidence_threshold:
-                    return best
+                packd.escalation = {
+                    "stages": ["llm_decompose"],
+                    "stopped": "deep_done",
+                    "elapsed_ms": (time.perf_counter() - t0) * 1000.0,
+                }
             except Exception:
                 pass
+            return packd
+        # Fallback: single-shot local recall (no LLM)
+        return self.recall(query, top_k=top_k, _skip_decompose=True, **kwargs)
 
-        # Stage 3: enlarge top_k + enable rerank
-        if max_escalations >= 2:
-            try:
-                pack3 = self.recall(
-                    query,
-                    top_k=max(top_k * 2, 25),
-                    rerank=True,
-                    _skip_decompose=True,
-                )
-                if pack3.confidence > best.confidence:
-                    best = pack3
-            except Exception:
-                pass
+    def recall_scoped(
+        self,
+        query: str,
+        project: Optional[str] = None,
+        top_k: Optional[int] = None,
+        **kwargs,
+    ) -> RecallPack:
+        """recall(), optionally scoped to a single project (issue #7).
 
-        return best
+        `project` is a FILTER over the unified user memory — NOT a separate
+        store or workspace. When given, we over-fetch and keep only events
+        tied to that project (project_name / project / project_path metadata,
+        case-insensitive substring). When None/empty this is plain recall(),
+        so default behaviour and the recall hot-path/cache are untouched.
+
+        This is the additive first step of separating "user memory" from
+        "project scope"; merging per-project workspaces into one memory is a
+        separate, opt-in migration."""
+        if top_k is None:
+            top_k = self.config.get("recall.top_k")
+        if not project:
+            return self.recall(query, top_k=top_k, **kwargs)
+        pj = str(project).strip().lower()
+        wide = self.recall(query, top_k=max(top_k * 6, 30), **kwargs)
+        kept = [r for r in wide.results if _result_in_project(r, pj)][:top_k]
+        pack = RecallPack(
+            query=wide.query,
+            workspace_name=wide.workspace_name,
+            workspace_id=wide.workspace_id,
+            results=kept,
+            n_total_in_workspace=wide.n_total_in_workspace,
+            elapsed_ms=wide.elapsed_ms,
+        )
+        pack.escalation = {
+            "stages": ["local", "project_filter"],
+            "stopped": "project_filtered",
+            "project": pj,
+            "n_before_filter": len(wide.results),
+            "n_after_filter": len(kept),
+        }
+        return pack
 
     def _recall_with_decomposition(
         self,
@@ -1269,10 +1436,20 @@ class RecallMixin:
         graph_boost: float,
         rerank: bool,
         rerank_top_n: int,
+        budget_s: Optional[float] = None,
     ) -> Optional[RecallPack]:
         """Run query decomposition + sub-query retrieval + RRF merge.
         Returns None if decomposition couldn't run (LLM unavailable etc.)
-        so caller can fall back to single-shot recall."""
+        so caller can fall back to single-shot recall.
+
+        `budget_s`, when given, clamps the resolved LLM client's own timeout
+        to the remaining wall-clock budget — so a slow Claude CLI / Ollama
+        call can never outlive the recall_smart deadline."""
+        # Circuit breaker (#12): skip the LLM entirely while it's tripped.
+        if _breaker.is_open("llm"):
+            return None
+        _thr = self.config.get("recall.breaker_threshold") or 2
+        _cd = self.config.get("recall.breaker_cooldown_s") or 60.0
         try:
             from pmb.reasoning.decompose import QueryDecomposer, reciprocal_rank_fuse
             from pmb.health.consolidate import resolve_llm_client
@@ -1282,12 +1459,19 @@ class RecallMixin:
                     backend=self.config.get("consolidate.backend"),
                 )
             except Exception:
+                _breaker.record_failure("llm", _thr, _cd, "resolve_llm_client failed")
                 return None
+            if budget_s is not None and hasattr(llm, "timeout"):
+                try:
+                    llm.timeout = max(1.0, min(float(llm.timeout), float(budget_s)))
+                except Exception:
+                    pass
             decomposer = QueryDecomposer(
                 llm,
                 cache_dir=self.workspace.storage_dir,
             )
             decomp = decomposer.decompose(query)
+            _breaker.record_success("llm")  # the LLM responded — backend healthy
             if len(decomp.sub_queries) <= 1:
                 # Decomposer said it's already single-hop; cancel decomposition
                 return None
@@ -1327,6 +1511,7 @@ class RecallMixin:
         except Exception as e:
             import logging
 
+            _breaker.record_failure("llm", _thr, _cd, str(e))
             logging.getLogger(__name__).info("Decomposition failed: %s", e)
             return None
 
