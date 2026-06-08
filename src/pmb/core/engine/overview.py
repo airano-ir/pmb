@@ -1,20 +1,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Optional
 
-from pmb.core.events import (
-    Event,
-    default_tier_for_event_type,
-)
-from pmb.security.redact import redact, redact_metadata
-
-from pmb.core.engine.types import (
-    _cap_batch_content,
-)
-
-import time
 
 class OverviewMixin:
     def active_arcs_for_project(self, project_name: str, limit: int = 2) -> list[dict]:
@@ -93,7 +81,8 @@ class OverviewMixin:
         automatically so the agent gets the full context."""
         if not text:
             return None
-        import sqlite3, re as _re
+        import re as _re
+        import sqlite3
         ws = self.workspace.id
         text_lc = text.lower()
         # Limit candidates to entities with non-trivial mentions — same

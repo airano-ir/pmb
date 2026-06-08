@@ -35,7 +35,6 @@ from fastmcp import FastMCP
 from pmb.core.engine import Engine
 from pmb.core.workspace import detect_workspace
 
-
 PMB_SYSTEM_INSTRUCTIONS = """\
 PMB is OFF for general questions (theory, syntax, "what is X"). Don't call
 it on coding/debugging questions answerable from training.
@@ -306,8 +305,10 @@ idle. You don't trigger them. This keeps every turn fast.
 
 
 from pmb.mcp._toolspec import (  # tool-profile gating machinery
-    _TOOL_PROFILE, _MINIMAL_TOOLS, _DEFAULT_TOOLS, _LEAN_TOOLS,
-    _should_register, _maybe_tool,
+    _DEFAULT_TOOLS,
+    _LEAN_TOOLS,
+    _MINIMAL_TOOLS,
+    _TOOL_PROFILE,
 )
 
 
@@ -478,6 +479,7 @@ def _build_bearer_middleware(token: str):
     if not token:
         return None
     import hmac
+
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.responses import JSONResponse
 

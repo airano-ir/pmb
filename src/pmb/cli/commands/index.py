@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import os
-import json
-import time
 from pathlib import Path
-from typing import List, Optional
 
 import typer
-from rich.table import Table
 from rich.panel import Panel
-from rich.markup import escape as esc
 
-from pmb.core.engine import Engine
-from pmb.core.workspace import detect_workspace, list_workspaces, Workspace
-from pmb.cli._common import app, console, _humanize_time, _open_config, _agent_toggles_from_config  # noqa: F401
+from pmb.cli._common import (  # noqa: F401
+    _agent_toggles_from_config,
+    _humanize_time,
+    _open_config,
+    app,
+    console,
+)
 
 index_app = typer.Typer(help="Index external content into PMB memory (PDFs, code projects).")
 
@@ -45,8 +43,8 @@ def index_pdf_cmd(
       pmb index pdf ~/Documents/research/ --recurse
       pmb index pdf paper.pdf --force      # force re-index
     """
-    from pmb.ingest.pdf import ingest_pdf, ingest_pdfs
     from pmb.core.engine import Engine
+    from pmb.ingest.pdf import ingest_pdf, ingest_pdfs
     eng = Engine()
     p = Path(path)
     if p.is_dir():
@@ -112,8 +110,8 @@ def index_project_cmd(
       pmb index project ~/code/myrepo
       pmb index project ~/code/myrepo --force # re-index all files
     """
-    from pmb.ingest.project import index_project
     from pmb.core.engine import Engine
+    from pmb.ingest.project import index_project
     eng = Engine()
     result = index_project(eng, Path(path),
                            importance=importance, force=force,

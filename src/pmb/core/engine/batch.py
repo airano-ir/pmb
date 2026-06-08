@@ -1,20 +1,9 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Optional
-
-from pmb.core.events import (
-    Event,
-    default_tier_for_event_type,
-)
-from pmb.security.redact import redact, redact_metadata
-
 from pmb.core.engine.types import (
     _cap_batch_content,
 )
 
-import time
 
 class BatchMixin:
     def record_batch_bulk(self, items: list[dict]) -> dict:

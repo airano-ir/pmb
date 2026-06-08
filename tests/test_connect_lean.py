@@ -55,21 +55,20 @@ def test_lean_keeps_deliberate_drops_hook_covered():
 
 
 def test_should_register_respects_lean(monkeypatch):
-    import pmb.mcp.server as S
-    # The profile machinery (_TOOL_PROFILE / _should_register) now lives in
+    # The profile machinery (_TOOL_PROFILE / _should_register) lives in
     # pmb.mcp._toolspec; _should_register reads _toolspec._TOOL_PROFILE, so
-    # patch it there. S._should_register is re-exported from _toolspec.
+    # both the patch target and the function call go through _toolspec.
     import pmb.mcp._toolspec as TS
     monkeypatch.setattr(TS, "_TOOL_PROFILE", "lean")
-    assert S._should_register("recall") is True
-    assert S._should_register("session_brief") is True       # kept in lean
-    assert S._should_register("what_just_happened") is False  # trimmed
+    assert TS._should_register("recall") is True
+    assert TS._should_register("session_brief") is True       # kept in lean
+    assert TS._should_register("what_just_happened") is False  # trimmed
     # default still shows everything in the default set
     monkeypatch.setattr(TS, "_TOOL_PROFILE", "default")
-    assert S._should_register("what_just_happened") is True
+    assert TS._should_register("what_just_happened") is True
     # full shows admin tools too
     monkeypatch.setattr(TS, "_TOOL_PROFILE", "full")
-    assert S._should_register("consolidate_recent") is True
+    assert TS._should_register("consolidate_recent") is True
 
 
 # ─── connect wiring ─────────────────────────────────────────────────────

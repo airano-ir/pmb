@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-import os
-import json
-import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
-from rich.table import Table
 from rich.panel import Panel
-from rich.markup import escape as esc
 
-from pmb.core.engine import Engine
-from pmb.core.workspace import detect_workspace, list_workspaces, Workspace
-from pmb.cli._common import app, console, _humanize_time, _open_config, _agent_toggles_from_config  # noqa: F401
+from pmb.cli._common import (  # noqa: F401
+    _agent_toggles_from_config,
+    _humanize_time,
+    _open_config,
+    app,
+    console,
+)
+from pmb.core.workspace import detect_workspace
 
 workspace_app = typer.Typer(
     help="Git-backed workspace sync: push / pull / clone your memory to any remote."
@@ -134,7 +134,7 @@ def workspace_export(
     the bundle is authenticated-encrypted (AES + HMAC), so the storage host
     only ever sees ciphertext. Restore with `pmb workspace import`.
     """
-    from pmb.core.encryption import export_workspace, EncryptionUnavailable
+    from pmb.core.encryption import EncryptionUnavailable, export_workspace
     _, ws = _sync_for_current_workspace()
     passphrase = None
     if not key_file:
@@ -168,9 +168,10 @@ def workspace_import(
     ),
 ):
     """Decrypt a bundle into ~/.pmb/workspaces/<name>."""
-    from pmb.core.encryption import import_workspace, EncryptionUnavailable
-    from pmb.core.workspace import DEFAULT_PMB_HOME
     import os as _os
+
+    from pmb.core.encryption import EncryptionUnavailable, import_workspace
+    from pmb.core.workspace import DEFAULT_PMB_HOME
     pmb_home = Path(_os.environ.get("PMB_HOME", DEFAULT_PMB_HOME))
     dest = pmb_home / "workspaces" / name
     passphrase = None
@@ -198,9 +199,10 @@ def workspace_clone(
     name: str = typer.Argument(..., help="Local workspace id to create"),
 ):
     """Clone a remote workspace into ~/.pmb/workspaces/<name>."""
+    import os as _os
+
     from pmb.core.git_sync import clone_workspace
     from pmb.core.workspace import DEFAULT_PMB_HOME
-    import os as _os
     pmb_home = Path(_os.environ.get("PMB_HOME", DEFAULT_PMB_HOME))
     res = clone_workspace(url, name, pmb_home)
     color = "green" if res.ok else "red"

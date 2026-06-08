@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -10,11 +10,6 @@ from pmb.core.events import (
 )
 from pmb.security.redact import redact, redact_metadata
 
-from pmb.core.engine.types import (
-    _cap_batch_content,
-)
-
-import time
 
 class WriteMixin:
     def _record_atomic_facts(
@@ -275,7 +270,8 @@ class WriteMixin:
             try:
                 self.events.archive(old_ulid)
                 # Tag with the new pointer so callers can trace history.
-                import sqlite3 as _sql, json as _json
+                import json as _json
+                import sqlite3 as _sql
 
                 with _sql.connect(str(self.workspace.db_path)) as conn:
                     row = conn.execute(
@@ -316,7 +312,8 @@ class WriteMixin:
         key = f"{subject.strip().lower()}::{attribute.strip().lower()}"
         versions: list[tuple] = []
         try:
-            import sqlite3 as _sql, json as _json
+            import json as _json
+            import sqlite3 as _sql
             with _sql.connect(str(self.workspace.db_path)) as conn:
                 conn.row_factory = _sql.Row
                 rows = conn.execute(
@@ -397,7 +394,8 @@ class WriteMixin:
         """
         key = f"{subject.strip().lower()}::{attribute.strip().lower()}"
         try:
-            import sqlite3 as _sql, json as _json
+            import json as _json
+            import sqlite3 as _sql
 
             with _sql.connect(str(self.workspace.db_path)) as conn:
                 conn.row_factory = _sql.Row
@@ -510,7 +508,8 @@ class WriteMixin:
 
     def get_subfacts(self, parent_ulid: str) -> list[dict]:
         """Return all subfacts linked to a parent event."""
-        import sqlite3, json as _j
+        import json as _j
+        import sqlite3
 
         out = []
         with sqlite3.connect(self.workspace.db_path) as conn:
@@ -648,8 +647,9 @@ class WriteMixin:
         import json as _j
 
         try:
-            from pmb.reasoning.images import clip_encode_text
             import numpy as np
+
+            from pmb.reasoning.images import clip_encode_text
 
             q_emb = clip_encode_text(query)
             if q_emb is None:

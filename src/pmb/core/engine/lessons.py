@@ -1,20 +1,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Optional
 
-from pmb.core.events import (
-    Event,
-    default_tier_for_event_type,
-)
-from pmb.security.redact import redact, redact_metadata
-
-from pmb.core.engine.types import (
-    _cap_batch_content,
-)
-
-import time
 
 class LessonsMixin:
     def _log_lesson_surfaces(
@@ -29,7 +17,8 @@ class LessonsMixin:
         confirm follow-through via mark_lesson_followed. Returns the list."""
         if not lessons:
             return lessons
-        import sqlite3, time as _t
+        import sqlite3
+        import time as _t
         now = _t.time()
         ws = self.workspace.id
         try:
@@ -66,7 +55,8 @@ class LessonsMixin:
         """Agent confirms whether a surfaced lesson actually changed its
         behaviour on the current task. Powers the dashboard "follow rate"
         and identifies dead lessons that always surface but never help."""
-        import sqlite3, time as _t
+        import sqlite3
+        import time as _t
         with sqlite3.connect(self.workspace.db_path) as conn:
             cur = conn.execute(
                 """
@@ -98,7 +88,8 @@ class LessonsMixin:
         relevant but the agent went against it. -1 is excluded from both the
         follow (✓) and ignored (✗) counts everywhere.
         """
-        import sqlite3, time as _t
+        import sqlite3
+        import time as _t
         with sqlite3.connect(self.workspace.db_path) as conn:
             cur = conn.execute(
                 """
@@ -132,7 +123,8 @@ class LessonsMixin:
         Returns floats in [0.0, 1.0] for the rate fields plus the raw
         counts so the caller can render however they want.
         """
-        import sqlite3, time as _t
+        import sqlite3
+        import time as _t
         cutoff = _t.time() - days * 86400.0
         ws = self.workspace.id
         out = {
@@ -273,7 +265,8 @@ class LessonsMixin:
     def lesson_follow_stats(self, days: float = 7.0) -> dict:
         """Aggregate follow-rate stats over a recent window. Used by
         dashboard and `pmb lessons stats`."""
-        import sqlite3, time as _t
+        import sqlite3
+        import time as _t
         cutoff = _t.time() - days * 86400.0
         ws = self.workspace.id
         with sqlite3.connect(self.workspace.db_path) as conn:
@@ -439,6 +432,7 @@ class LessonsMixin:
         if sem_min <= 1.0 and items:
             try:
                 import numpy as np
+
                 from pmb.core.search import cosine_similarity
                 qv = self.search.embed(query)
                 arrow = self.search._table.to_arrow()
@@ -545,7 +539,8 @@ class LessonsMixin:
         Joins lesson_surfaces → events so the caller gets the lesson content
         (for token matching) without a second query. Returns newest first.
         """
-        import sqlite3, time as _t
+        import sqlite3
+        import time as _t
         cutoff = _t.time() - minutes * 60.0
         ws = self.workspace.id
         out: list[dict] = []

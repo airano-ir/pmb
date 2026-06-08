@@ -4,24 +4,27 @@ cli/main.py imports this module so these @app.command registrations run."""
 
 from __future__ import annotations
 
-import os
-import sys
-import json
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
-from rich.table import Table
-from rich.panel import Panel
 from rich.markup import escape as esc
+from rich.panel import Panel
+from rich.table import Table
 
-from pmb.core.engine import Engine
-from pmb.core.workspace import detect_workspace, list_workspaces, Workspace
 from pmb.cli._common import (  # noqa: F401
-    app, console, _humanize_time, _open_config, _agent_toggles_from_config,
-    _parse_duration, _apply_ttl,
+    _agent_toggles_from_config,
+    _apply_ttl,
+    _humanize_time,
+    _open_config,
+    _parse_duration,
+    app,
+    console,
 )
+from pmb.core.engine import Engine
+from pmb.core.workspace import detect_workspace
+
 
 @app.command()
 def dashboard(
@@ -65,7 +68,8 @@ def dashboard(
         console.print(f"[red]Failed to import dashboard:[/] {e}")
         return
     if open_browser:
-        import webbrowser, threading
+        import threading
+        import webbrowser
         threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}")).start()
     run_dashboard(eng, host=host, port=port)
 
@@ -391,8 +395,9 @@ def audit(
     read-only, no model load.
     """
     from collections import Counter
-    from pmb.provenance import source_key, describe_source
-    from pmb.memory_quality import is_stale, confidence_from
+
+    from pmb.memory_quality import confidence_from, is_stale
+    from pmb.provenance import describe_source, source_key
     eng = Engine()
     events = eng.events.list_active(eng.workspace.id, limit=limit)
 
@@ -475,7 +480,7 @@ def watch(
     Content-hash dedup: editing old text won't re-ingest; only new paragraphs
     are added.
     """
-    from pmb.ingest.watch import scan_new_chunks, load_state, save_state
+    from pmb.ingest.watch import load_state, save_state, scan_new_chunks
     eng = Engine()
     target = Path(path).expanduser()
     if not target.exists():
@@ -537,8 +542,8 @@ def recall(
         console.print("[yellow]No matches.[/]")
         return
 
+    from pmb.memory_quality import confidence_from, confidence_label, freshness_label
     from pmb.provenance import describe_source
-    from pmb.memory_quality import freshness_label, confidence_from, confidence_label
     now = time.time()
     for i, r in enumerate(pack.results, 1):
         ts = _humanize_time(r.timestamp)

@@ -42,7 +42,7 @@ def _humanize_time(ts: Optional[float]) -> str:
 
 def _open_config():
     """Construct a Config bound to the current workspace + global home."""
-    from pmb.config import Config, SCHEMA  # noqa: F401
+    from pmb.config import SCHEMA, Config  # noqa: F401
     ws = detect_workspace()
     ws.ensure_dirs()
     return Config(workspace_dir=ws.storage_dir, pmb_home=ws.pmb_home), ws

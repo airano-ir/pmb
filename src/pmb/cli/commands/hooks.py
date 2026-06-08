@@ -4,19 +4,13 @@ Extracted from cli/main.py (no behavior change)."""
 
 from __future__ import annotations
 
-import os
-import json
-from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
-from rich.table import Table
 from rich.panel import Panel
-from rich.markup import escape as esc
+from rich.table import Table
 
-from pmb.core.engine import Engine
-from pmb.core.workspace import detect_workspace
-from pmb.cli._common import console, _humanize_time, _agent_toggles_from_config  # noqa: F401
+from pmb.cli._common import _agent_toggles_from_config, _humanize_time, console  # noqa: F401
 
 hooks_app = typer.Typer(
     help="Install force-feeding session-start hooks into your agent's "
@@ -83,7 +77,7 @@ def mcp_serve_cmd(
       pmb connect claude-code --remote http://memo.local:8765/mcp \\
                               --bearer-token <secret>
     """
-    import os, sys
+    import os
 
     if transport not in ("stdio", "streamable-http", "http", "https"):
         console.print(f"[red]Unknown transport {transport!r}.[/]")

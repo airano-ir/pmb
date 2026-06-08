@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Optional
 
 import typer
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
-from pmb.core.engine import Engine
 from pmb.cli._common import console
+from pmb.core.engine import Engine
 
 graph_app = typer.Typer(help="Inspect the association graph (entities + edges).")
 

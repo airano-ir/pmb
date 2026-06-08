@@ -4,24 +4,25 @@ cli/main.py imports this module so these @app.command registrations run."""
 
 from __future__ import annotations
 
-import os
-import sys
-import json
 import time
-from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
-from rich.table import Table
-from rich.panel import Panel
 from rich.markup import escape as esc
+from rich.panel import Panel
+from rich.table import Table
 
-from pmb.core.engine import Engine
-from pmb.core.workspace import detect_workspace, list_workspaces, Workspace
 from pmb.cli._common import (  # noqa: F401
-    app, console, _humanize_time, _open_config, _agent_toggles_from_config,
-    _parse_duration, _apply_ttl,
+    _agent_toggles_from_config,
+    _apply_ttl,
+    _humanize_time,
+    _open_config,
+    _parse_duration,
+    app,
+    console,
 )
+from pmb.core.engine import Engine
+
 
 @app.command()
 def sync(

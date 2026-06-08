@@ -20,7 +20,8 @@ from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from pmb.cli.main import app, _parse_duration  # noqa: E402
+from pmb.cli.main import app  # noqa: E402
+from pmb.cli._common import _parse_duration  # noqa: E402  (moved here in the split)
 from pmb.core.events import Event  # noqa: E402
 
 runner = CliRunner()

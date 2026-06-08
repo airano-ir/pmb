@@ -6,10 +6,10 @@ import os
 from typing import Optional
 
 import typer
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
-from pmb.cli._common import console, _open_config
+from pmb.cli._common import _open_config, console
 
 config_app = typer.Typer(help="Inspect and tune PMB knobs from the console.")
 

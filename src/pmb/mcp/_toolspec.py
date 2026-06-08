@@ -5,7 +5,6 @@ _maybe_tool without importing pmb.mcp.server (which imports them)."""
 
 import os
 
-
 # Improvement Z: tool-profile gating. Set PMB_TOOL_PROFILE in the agent's
 # config.toml env block to control which tools the LLM sees. Fewer tool
 # definitions = faster LLM thinking + less choice confusion.

@@ -4,24 +4,28 @@ cli/main.py imports this module so these @app.command registrations run."""
 
 from __future__ import annotations
 
-import os
-import sys
 import json
 import time
 from pathlib import Path
 from typing import List, Optional
 
 import typer
-from rich.table import Table
-from rich.panel import Panel
 from rich.markup import escape as esc
+from rich.panel import Panel
+from rich.table import Table
 
-from pmb.core.engine import Engine
-from pmb.core.workspace import detect_workspace, list_workspaces, Workspace
 from pmb.cli._common import (  # noqa: F401
-    app, console, _humanize_time, _open_config, _agent_toggles_from_config,
-    _parse_duration, _apply_ttl,
+    _agent_toggles_from_config,
+    _apply_ttl,
+    _humanize_time,
+    _open_config,
+    _parse_duration,
+    app,
+    console,
 )
+from pmb.core.engine import Engine
+from pmb.core.workspace import list_workspaces
+
 
 @app.command()
 def connect(
@@ -104,8 +108,12 @@ def connect(
       → records from one are immediately visible to the others.
     """
     from pmb.cli.connect import (
-        connect as do_connect, probe_mcp,
-        JSON_AGENT_SPECS, supported_agents,
+        JSON_AGENT_SPECS,
+        probe_mcp,
+        supported_agents,
+    )
+    from pmb.cli.connect import (
+        connect as do_connect,
     )
 
     if list_agents:
@@ -258,8 +266,13 @@ def setup(
     `pmb tune` if you want to change them. Full command list: `docs/COMMANDS.md`.
     """
     import shutil as _shutil
+
     from pmb.cli.connect import (
-        detect_installed_agents, connect as do_connect, supported_agents,
+        connect as do_connect,
+    )
+    from pmb.cli.connect import (
+        detect_installed_agents,
+        supported_agents,
     )
     detected = detect_installed_agents()
     ollama_ok = _shutil.which("ollama") is not None
@@ -616,6 +629,7 @@ def export(
     `pmb workspace export` instead.
     """
     from collections import defaultdict
+
     from pmb.provenance import describe_source
     eng = Engine()
     events = eng.events.list_all(

@@ -6,12 +6,7 @@ mcp.tool with timing, then calls register_all(mcp, engine)."""
 
 from __future__ import annotations
 
-import os
-import sys
-import json
-import time
-from pathlib import Path
-from typing import Any, List, Optional
+from typing import Optional
 
 from pmb.mcp._toolspec import _maybe_tool  # noqa: F401
 
@@ -291,8 +286,9 @@ def register_all(mcp, engine):
 
         Returns: {file, source_hash, n_pages, n_chunks, duration_ms, ...}
         """
-        from pmb.ingest.pdf import ingest_pdf, ingest_pdfs
         from pathlib import Path
+
+        from pmb.ingest.pdf import ingest_pdf, ingest_pdfs
         p = Path(path)
         if p.is_dir():
             return ingest_pdfs(engine, p, recurse=False,
@@ -319,8 +315,9 @@ def register_all(mcp, engine):
 
         Returns: {project_name, n_indexed, n_skipped, by_language, ...}
         """
-        from pmb.ingest.project import index_project as _do_index
         from pathlib import Path
+
+        from pmb.ingest.project import index_project as _do_index
         return _do_index(engine, Path(path), force=force, max_files=max_files)
 
     @mcp.tool()

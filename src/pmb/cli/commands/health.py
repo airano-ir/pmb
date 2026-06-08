@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import typer
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
-from pmb.core.engine import Engine
 from pmb.cli._common import console
+from pmb.core.engine import Engine
 
 health_app = typer.Typer(help="Health checks: self-test, trends, conflicts, user feedback.")
 

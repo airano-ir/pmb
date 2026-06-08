@@ -8,20 +8,12 @@ module so these @app.command registrations run on the shared app."""
 from __future__ import annotations
 
 import os
-import sys
-import json
-import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
-from rich.table import Table
-from rich.panel import Panel
-from rich.markup import escape as esc
 
-from pmb.core.engine import Engine
-from pmb.core.workspace import detect_workspace
-from pmb.cli._common import app, console, _humanize_time  # noqa: F401
+from pmb.cli._common import _humanize_time, app, console  # noqa: F401
 
 # prepare-context — the line that hooks call to inject memory at session
 # start. Reads the user message from stdin or a positional arg, prints a
@@ -155,7 +147,7 @@ def prepare_context_cmd(
     use_auto = not legacy and bool(eng.config.get("auto_recall.enabled"))
 
     if use_auto:
-        from pmb.hooks import run_auto_context, format_context
+        from pmb.hooks import format_context, run_auto_context
         try:
             res = run_auto_context(
                 eng, msg,
@@ -338,7 +330,7 @@ def auto_context_cmd(
       pmb auto-context "what are my open goals" --json
     """
     from pmb.core.engine import Engine
-    from pmb.hooks import run_auto_context, format_context
+    from pmb.hooks import format_context, run_auto_context
 
     eng = Engine()
     res = run_auto_context(
@@ -528,7 +520,8 @@ def track_action_cmd(
     Designed for a PostToolUse hook; harmless to call by hand with a JSON
     payload on stdin.
     """
-    import sys as _sys, json as _json
+    import json as _json
+    import sys as _sys
     raw = _read_stdin_utf8()
     if not raw.strip():
         return
@@ -559,8 +552,8 @@ def track_action_cmd(
     # (numpy / lancedb). Resolve the workspace and INSERT directly via the
     # dependency-light ambient_log module — ~1s vs ~2s, no heavy imports.
     try:
-        from pmb.core.workspace import detect_workspace
         from pmb.core.ambient_log import insert_agent_action, is_significant_action
+        from pmb.core.workspace import detect_workspace
         ws = detect_workspace()
         rid = insert_agent_action(
             ws.db_path, ws.id, tool=tool, target=str(target),
@@ -583,7 +576,8 @@ def _spawn_detached_autowrite(window: int) -> bool:
     the turn. Inherits this process's env (PMB_HOME / PMB_WORKSPACE).
     Returns True if the spawn succeeded.
     """
-    import subprocess as _sp, sys as _sys
+    import subprocess as _sp
+    import sys as _sys
     from pathlib import Path as _Path
     py = _Path(_sys.executable)
     pmb_exe = None
@@ -648,7 +642,7 @@ def autowrite_cmd(
     import sys as _sys
     try:
         from pmb.core.engine import Engine
-        from pmb.hooks import run_autowrite, autowrite_gate
+        from pmb.hooks import autowrite_gate, run_autowrite
         eng = Engine()
     except Exception as e:
         if not quiet:
@@ -792,8 +786,8 @@ def ambient_watch_cmd(
     repo = _P(path).resolve() if path else _P.cwd()
 
     try:
-        from pmb.core.workspace import detect_workspace
         from pmb.core.ambient_log import insert_agent_action
+        from pmb.core.workspace import detect_workspace
         from pmb.hooks.project_observer import is_git_repo, snapshot_changes
     except Exception as e:
         console.print(f"[red]ambient-watch init failed: {e}[/]")
@@ -897,7 +891,7 @@ def codex_notify_cmd(
     calls this; we parse the NEW function_calls since last turn (offset-
     tracked), record them, and run the same auto-write as on Claude Code.
     """
-    import sys as _sys, json as _json
+    import sys as _sys
     # The notify event payload is informational; we don't strictly need it
     # (we find the active rollout by mtime). Read it so Codex's contract is
     # honoured and so a future version can use turn-id / cwd.
@@ -909,8 +903,8 @@ def codex_notify_cmd(
     _ = payload  # reserved for future (turn-id, cwd hints)
 
     try:
-        from pmb.core.workspace import detect_workspace
         from pmb.core.ambient_log import insert_agent_action, is_significant_action
+        from pmb.core.workspace import detect_workspace
         from pmb.hooks.codex_rollout import find_latest_rollout, parse_rollout_actions
     except Exception as e:
         if not quiet:

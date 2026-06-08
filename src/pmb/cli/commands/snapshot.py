@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
-import os
 import json
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
-from rich.table import Table
-from rich.panel import Panel
 from rich.markup import escape as esc
+from rich.table import Table
 
-from pmb.core.engine import Engine
-from pmb.core.workspace import detect_workspace, list_workspaces, Workspace
-from pmb.cli._common import app, console, _humanize_time, _open_config, _agent_toggles_from_config  # noqa: F401
+from pmb.cli._common import (  # noqa: F401
+    _agent_toggles_from_config,
+    _humanize_time,
+    _open_config,
+    app,
+    console,
+)
+from pmb.core.workspace import detect_workspace
 
 snapshot_app = typer.Typer(help="Local, offline snapshots of your workspace (no cloud).")
 
