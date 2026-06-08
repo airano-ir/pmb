@@ -29,6 +29,9 @@ from pmb.reasoning.vocab_miner import (
 
 
 from pmb.core.engine.write import WriteMixin
+from pmb.core.engine.lessons import LessonsMixin
+from pmb.core.engine.overview import OverviewMixin
+from pmb.core.engine.batch import BatchMixin
 from pmb.core.engine.goals import GoalsMixin
 from pmb.core.engine.dedup import DedupMixin
 from pmb.core.engine.embed import EmbedMixin
@@ -41,6 +44,9 @@ from pmb.core.engine.ambient import AmbientMixin
 
 class Engine(
     WriteMixin,
+    LessonsMixin,
+    OverviewMixin,
+    BatchMixin,
     GoalsMixin,
     DedupMixin,
     EmbedMixin,
