@@ -87,6 +87,112 @@ class GraphMixin:
         self.graph.bump_edges(self.workspace.id, entity_ids)
         return entity_ids
 
+    # ──────────────────────────────────────────────────────────────────
+    # Async graph indexing — keep LLM extraction OFF the write hot-path
+    # ──────────────────────────────────────────────────────────────────
+
+    def _index_graph_or_defer(self, ev: Event, full_text: str) -> list[int]:
+        """Graph-index an event, deferring the slow part off the write path.
+
+        The regex (and spaCy) backends are fast and local — they run INLINE,
+        exactly as before. But an LLM backend (`llm:claude` / `llm:ollama` /
+        `llm:codex`) does a blocking CLI round-trip of up to
+        `graph.llm_timeout_s` PER event. Running that inline violates PMB's
+        core rule — "the write path does NO blocking LLM call" — and is what
+        made records hang and, when an MCP request was serialized behind a
+        stuck subprocess, could stall a following recall.
+
+        So for LLM backends (when `graph.async_llm` is on, the default) we
+        hand the event to a background worker and return immediately. The
+        graph is eventually-consistent; `pmb regraph` is the backstop if the
+        process dies before the worker drains. Writes stay ~instant.
+        """
+        backend = getattr(self.entity_extractor, "backend_name", "regex")
+        is_llm = isinstance(backend, str) and backend.startswith("llm:")
+        if not is_llm or not self.config.get("graph.async_llm"):
+            return self._index_event_in_graph(ev, full_text)
+        self._enqueue_graph(ev, full_text)
+        return []
+
+    def _enqueue_graph(self, ev: Event, full_text: str) -> None:
+        """Append (ev, full_text) to the in-memory graph queue and ensure a
+        single daemon worker is draining it. Lazy-inits its own state so we
+        don't touch Engine.__init__."""
+        import threading
+
+        if getattr(self, "_graph_queue_lock", None) is None:
+            self._graph_queue_lock = threading.Lock()
+            self._graph_queue = []
+            self._graph_worker_started = False
+        with self._graph_queue_lock:
+            self._graph_queue.append((ev, full_text))
+            if not self._graph_worker_started:
+                self._graph_worker_started = True
+                threading.Thread(
+                    target=self._drain_graph_queue,
+                    daemon=True,
+                    name="pmb-graph-defer",
+                ).start()
+
+    def _drain_graph_queue(self) -> None:
+        """Background worker: index queued events through the (slow) LLM
+        extractor one at a time, then exit. Re-spawned on the next enqueue.
+        Each failure is swallowed (best-effort) — `pmb regraph` can rebuild
+        any event the worker missed."""
+        import logging
+
+        while True:
+            with self._graph_queue_lock:
+                if not self._graph_queue:
+                    self._graph_worker_started = False
+                    self._graph_in_flight = False
+                    return
+                ev, full_text = self._graph_queue.pop(0)
+                # Mark in-flight WHILE holding the lock so a concurrent
+                # graph_queue_pending() count includes the item being worked.
+                self._graph_in_flight = True
+            try:
+                self._index_event_in_graph(ev, full_text)
+            except Exception:
+                logging.getLogger(__name__).debug(
+                    "deferred graph index failed for %s",
+                    getattr(ev, "ulid", "?"), exc_info=True,
+                )
+            finally:
+                with self._graph_queue_lock:
+                    self._graph_in_flight = False
+
+    def graph_queue_pending(self) -> int:
+        """How many events still need deferred LLM graph indexing — queued
+        PLUS the one currently being processed. Used by `wait_for_graph_queue`
+        (tests/bulk flows) and diagnostics."""
+        lock = getattr(self, "_graph_queue_lock", None)
+        if lock is None:
+            return 0
+        with lock:
+            n = len(getattr(self, "_graph_queue", []))
+            if getattr(self, "_graph_in_flight", False):
+                n += 1
+            return n
+
+    def wait_for_graph_queue(self, timeout_seconds: float = 120.0) -> dict:
+        """Block until the deferred graph queue drains (or timeout). For
+        tests / bulk ingests that need the graph consistent before asserting.
+        Pure busy-wait poll — the worker runs in its own thread."""
+        import time as _t
+
+        deadline = _t.time() + timeout_seconds
+        start_pending = self.graph_queue_pending()
+        while _t.time() < deadline:
+            if self.graph_queue_pending() == 0:
+                break
+            _t.sleep(0.05)
+        return {
+            "drained": self.graph_queue_pending() == 0,
+            "start_pending": start_pending,
+            "remaining": self.graph_queue_pending(),
+        }
+
     def prune_graph(
         self,
         max_weight: int = 1,

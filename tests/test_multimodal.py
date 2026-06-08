@@ -110,9 +110,15 @@ def test_symbols_to_entity_names():
 
 
 def test_extract_handles_syntax_error():
+    # Broken / half-written code must not crash. ast.parse fails, so the
+    # regex fallback (_extract_via_regex) kicks in and still recovers the
+    # def NAME (no signature/docstring). This is intentional — Cursor /
+    # Claude Code stream half-written code constantly, and we still want
+    # entities out of it. See code_ast._extract_via_regex.
     code = "def broken(\n  this is not valid python"
     syms = extract_python_symbols(code)
-    assert syms == []
+    assert [s.name for s in syms] == ["broken"]
+    assert syms[0].kind == "function"
 
 
 # ----------------------------------------------------------------------

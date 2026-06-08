@@ -8,8 +8,10 @@ correctly via entity graph, not just BM25 on raw source.
 
 Stack: pure stdlib for Python (`ast` module).
 Other languages would need tree-sitter — we leave that as a future
-extension. For now, when content doesn't parse as Python, we return
-empty list. Caller still indexes the raw text.
+extension. When content doesn't parse as Python, we fall back to a regex
+scanner that still recovers def/class/import NAMES (no signature/docstring),
+so half-written code from a streaming agent still yields entities. Caller
+still indexes the raw text.
 
 Cost: <5ms per file (Python's ast is fast).
 

@@ -155,6 +155,18 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
+Prime the model once so the first `recall` is fast (the embedding model is
+~90 MB; without this the very first query pays a one-time cold-start load):
+
+```bash
+pmb warmup
+```
+
+> **Running the tests?** Use the venv's Python, not your system Python —
+> `.venv/bin/python -m pytest` (or `.venv\Scripts\python.exe -m pytest` on
+> Windows). Running bare `pytest` outside the venv just reports missing
+> `numpy`/`fastmcp`/`typer` — that's a missing venv, not a broken project.
+
 Wire one or more agents:
 
 ```bash
@@ -213,12 +225,18 @@ pmb compact                                 archive old events
 pmb dedupe                                  resolve borderline duplicates
 
 # Hooks (force-feed PMB at the protocol level — no model cooperation)
-pmb hooks install claude-code               wire all 3 lifecycle hooks
+pmb hooks install claude-code               wire all 4 lifecycle hooks
 pmb hooks list                              show what's installed
+pmb hooks capabilities                      ambient mechanism each agent supports
 pmb hooks uninstall claude-code             remove them
 pmb auto-context "fix bug in PMB"           preview per-turn injection
 pmb session-restore -m 180                  preview post-compaction restore
 pmb lesson-followcheck --dry-run            preview follow-through scoring
+
+# Ambient memory (the write side — memory journals the agent's work)
+pmb autowrite --dry-run                     preview ambient auto-write for this turn
+pmb ambient-watch .                         ambient auto-write for MCP-only hosts (git observer)
+pmb forget-auto                             drop memory the ambient layer wrote itself
 
 # Config
 pmb config list                             default tier (25 keys you care about)
@@ -292,7 +310,7 @@ project), **Overview**, **Entities**, **Arcs** (narrative threads),
 
 The hard part of agent memory isn't storing — it's getting the agent to
 *use* what's stored. Soft instructions in a rules file get skipped. So
-PMB wires three hooks at the protocol level (`pmb hooks install
+PMB wires four hooks at the protocol level (`pmb hooks install
 claude-code`), and each removes a dependency on the model remembering to
 act:
 
@@ -301,19 +319,59 @@ act:
   agent — lessons, past decisions, recall hits, project overview — and
   injected before the model thinks. The agent never has to decide to call
   `recall`. Trivial messages inject nothing.
+- **PostToolUse → ambient observe.** Every tool the agent runs is appended
+  to a lightweight action journal (`pmb track-action` — a single SQLite
+  INSERT, no model, no vectors). Reads and `ls` are filtered out; edits,
+  tests and commits are kept. This is the raw material the Stop hook turns
+  into a memory if the agent never journals its own work.
 - **SessionStart → session-restore.** When the context window compacts,
   the agent normally forgets what it just did. This hook rebuilds "where
   you left off" from what the session recorded — decisions, completed
   work, lessons, open goals — so it picks the thread back up instead of
   re-asking you.
-- **Stop → follow-through.** At turn end, PMB checks which surfaced
-  lessons actually showed up in what the agent did (token overlap, gated
-  on distinctive tokens) and marks them followed — *deterministically*,
-  without the model self-reporting. This is what makes the follow-rate
-  real instead of stuck at zero.
+- **Stop → follow-through + ambient auto-write.** At turn end PMB does two
+  things. (a) *Follow-through:* it checks which surfaced lessons actually
+  showed up in what the agent did (token overlap, gated on distinctive
+  tokens) and marks them followed — *deterministically*, without the model
+  self-reporting. (b) *Ambient auto-write:* if the agent did NOT call a
+  `record_*` tool this turn, it synthesizes one activity entry from the
+  observed actions, so real work is captured even when the agent stays
+  silent. See **Ambient memory** below.
 
 Preview any of them without an agent: `pmb auto-context "..."`,
-`pmb session-restore -m 180`, `pmb lesson-followcheck --dry-run`.
+`pmb session-restore -m 180`, `pmb lesson-followcheck --dry-run`,
+`pmb autowrite --dry-run`.
+
+---
+
+## Ambient memory — the write side
+
+Auto-recall fixed the *read* side: the agent no longer has to remember to
+call `recall`. **Ambient memory** does the same for the *write* side —
+the memory journals the agent's work even when it forgets `record_batch`:
+
+- **Coordinated — never a duplicate.** If the agent already called a
+  `record_*` tool this turn, ambient stays silent; the agent's own summary
+  is richer. It only fills the gap.
+- **Outcome-scored, not churn.** A turn is journaled only if it clears a
+  quality bar driven by *results* — tests passed, a failure got fixed, a
+  deploy/migrate ran, the breadth of edits — not by how many files were
+  touched alone. Two mechanical edits and nothing else are dropped.
+- **Honest + reversible.** Every ambient entry is tagged
+  `source=autowrite`, shown as auto in the dashboard, and removable in one
+  command (`pmb forget-auto`). **ON by default** — capturing work the
+  agent forgot is PMB's signature; turn it off with
+  `pmb config set autowrite.enabled false`.
+- **Works on every host.** Claude Code via the PostToolUse + Stop hooks;
+  OpenAI Codex by parsing its session rollout on `agent-turn-complete`
+  (`pmb codex-notify`); MCP-only hosts (Cursor, Zed, VS Code) via a git
+  observer that watches the working tree (`pmb ambient-watch .`). See what
+  your agent supports with `pmb hooks capabilities`.
+
+Synthesis is template-based by default (instant, deterministic, no model).
+Opt into a nicer one-line summary from a local/CLI model with `pmb config
+set autowrite.synthesizer llm:ollama` (or `llm:claude` / `llm:codex`) — it
+has a timeout and falls back to the template, so it never blocks the turn.
 
 ---
 
@@ -380,8 +438,9 @@ $0. There is no PMB service.
 
 **Does the agent need to know about PMB?**
 After `pmb connect`, the right rules are appended to `CLAUDE.md` /
-`AGENTS.md` automatically. The agent learns the 29 MCP tools and the
-`prepare()` pattern from those rules.
+`AGENTS.md` automatically. The agent learns the 29 default MCP tools (of
+64 total — the rest are admin/sleep-mode ops, gated behind the `full`
+tool profile) and the `prepare()` pattern from those rules.
 
 **Will it slow my agent down?**
 The MCP tools return in single-digit milliseconds for everything

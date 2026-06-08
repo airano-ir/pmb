@@ -72,7 +72,9 @@ def test_e2e_lesson_surface_then_followcheck_confirms(engine):
 
 
 def test_e2e_followcheck_no_false_positive_without_activity(engine):
-    """A lesson surfaces, the agent does UNRELATED work → no follow inferred."""
+    """A lesson surfaces, the agent does UNRELATED work → no follow inferred
+    (and the lesson is classified not_applicable, since it had nothing to do
+    with the turn)."""
     from pmb.hooks import run_auto_context, run_followcheck
 
     engine.record_fact(
@@ -89,11 +91,15 @@ def test_e2e_followcheck_no_false_positive_without_activity(engine):
 
     fc = run_followcheck(engine, window_minutes=60, min_overlap=3, min_strong=2,
                          apply=True)
+    # No false positive: unrelated work must NOT be inferred as a follow.
     assert fc.marked_followed == 0
-    # surface stays unconfirmed
+    # But the lesson clearly didn't pertain to this turn (zero token overlap),
+    # so it's classified not_applicable (followed=-1) — excluded from the
+    # adherence denominator instead of dangling as a phantom 'not followed'.
+    assert fc.not_applicable == 1
     remaining = {s["surface_id"] for s in
                  engine.recent_unconfirmed_surfaces(minutes=60)}
-    assert sid in remaining
+    assert sid not in remaining
 
 
 # ─── decisions surface in auto-recall ────────────────────────────────────

@@ -91,8 +91,8 @@ class WriteMixin:
             self._embed_or_defer(ev.ulid, ev.to_text())
         else:
             self.search.add(ev.ulid, ev.to_text())
-        # Index в graph
-        self._index_event_in_graph(ev, full_text=f"{clean_query}\n{clean_response}")
+        # Index в graph (deferred to a worker for LLM backends)
+        self._index_graph_or_defer(ev, full_text=f"{clean_query}\n{clean_response}")
         try:
             from pmb.reasoning.causation import add_temporal_next_edge
 
@@ -161,7 +161,7 @@ class WriteMixin:
         ev = self.events.append(ev)
         # Improvement W: embed inline if model loaded, else queue
         self._embed_or_defer(ev.ulid, ev.to_text())
-        self._index_event_in_graph(ev, full_text=clean_fact)
+        self._index_graph_or_defer(ev, full_text=clean_fact)
         try:
             from pmb.reasoning.causation import add_temporal_next_edge
 
@@ -419,6 +419,37 @@ class WriteMixin:
         return {"ok": cur.rowcount > 0, "surface_id": surface_id,
                 "followed": followed}
 
+    def mark_lesson_not_applicable(
+        self,
+        surface_id: int,
+        note: Optional[str] = None,
+    ) -> dict:
+        """Mark a surfaced lesson as NOT APPLICABLE to the turn it surfaced in.
+
+        Used by the Stop-hook followcheck when a lesson shares zero topical
+        overlap with everything the agent actually did this turn — the work
+        simply wasn't about that lesson. Stored as `followed = -1` so it is
+        excluded from the adherence denominator: a rule that never pertained
+        to the work must not count as 'not followed'.
+
+        Distinct from ignored (`followed = 0`), which means the lesson WAS
+        relevant but the agent went against it. -1 is excluded from both the
+        follow (✓) and ignored (✗) counts everywhere.
+        """
+        import sqlite3, time as _t
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            cur = conn.execute(
+                """
+                UPDATE lesson_surfaces
+                SET followed = -1, follow_note = ?, followed_at = ?
+                WHERE id = ? AND workspace_id = ?
+                """,
+                ((note or "")[:500], _t.time(), surface_id, self.workspace.id),
+            )
+            conn.commit()
+        return {"ok": cur.rowcount > 0, "surface_id": surface_id,
+                "followed": -1, "not_applicable": True}
+
     def adherence_stats(self, days: float = 7.0) -> dict:
         """How well is the AI agent FOLLOWING the READ-FIRST workflow?
 
@@ -453,6 +484,8 @@ class WriteMixin:
             "read_write_ratio": 0.0,
             "lesson_surfaces": 0,
             "lesson_followed": 0,
+            "lesson_not_applicable": 0,
+            "lesson_applicable": 0,
             "lesson_followthrough": 0.0,
         }
         read_tools = (
@@ -503,6 +536,12 @@ class WriteMixin:
                 pass
 
             # Lesson follow-through — independent of mcp_calls.
+            # Denominator is APPLICABLE surfaces, not all surfaces: a lesson
+            # that surfaced but had zero topical overlap with what the agent
+            # actually did this turn is marked not_applicable (followed = -1)
+            # by the Stop-hook followcheck, and must NOT count as "not
+            # followed". Otherwise the metric measures how broadly auto-recall
+            # surfaces (noise), not how well relevant rules are followed.
             try:
                 surf = conn.execute(
                     "SELECT COUNT(*) FROM lesson_surfaces WHERE workspace_id=? AND surfaced_at >= ?",
@@ -512,10 +551,17 @@ class WriteMixin:
                     "SELECT COUNT(*) FROM lesson_surfaces WHERE workspace_id=? AND surfaced_at >= ? AND followed=1",
                     (ws, cutoff),
                 ).fetchone()[0]
+                na = conn.execute(
+                    "SELECT COUNT(*) FROM lesson_surfaces WHERE workspace_id=? AND surfaced_at >= ? AND followed=-1",
+                    (ws, cutoff),
+                ).fetchone()[0]
                 out["lesson_surfaces"] = surf
                 out["lesson_followed"] = flw
-                if surf > 0:
-                    out["lesson_followthrough"] = flw / surf
+                out["lesson_not_applicable"] = na
+                applicable = max(0, surf - na)
+                out["lesson_applicable"] = applicable
+                if applicable > 0:
+                    out["lesson_followthrough"] = flw / applicable
             except Exception:
                 pass
         return out
@@ -535,6 +581,8 @@ class WriteMixin:
         rw       = s.get("read_write_ratio", 0.0)
         lt       = s.get("lesson_followthrough", 0.0)
         n_surf   = s.get("lesson_surfaces", 0)
+        n_app    = s.get("lesson_applicable", 0)
+        n_na     = s.get("lesson_not_applicable", 0)
         # Quiet on cold workspace: no surfaced lessons / no history.
         if s.get("write_calls", 0) < 5 and n_surf < 5:
             return None
@@ -549,10 +597,12 @@ class WriteMixin:
                 f"read/write ratio {rw:.2f} (target ≥ 0.80) — "
                 f"the memory tool is being used as a logbook, not a memory."
             )
-        if n_surf >= 5 and lt < 0.10:
+        if n_app >= 5 and lt < 0.10:
             problems.append(
-                f"lesson follow-through {lt*100:.0f}% of {n_surf} surfaced — "
-                f"call mark_lesson_followed(surface_id, True/False) after acting."
+                f"lesson follow-through {lt*100:.0f}% of {n_app} applicable"
+                + (f" ({n_na} of {n_surf} surfaced weren't relevant)" if n_na else "")
+                + " — ensure the lesson-followcheck Stop hook is active, or "
+                "call mark_lesson_followed(surface_id, True/False) after acting."
             )
         if not problems:
             return None
@@ -581,12 +631,18 @@ class WriteMixin:
                 "WHERE workspace_id = ? AND surfaced_at >= ? AND followed = 0",
                 (ws, cutoff),
             ).fetchone()
+            not_applicable = conn.execute(
+                "SELECT COUNT(*) AS n FROM lesson_surfaces "
+                "WHERE workspace_id = ? AND surfaced_at >= ? AND followed = -1",
+                (ws, cutoff),
+            ).fetchone()
             per_lesson = conn.execute(
                 """
                 SELECT ls.lesson_ulid,
                        COUNT(*) AS surfaces,
                        SUM(CASE WHEN ls.followed = 1 THEN 1 ELSE 0 END) AS followed,
                        SUM(CASE WHEN ls.followed = 0 THEN 1 ELSE 0 END) AS ignored,
+                       SUM(CASE WHEN ls.followed = -1 THEN 1 ELSE 0 END) AS not_applicable,
                        e.content AS content
                 FROM lesson_surfaces ls
                 LEFT JOIN events e ON e.ulid = ls.lesson_ulid
@@ -597,18 +653,28 @@ class WriteMixin:
                 """,
                 (ws, cutoff),
             ).fetchall()
+        total = tot["n"] if tot else 0
+        n_followed = followed["n"] if followed else 0
+        n_ignored = ignored["n"] if ignored else 0
+        n_na = not_applicable["n"] if not_applicable else 0
+        # Follow-rate is over APPLICABLE surfaces (total minus not_applicable):
+        # a lesson that never pertained to the work must not count against it.
+        applicable = max(0, total - n_na)
         return {
             "days": days,
-            "total_surfaces": tot["n"] if tot else 0,
-            "followed": followed["n"] if followed else 0,
-            "ignored": ignored["n"] if ignored else 0,
-            "unknown": (tot["n"] - (followed["n"] + ignored["n"])) if tot else 0,
-            "follow_rate": (followed["n"] / max(1, tot["n"])) if tot and tot["n"] else 0.0,
+            "total_surfaces": total,
+            "followed": n_followed,
+            "ignored": n_ignored,
+            "not_applicable": n_na,
+            "applicable": applicable,
+            "unknown": max(0, total - n_followed - n_ignored - n_na),
+            "follow_rate": (n_followed / applicable) if applicable else 0.0,
             "per_lesson": [
                 {"lesson_ulid": r["lesson_ulid"],
                  "surfaces": r["surfaces"],
                  "followed": r["followed"] or 0,
                  "ignored": r["ignored"] or 0,
+                 "not_applicable": r["not_applicable"] or 0,
                  "content": (r["content"] or "")[:200]}
                 for r in per_lesson
             ],
@@ -779,19 +845,75 @@ class WriteMixin:
             })
         if not query.strip():
             return items[:limit]
-        # Query-aware ranking: count case-folded token overlaps.
-        import re as _re
-        q_tokens = set(t for t in _re.split(r"\W+", query.lower()) if len(t) >= 3)
+        # Relevance gate, using the SAME tokenizer + stopwords as followcheck
+        # (pmb.core.text_match). The big precision win is the STOPWORD SET, not
+        # a high count threshold: the old code split on \W+ with NO stopwords,
+        # so a single generic word (code / test / file / pmb / a Windows-path
+        # fragment like 'users'/'appdata') matched almost anything and flooded
+        # surfacing with noise. distinctive_tokens strips all of that, so a
+        # single *distinctive* overlap (pnpm, numpy, lancedb, record_batch) is
+        # already a real signal. Keep a lesson sharing >= recall.lesson_min_overlap
+        # distinctive tokens (default 1); rank strong (identifier-grade) matches
+        # first. Raise the knob to 2 for stricter precision.
+        from pmb.core.text_match import distinctive_tokens, is_strong
+        q_tokens = distinctive_tokens(query)
         if not q_tokens:
             return items[:limit]
-        def _score(item: dict) -> float:
-            content = (item["content"] or "").lower()
-            c_tokens = set(t for t in _re.split(r"\W+", content) if len(t) >= 3)
-            return len(q_tokens & c_tokens)
-        items.sort(key=_score, reverse=True)
-        # Only return items with at least one match — irrelevant lessons
-        # are worse than no lessons (noise → agent ignores the field).
-        return [it for it in items if _score(it) >= 1][:limit]
+        try:
+            min_ov = int(self.config.get("recall.lesson_min_overlap") or 1)
+        except Exception:
+            min_ov = 1
+
+        # Lexical signal for every candidate (the always-on, model-free tier).
+        for it in items:
+            ov = q_tokens & distinctive_tokens(it.get("content") or "")
+            it["_ov"] = len(ov)
+            it["_strong"] = sum(1 for t in ov if is_strong(t))
+            it["_sim"] = 0.0
+
+        # Optional SEMANTIC tier (opt-in: recall.lesson_semantic). Reuses the
+        # embeddings recall already computes to catch paraphrase / synonym /
+        # cross-lingual matches the lexical gate structurally cannot — e.g. a
+        # "каким пакетным менеджером собирать" query vs a "use pnpm not npm"
+        # lesson shares ZERO tokens but is the same topic. NOT an LLM call (just
+        # a vector cosine), so it doesn't break the no-LLM-on-read rule. OFF by
+        # default so the per-turn hook stays model-free + instant; when on,
+        # scoring a few hundred lesson vectors is cheap once the model is warm.
+        sem_min = 1.1  # > 1.0 sentinel == disabled (cosine can't reach it)
+        try:
+            if self.config.get("recall.lesson_semantic"):
+                sem_min = float(self.config.get("recall.lesson_semantic_min") or 0.45)
+        except Exception:
+            pass
+        if sem_min <= 1.0 and items:
+            try:
+                import numpy as np
+                from pmb.core.search import cosine_similarity
+                qv = self.search.embed(query)
+                arrow = self.search._table.to_arrow()
+                want = {it["ulid"] for it in items}
+                vec = {u: v for u, v in zip(
+                    arrow.column("ulid").to_pylist(),
+                    arrow.column("vector").to_pylist()) if u in want}
+                order = [it["ulid"] for it in items if it["ulid"] in vec]
+                if order:
+                    mat = np.array([vec[u] for u in order], dtype=np.float32)
+                    sims = cosine_similarity(qv, mat)
+                    by_ulid = {u: float(s) for u, s in zip(order, sims)}
+                    for it in items:
+                        it["_sim"] = by_ulid.get(it["ulid"], 0.0)
+            except Exception:
+                pass  # best-effort — the lexical tier still stands on its own
+
+        kept = [it for it in items
+                if it["_ov"] >= min_ov or it["_sim"] >= sem_min]
+        # Rank: strong lexical first, then semantic similarity, then raw overlap.
+        kept.sort(key=lambda it: (it["_strong"], round(it["_sim"], 4), it["_ov"]),
+                  reverse=True)
+        for it in kept:  # strip scratch fields before returning
+            for k in ("_ov", "_strong", "_sim"):
+                it.pop(k, None)
+        return kept[:limit]
 
     def find_decisions(self, query: str = "", limit: int = 5) -> list[dict]:
         """Return past DECISIONS (the "why we did X" rationale) relevant to a
@@ -1627,11 +1749,22 @@ class WriteMixin:
             # batching) and (b) there are ≥2 items (no win for solo). Failures
             # silently fall through to per-event extract in _index_event_in_graph,
             # so this is a pure best-effort speedup.
+            #
+            # BUT this prefetch is a SYNCHRONOUS LLM call — it would block the
+            # whole batch write. When graph.async_llm is on (default), we skip
+            # it and let the background graph worker do per-event extraction
+            # off the write path. We only run the synchronous batch prefetch
+            # when async is explicitly disabled (deterministic tests) or the
+            # backend is spaCy (local, fast, no CLI round-trip).
             self._extract_cache.clear()
+            backend_nm = getattr(self.entity_extractor, "backend_name", "regex")
+            _is_llm_backend = isinstance(backend_nm, str) and backend_nm.startswith("llm:")
+            _async_on = bool(self.config.get("graph.async_llm"))
             try:
                 if (len(items or []) >= 2
-                        and getattr(self.entity_extractor, "backend_name", "regex") != "regex"
-                        and hasattr(self.entity_extractor, "extract_batch")):
+                        and backend_nm != "regex"
+                        and hasattr(self.entity_extractor, "extract_batch")
+                        and not (_is_llm_backend and _async_on)):
                     self._prefetch_batch_entities(items)
             except Exception:  # pragma: no cover - defensive
                 self._extract_cache.clear()
@@ -1974,7 +2107,7 @@ class WriteMixin:
             self._embed_or_defer(ev.ulid, ev.to_text())
         else:
             self.search.add(ev.ulid, ev.to_text())
-        self._index_event_in_graph(ev, full_text=clean_content)
+        self._index_graph_or_defer(ev, full_text=clean_content)
         # Cheap rule-based causation: temporal-next edge from the last event.
         # No LLM, just SQL. Fires only if the previous event is within minutes.
         try:

@@ -26,20 +26,12 @@ from pmb.core.engine import Engine
 from pmb.core.workspace import detect_workspace, list_workspaces
 
 
-@pytest.fixture
-def tmp_pmb_home():
-    """Изолированный PMB_HOME на тест."""
-    with tempfile.TemporaryDirectory() as tmp:
-        home = Path(tmp) / "pmb_home"
-        os.environ["PMB_HOME"] = str(home)
-        yield home
-        os.environ.pop("PMB_HOME", None)
-
-
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
+# tmp_pmb_home / tmp_workspace_dir come from conftest.py (tmp_path-based).
+# The old tempfile.TemporaryDirectory fixtures here hard-failed teardown on
+# Windows when the engine wasn't closed (open SQLite/LanceDB handle → the dir
+# can't be deleted → PermissionError). pytest's tmp_path cleanup is
+# best-effort, so the shared fixtures don't error on a lingering handle; they
+# also carry the deterministic recall config.
 
 
 # ---------------------------------------------------------------------------
