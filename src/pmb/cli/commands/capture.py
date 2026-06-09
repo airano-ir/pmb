@@ -21,6 +21,7 @@ from pmb.cli._common import (  # noqa: F401
     _parse_duration,
     app,
     console,
+    loading,
 )
 from pmb.core.engine import Engine
 from pmb.core.workspace import detect_workspace
@@ -78,14 +79,14 @@ def dashboard(
 def init(
     name: Optional[str] = typer.Option(None, "--name", help="Custom workspace name"),
 ):
-    """Инициализировать workspace в текущей директории."""
+    """Initialize a workspace in the current directory."""
     ws = detect_workspace()
     if name:
         ws.name = name
     ws.ensure_dirs()
     ws.save_meta()
 
-    # Также положим .pmb/workspace.yaml в проект (опционально)
+    # Also drop a .pmb/workspace.yaml into the project (optional)
     local_config = Path.cwd() / ".pmb"
     local_config.mkdir(exist_ok=True)
     config_file = local_config / "workspace.yaml"
@@ -130,7 +131,7 @@ def warmup():
 
 @app.command()
 def stats():
-    """Статистика текущего workspace."""
+    """Statistics for the current workspace."""
     eng = Engine()
     s = eng.stats()
     ws = s["workspace"]
@@ -169,7 +170,7 @@ def list_cmd(
     limit: int = typer.Option(20, "-n", "--limit"),
     event_type: Optional[str] = typer.Option(None, "--type"),
 ):
-    """Последние события в текущем workspace."""
+    """Recent events in the current workspace."""
     eng = Engine()
     events = eng.events.list_active(eng.workspace.id, limit=limit, event_type=event_type)
 
@@ -201,9 +202,10 @@ def remember(
     response: str = typer.Argument(...),
     importance: float = typer.Option(0.5, "--importance", "-i"),
 ):
-    """Добавить Q/A в память вручную."""
-    eng = Engine()
-    ulid = eng.remember(query=query, response=response, importance=importance)
+    """Manually add a Q/A pair to memory."""
+    with loading("saving to memory (loading embedding model on first run)…"):
+        eng = Engine()
+        ulid = eng.remember(query=query, response=response, importance=importance)
     console.print(f"[green]Stored[/] ULID: [cyan]{ulid}[/]")
 
 
@@ -527,11 +529,12 @@ def recall(
     rerank: bool = typer.Option(False, "--rerank",
                                 help="Cross-encoder reranker over top-25 (adds ~80MB model + ~100ms)"),
 ):
-    """Поиск релевантной памяти."""
-    eng = Engine(
-        rerank_model="cross-encoder/ms-marco-MiniLM-L-6-v2" if rerank else None,
-    )
-    pack = eng.recall(query=query, top_k=top_k, rerank=rerank)
+    """Search memory for relevant events."""
+    with loading("searching memory (loading embedding model on first run)…"):
+        eng = Engine(
+            rerank_model="cross-encoder/ms-marco-MiniLM-L-6-v2" if rerank else None,
+        )
+        pack = eng.recall(query=query, top_k=top_k, rerank=rerank)
 
     console.print(f"\n[bold]Query:[/] {query}")
     console.print(f"[dim]Workspace: {pack.workspace_name} | "
@@ -672,7 +675,7 @@ def overview(
 
 @app.command()
 def pin(ulid: str = typer.Argument(...)):
-    """Закрепить событие - высокая importance, не архивируется автоматом."""
+    """Pin an event — high importance, never auto-archived."""
     eng = Engine()
     eng.pin(ulid)
     console.print(f"[green]Pinned[/] {ulid}")
@@ -680,7 +683,7 @@ def pin(ulid: str = typer.Argument(...)):
 
 @app.command()
 def forget(ulid: str = typer.Argument(...)):
-    """Заархивировать событие. Не удаляется навсегда - можно unforget."""
+    """Archive an event. Not deleted permanently — restore with unforget."""
     eng = Engine()
     eng.forget(ulid)
     console.print(f"[yellow]Archived[/] {ulid}")

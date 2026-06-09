@@ -116,6 +116,37 @@ class Workspace:
         )
 
 
+def _default_workspace_file(pmb_home: Path) -> Path:
+    """File holding the persisted default workspace id (set via
+    `pmb workspace use`). One line, just the workspace id."""
+    return pmb_home / "current_workspace"
+
+
+def read_default_workspace(pmb_home: Path) -> Optional[str]:
+    """Return the persisted default workspace id, or None if unset/unreadable."""
+    try:
+        f = _default_workspace_file(pmb_home)
+        if f.exists():
+            val = f.read_text(encoding="utf-8").strip()
+            return val or None
+    except Exception:
+        pass
+    return None
+
+
+def set_default_workspace(pmb_home: Path, ws_id: Optional[str]) -> None:
+    """Persist (ws_id) or clear (None) the default workspace selection."""
+    f = _default_workspace_file(pmb_home)
+    if ws_id is None:
+        try:
+            f.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(ws_id.strip() + "\n", encoding="utf-8")
+
+
 def detect_workspace(
     cwd: Optional[Path] = None,
     pmb_home: Optional[Path] = None,
@@ -162,7 +193,20 @@ def detect_workspace(
             break
         p = p.parent
 
-    # 4. Git remote
+    # 4. Persisted default (set via `pmb workspace use <name>`). Slots in
+    # AFTER a project's explicit .pmb/workspace.yaml but BEFORE the
+    # git/cwd auto-detection fallback — so a user who picked a default
+    # ("personal") gets it everywhere except inside a configured project,
+    # while setups that never run `use` resolve exactly as before.
+    default_id = read_default_workspace(pmb_home)
+    if default_id:
+        storage = pmb_home / "workspaces" / default_id
+        if (storage / "meta.yaml").exists():
+            ws = Workspace.load_meta(storage, pmb_home)
+            ws.source = "default"
+            return ws
+
+    # 5. Git remote
     remote = _git_remote(cwd)
     if remote:
         ws_id = _hash_short(f"git:{remote}")
@@ -170,13 +214,13 @@ def detect_workspace(
         root = _git_root(cwd) or cwd
         return _build_workspace(ws_id, ws_name, root, pmb_home, "git")
 
-    # 5. Git root path
+    # 6. Git root path
     root = _git_root(cwd)
     if root:
         ws_id = _hash_short(f"path:{root}")
         return _build_workspace(ws_id, root.name, root, pmb_home, "git")
 
-    # 6. cwd path
+    # 7. cwd path
     ws_id = _hash_short(f"path:{cwd.resolve()}")
     return _build_workspace(ws_id, cwd.name, cwd, pmb_home, "cwd")
 

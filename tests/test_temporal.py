@@ -136,31 +136,43 @@ def test_event_time_stored_on_write(tmp_pmb_home, tmp_workspace_dir):
 
 
 def test_temporal_query_boosts_proximate_event(tmp_pmb_home, tmp_workspace_dir):
-    """A temporal query ('when did X happen?') should rank time-anchored
-    events higher than otherwise-similar ones without time anchors."""
+    """A temporal query ('when did the December meeting happen?') must rank the
+    event whose time anchor is CLOSEST to the query's anchor highest."""
     eng = Engine(
         cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home,
         config_overrides={
             "recall.cache_size": 0,
             "recall.temporal_enabled": True,
             "recall.temporal_boost": 1.0,  # strong for test signal
+            # The query parses to a December anchor and the events are months
+            # away; with the default 14-day half-life the proximity boost is
+            # ~0 for ALL of them, so ranking fell to vector luck (the flake).
+            # A long half-life lets proximity actually differentiate near<far.
+            "recall.temporal_half_life_days": 400.0,
             "recall.spreading_activation": False,
         },
     )
-    # Both events mention 'meeting' — one has explicit date
+    # `near` and `far` are near-identical "Meeting with Alice …" facts — only
+    # the DATE differs, so the temporal signal is isolated. `decoy` is undated.
     near = eng.record_fact("Meeting with Alice on 2025-12-05 about budgets")
     far = eng.record_fact("Meeting with Alice on 2024-01-15 about onboarding")
     decoy = eng.record_fact("General meeting topics that are not dated")
 
+    # Drain the async embed queue so vectors are ready before we rank — else
+    # recall races the queue (part of the pre-existing flake under load).
+    eng.wait_for_embed_queue(timeout_seconds=60.0)
+
     pack = eng.recall("When did the December meeting happen?", top_k=3)
     ulids = [r.ulid for r in pack.results]
-    # The Dec 2025 event should appear first / top
     assert near in ulids
-    # And outrank the unrelated meeting decoy
-    pos_near = ulids.index(near) if near in ulids else 99
-    pos_decoy = ulids.index(decoy) if decoy in ulids else 99
-    assert pos_near < pos_decoy, (
-        f"Dec 2025 event should rank above generic decoy; got order {ulids}"
+    # Temporal proximity: the December-2025 meeting (closest to the query's
+    # December anchor) must outrank the January-2024 one. They differ only by
+    # date, so this isolates the temporal boost deterministically — unlike the
+    # old near-vs-undated-decoy check, whose margin was pure vector luck.
+    pos_near = ulids.index(near)
+    pos_far = ulids.index(far) if far in ulids else 99
+    assert pos_near < pos_far, (
+        f"proximate (Dec 2025) should outrank distant (Jan 2024); got {ulids}"
     )
 
 

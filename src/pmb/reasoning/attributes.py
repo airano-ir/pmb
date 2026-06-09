@@ -26,6 +26,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from pmb.reference_data import extend_alias_groups as _extend_alias_groups
+
 # ── canonical attribute → set of synonym labels ───────────────────────────
 # Labels are matched after normalize_label() (lowercased, non-alnum collapsed
 # to '_'), so write both 'current city' and 'current_city' as you like.
@@ -69,6 +71,10 @@ _ALIAS_GROUPS: dict[str, set[str]] = {
         "relationship_status", "marital_status", "семейное_положение",
     },
 }
+
+# Per-deployment extension: reference.yaml `alias_groups` adds aliases without
+# editing this file (extend-only — code defaults are never removed).
+_ALIAS_GROUPS = _extend_alias_groups(_ALIAS_GROUPS)
 
 # reverse lookup alias → canonical, built once
 _ALIAS_TO_CANON: dict[str, str] = {}
@@ -202,4 +208,93 @@ def detect_current_state(content: str) -> Optional[tuple[str, str]]:
         if value.lower() in _BAD_VALUES or len(value) < 2:
             continue
         return attr, value
+    return None
+
+
+# ── negated / "unknown" current-state detection ───────────────────────────
+#
+# Once a POSITIVE keyed value exists ("user lives in Tampa"), an older fact
+# that says "the user does NOT live in Warsaw; current city is unknown" is
+# pure stale noise — it asserts ignorance about a now-known attribute. These
+# patterns find such facts so the write/repair paths can archive them.
+#
+# Precision matters (a false positive archives a real fact), so the negation
+# must sit ADJACENT to the attribute verb — "doesn't work on weekends" must
+# NOT register as a negated employer state — and a subject cue (I / my / user)
+# must be present so third-party statements ("he no longer lives in Paris")
+# are ignored.
+_SUBJECT_RE = re.compile(
+    r"\b(?:i|i'?m|i've|my|me|user|user'?s|я|мне|меня|мо[йяё]|пользовател\w*)\b",
+    re.IGNORECASE,
+)
+_NEG = r"(?:does not|doesn'?t|do not|don'?t|did not|didn'?t|no longer|not currently|больше не|уже не|не)"
+_UNK = r"(?:unknown|not known|unclear|неизвест\w*)"
+
+_NEGATED_STATE_PATTERNS: list[tuple[re.Pattern, str]] = [
+    # "<neg> (currently) live/reside in …" → city
+    (re.compile(
+        _NEG + r"\s+(?:currently\s+)?(?:live|lives|living|reside|resides|жив\w*)\b",
+        re.IGNORECASE), "city"),
+    # "(current) city / location / residence … is unknown" → city
+    (re.compile(
+        r"\b(?:current\s+)?(?:city|location|residence|town|город|местожительства)\b"
+        r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "city"),
+    # "<neg> (currently) work at/for …" → employer
+    (re.compile(
+        _NEG + r"\s+(?:currently\s+)?(?:work|works|working|работа\w*)\s+(?:at|for|в|на)\b",
+        re.IGNORECASE), "employer"),
+    (re.compile(
+        r"\b(?:current\s+)?(?:employer|company|workplace|работодател\w*|компани\w*)\b"
+        r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "employer"),
+    # "(current) country … is unknown" → country
+    (re.compile(
+        r"\b(?:current\s+)?(?:country|nation|страна)\b[^.;!?]*\b" + _UNK + r"\b",
+        re.IGNORECASE), "country"),
+]
+
+
+# ── future-intent ("plan") detection ──────────────────────────────────────
+#
+# A plain fact that's really a PLAN ("next we'll do X", "запомни, что будем
+# делать дальше") belongs in a goal, not a fact. We DON'T auto-convert (too
+# many false positives, e.g. a durable preference "we will always use pnpm"),
+# we only FLAG it so the dashboard / `pmb goals` can suggest promotion.
+_FUTURE_INTENT_RE = re.compile(
+    r"^\s*(?:"
+    r"next\s+steps?\b|next\s+we\b|next[:,]|plan[:,]|to-?do\b|"
+    r"we\s*(?:'ll|\s+will|\s+are\s+going\s+to|\s+should|\s+need\s+to)\b|"
+    r"i\s*(?:'ll|\s+will|\s+am\s+going\s+to|\s+need\s+to)\b|"
+    r"let'?s\b|going\s+to\b|"
+    r"будем\b|план[:,]|планиру|надо\s+будет|нужно\s+будет|"
+    r"дальше\s+(?:будем|сделаем|надо|нужно)|следующ"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def looks_like_future_intent(content: str) -> bool:
+    """True if CONTENT reads like a forward-looking PLAN ("next we'll do X")
+    rather than a settled fact. Used only to FLAG (metadata.suggest_goal),
+    never to auto-convert — past statements ("we decided X yesterday") and
+    plain facts must not trip it."""
+    if not content:
+        return False
+    return bool(_FUTURE_INTENT_RE.match(content[:60]))
+
+
+def detect_negated_state(content: str) -> Optional[str]:
+    """If CONTENT is a negation/"unknown" statement about a CURRENT personal
+    attribute ("the user no longer lives in Warsaw; current city is unknown"),
+    return the canonical attribute (e.g. "city"); else None.
+
+    Conservative: requires a subject cue (I/my/user) and the negation adjacent
+    to the attribute verb, so it never fires on a third party or on an
+    unrelated "doesn't …" clause."""
+    if not content or len(content) > 400:
+        return None
+    if not _SUBJECT_RE.search(content):
+        return None
+    for pat, attr in _NEGATED_STATE_PATTERNS:
+        if pat.search(content):
+            return attr
     return None

@@ -156,6 +156,10 @@ def test_maybe_auto_consolidate_uses_stub_llm(
             "consolidate.auto_trigger": True,
             "consolidate.auto_min_new_events": 3,
             "consolidate.auto_min_days": 365.0,
+            # Keep the 4 near-identical fixtures as 4 distinct events — L2
+            # semantic dedup would otherwise merge them (timing-dependent) to
+            # below min_cluster_size, so consolidation found nothing (flake).
+            "dedup.enable_semantic": False,
         },
     )
     # Cluster of similar facts

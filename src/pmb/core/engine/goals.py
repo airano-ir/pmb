@@ -18,6 +18,7 @@ class GoalsMixin:
         due_at: Optional[float] = None,
         importance: float = 0.7,
         session_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
     ) -> str:
         """Create a goal/intent event. Goals have status + optional hierarchy.
 
@@ -37,6 +38,8 @@ class GoalsMixin:
                 meta_bulk["parent_goal_ulid"] = parent_goal_ulid
             if due_at is not None:
                 meta_bulk["due_at"] = float(due_at)
+            if metadata:
+                meta_bulk.update(metadata)
             ev = Event(
                 workspace_id=self.workspace.id,
                 event_type="goal",
@@ -71,6 +74,8 @@ class GoalsMixin:
             meta["parent_goal_ulid"] = parent_goal_ulid
         if due_at is not None:
             meta["due_at"] = float(due_at)
+        if metadata:
+            meta.update(metadata)
         ev = Event(
             workspace_id=self.workspace.id,
             event_type="goal",

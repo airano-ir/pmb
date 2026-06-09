@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Optional
 
 
@@ -73,33 +74,69 @@ _INFERENTIAL_RE = re.compile(
 )
 
 # Identity intent: query is about the USER or a named person, not a topic.
-# Examples: "Who is the user?", "Where does Alex live?", "What languages
-# does the user use?", "What's my favourite editor?", "Who am I working
-# with?". When this fires, facts starting with possessive markers
-# ("User's...", "Alex's...", "My...") get a small boost, because the user
-# is asking about the entity, not about something topical.
+# Examples: "Who is the user?", "Where do I live?", "What languages does
+# the user use?", "What's my favourite editor?", "Who am I working with?".
+# When this fires, facts starting with possessive markers ("User's...",
+# the user's own name, "My...") get a small boost, because the user is
+# asking about the entity, not about something topical.
 #
 # Without this gate, the personal-marker boost was firing on ANY query
 # touching a fact whose content starts that way - e.g. "What's the JWT
-# lifetime?" returning "Alex's terminal is Wezterm..." at top-1 just
-# because the matching event happened to start with "Alex's".
+# lifetime?" returning "<name>'s terminal is Wezterm..." at top-1 just
+# because the matching event happened to start with a possessive.
+#
+# NOTE: the query-side patterns reference only GENERIC self-words
+# ("user", "i", "me", "my"). The USER'S OWN NAME ("who is Bob",
+# "where does Bob live") is matched dynamically via
+# `_identity_re_for_names`, fed by the mined user-name cache — we never
+# hardcode a specific personal name here.
+
+# Shared fragments — reused by the static identity regex AND the
+# per-user-name dynamic regex so the two never drift.
+_ID_ATTRS = (
+    r"name|email|stack|language|languages|editor|terminal|preference|"
+    r"preferences|home|location|allergy|allergies"
+)
+_ID_TOOLS = r"languages?|tools?|stacks?"
+_ID_LIKES = r"like|love|hate|prefer|avoid"
+
 _IDENTITY_RE = re.compile(
     r"\b("
-    r"who is (?:the |my )?(?:user|alex|i|me)\b|"
+    r"who is (?:the |my )?(?:user|i|me)\b|"
     r"who am i\b|"
     r"who (?:is|are) we\b|"
     r"who (?:do|did) i work|"
     r"who (?:'?s|s) on the team\b|"
     r"who is on the team\b|"
-    r"what(?:'?s)? (?:my|the user'?s?|alex'?s?) "
-    r"(?:name|email|stack|language|languages|editor|terminal|preference|preferences|home|location|allergy|allergies)|"
-    r"where (?:does|do) (?:alex|the user|i) (?:live|work)|"
-    r"what (?:languages?|tools?|stacks?) (?:does|do) (?:alex|the user|i) (?:use|prefer)|"
-    r"what (?:does|do) (?:alex|the user|i) (?:like|love|hate|prefer|avoid)|"
+    rf"what(?:'?s)? (?:my|the user'?s?) (?:{_ID_ATTRS})|"
+    r"where (?:does|do) (?:the user|i) (?:live|work)|"
+    rf"what (?:{_ID_TOOLS}) (?:does|do) (?:the user|i) (?:use|prefer)|"
+    rf"what (?:does|do) (?:the user|i) (?:{_ID_LIKES})|"
     r"who am i working with\b"
     r")",
     re.IGNORECASE,
 )
+
+
+@lru_cache(maxsize=128)
+def _identity_re_for_names(names_key: tuple[str, ...]) -> Optional[re.Pattern]:
+    """Build (cached) an identity regex for the user's OWN names, mirroring
+    the static patterns that used to hardcode a single name. `names_key` is
+    a sorted tuple of lowercased names (hashable, for the lru_cache)."""
+    names = [re.escape(n) for n in names_key if n]
+    if not names:
+        return None
+    alt = "|".join(names)
+    return re.compile(
+        r"\b("
+        rf"who is (?:the |my )?(?:{alt})\b|"
+        rf"what(?:'?s)? (?:{alt})'?s? (?:{_ID_ATTRS})|"
+        rf"where (?:does|do) (?:{alt}) (?:live|work)|"
+        rf"what (?:{_ID_TOOLS}) (?:does|do) (?:{alt}) (?:use|prefer)|"
+        rf"what (?:does|do) (?:{alt}) (?:{_ID_LIKES})"
+        r")",
+        re.IGNORECASE,
+    )
 
 # Historical intent: "what did we use before", "previous", "old setup",
 # "before the migration", "originally", "used to". Fires when the user
@@ -182,9 +219,9 @@ class LayerWeights:
     older_event_bonus: float = 0.0        # additive bonus per "older than
                                           # median timestamp" candidate.
     # When "identity" intent fires, facts whose content starts with a
-    # personal-possessive marker ("User's", "Alex's", "I am ", "My ", etc.)
-    # get a small multiplicative boost. Default 1.0 = no boost; the router
-    # bumps to ~1.15 on identity-shaped queries.
+    # personal-possessive marker ("User's", the user's own name, "I am ",
+    # "My ", etc.) get a small multiplicative boost. Default 1.0 = no boost;
+    # the router bumps to ~1.15 on identity-shaped queries.
     identity_marker_boost: float = 1.0
 
 
@@ -210,7 +247,9 @@ class QueryRouter:
     additive in scoring).
     """
 
-    def classify(self, query: str) -> QueryIntent:
+    def classify(
+        self, query: str, user_names: Optional[set[str]] = None
+    ) -> QueryIntent:
         if not query or not query.strip():
             return QueryIntent(query=query, types=["direct"], rationale="empty")
 
@@ -236,7 +275,11 @@ class QueryRouter:
         if _HISTORICAL_RE.search(q):
             types.append("historical")
             notes.append("historical-intent pattern matched")
-        if _IDENTITY_RE.search(q):
+        id_hit = bool(_IDENTITY_RE.search(q))
+        if not id_hit and user_names:
+            dyn = _identity_re_for_names(tuple(sorted(user_names)))
+            id_hit = bool(dyn is not None and dyn.search(q))
+        if id_hit:
             types.append("identity")
             notes.append("identity-intent pattern matched")
 

@@ -315,20 +315,28 @@ class BatchMixin:
                         res["type"] = "fact_tree"
                         results.append(res)
                         n_ok += 1
-                    elif t == "goal":
+                    elif t in ("goal", "plan"):
+                        # "plan" is an alias for a goal — the natural home for
+                        # "remember, next we'll do X" / "запомни, что будем
+                        # делать дальше". Tagged kind=plan so it's still a goal
+                        # (surfaced by prepare / open-goals) but distinguishable.
+                        goal_meta = dict(item.get("metadata") or {})
+                        if t == "plan":
+                            goal_meta.setdefault("kind", "plan")
                         ulid = self.record_goal(
                             title=item.get("title") or item.get("content") or "",
                             status=item.get("status", "pending"),
                             due_at=item.get("due_at"),
                             parent_goal_ulid=item.get("parent_goal_ulid"),
                             importance=float(item.get("importance", 0.7)),
+                            metadata=goal_meta or None,
                         )
                         if pin_after:
                             try:
                                 self.pin(ulid)
                             except Exception:
                                 pass
-                        results.append({"type": "goal", "ulid": ulid, "pinned": pin_after})
+                        results.append({"type": t, "ulid": ulid, "pinned": pin_after})
                         n_ok += 1
                     elif t == "activity":
                         ulid = self.record_activity(

@@ -403,6 +403,23 @@ SCHEMA: dict[str, _Setting] = {
         "Conservative: fires only on explicit present-state phrasing from "
         "user-origin facts — never reflections / project index / autowrite.",
     ),
+    "keyed.archive_obsolete_negations": _Setting(
+        bool, True,
+        "When a positive keyed value is set (e.g. user::city = Tampa), archive "
+        "older active facts that NEGATE or mark-unknown that same attribute "
+        "(\"the user does not currently live in Warsaw; current city is "
+        "unknown\") — they assert ignorance about a now-known attribute. "
+        "Archive-only (reversible, tagged superseded_by); skips pinned events "
+        "and lessons. This is a bug-class fix, so it defaults ON.",
+    ),
+    "write.quality_gate": _Setting(
+        bool, False,
+        "Write-time junk gate (opt-in, default OFF). When ON, a fact that "
+        "looks like junk (too short / placeholder / pure stopwords) is NOT "
+        "rejected — it is flagged metadata.quality_flag=suspect_junk, its "
+        "importance is capped at 0.2, and it is excluded from keyed-fact "
+        "promotion. `pmb declutter` then treats it as a first-class candidate.",
+    ),
     "recall.breaker_threshold": _Setting(
         int, 2,
         "Circuit breaker: consecutive backend failures (timeouts/errors) "
@@ -771,6 +788,18 @@ SCHEMA: dict[str, _Setting] = {
         float, 90.0, "Don't auto-archive events younger than this",
         min=0.0, max=3650.0,
     ),
+    "decay.archive_cold_days": _Setting(
+        int, 90,
+        "`pmb decay --archive-cold`: minimum age (days) for a cold low-value "
+        "fact/activity to be eligible for time-based archival.",
+        min=1, max=3650,
+    ),
+    "decay.archive_cold_max_importance": _Setting(
+        float, 0.25,
+        "`pmb decay --archive-cold`: only archive cold events at/below this "
+        "importance (never pinned / keyed / lessons / goals).",
+        min=0.0, max=1.0,
+    ),
     # Reinforcement
     "feedback.useful_boost_rate": _Setting(
         float, 0.08, "Per-call boost when feedback=useful (saturating)",
@@ -787,6 +816,15 @@ SCHEMA: dict[str, _Setting] = {
     ),
     "consolidate.model": _Setting(
         str, "", "Override model name; empty = backend default",
+    ),
+    "consolidate.suggest_keyed": _Setting(
+        bool, True,
+        "Offline LLM tier: during consolidation, ask the LLM to extract "
+        "current-state keyed facts (city/employer/…) from plain facts the "
+        "cheap regex missed. confidence>=0.8 positives are upserted via the "
+        "canonical keyed-fact path (+ negation-tombstone cleanup); weaker ones "
+        "are tagged metadata.suggested_key. Offline only — never on recall; "
+        "timeout-clamped + circuit-broken. Default ON (it runs offline anyway).",
     ),
     "consolidate.similarity_threshold": _Setting(
         float, 0.5, "Cosine similarity threshold for clustering",

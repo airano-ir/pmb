@@ -326,7 +326,7 @@ def auto_context_cmd(
     Examples:
 
       pmb auto-context "fix the recall bug in PMB"
-      pmb auto-context "когда я последний раз правил docker-compose"
+      pmb auto-context "when did I last edit docker-compose"
       pmb auto-context "what are my open goals" --json
     """
     from pmb.core.engine import Engine

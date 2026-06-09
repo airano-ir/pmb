@@ -452,6 +452,12 @@ def register_all(mcp, engine):
           {"type": "goal",      "title": "...", "status": "in_progress",
                                  "due_at": <epoch_seconds_or_null>,
                                  "parent_goal_ulid": null}
+          {"type": "plan",      "title": "next we'll wire X", "status": "pending"}
+                                 # alias for a goal (kind=plan). Use for FUTURE
+                                 # intent — "what we'll do next", "запомни, что
+                                 # будем делать дальше". NEVER store a plan as a
+                                 # fact; facts are settled state, plans resurface
+                                 # via prepare()/open-goals.
           {"type": "activity",  "content": "...", "kind": "edit",
                                  "actor": "agent"}
           {"type": "milestone", "chain_name": "architecture_layers",
@@ -506,6 +512,12 @@ def register_all(mcp, engine):
 
         Rules:
         - One atomic fact per call (separate calls for separate facts)
+        - FUTURE INTENT → goal, NOT fact. If the user states what will be done
+          NEXT ("remember we'll do X next", "next steps are …", "план такой",
+          "запомни, что будем делать дальше"), record a GOAL via record_goal
+          (or record_batch {"type": "goal"/"plan", "status": "pending"}) —
+          never a fact. Facts are settled state; plans belong in goals so
+          prepare()/open-goals can resurface them.
         - Use absolute dates derived from current session time, not "today"
         - importance: 0.9 health/medical, 0.7 events, 0.5 opinions
         - Better to over-store than miss — junk is cheap, gaps hurt
@@ -869,10 +881,16 @@ def register_all(mcp, engine):
     ) -> dict:
         """Improvement R: create a goal/intent (12-th semantic layer).
 
-        Use when user states a goal, plan, or intention:
+        Use when user states a goal, plan, or FUTURE intention — record it
+        HERE, not as a fact:
           "Хочу выучить Rust к концу года"
           "Need to ship v1.0 by Q3"
           "Plan: refactor auth first, then frontend"
+          "запомни, что дальше будем делать X" / "next steps are X"
+
+        A plan about what to do NEXT is a goal, never a fact: facts are
+        settled state, goals resurface via prepare()/open-goals so the agent
+        remembers what to do next session.
 
         Goals have status (pending/in_progress/done/cancelled), optional
         hierarchy (parent_goal_ulid), and optional deadline.

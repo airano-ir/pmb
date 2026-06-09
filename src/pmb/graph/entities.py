@@ -28,6 +28,8 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
+from pmb.reference_data import extend_tech_map as _extend_tech_map
+
 
 # Known technologies — closed set, lowercase canonical name → display alias list.
 # Match against any alias on word boundaries.
@@ -82,6 +84,10 @@ KNOWN_TECHS: dict[str, list[str]] = {
     "qwen": ["qwen"],
     "mistral": ["mistral"],
 }
+
+# Per-deployment extension: reference.yaml `known_techs` adds techs/aliases
+# (extend-only). This already sits alongside an LLM/spaCy extractor tier.
+KNOWN_TECHS = _extend_tech_map(KNOWN_TECHS)
 
 
 # Build a single combined regex for all aliases for one pass over text

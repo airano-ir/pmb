@@ -702,7 +702,19 @@ class HybridSearch:
 
     def _ensure_bm25(self):
         if self._bm25 is None and self._bm25_tokens:
-            self._bm25 = BM25Okapi(self._bm25_tokens)
+            # rank_bm25 divides by zero in _calc_idf when the corpus has NO
+            # terms at all — every doc tokenized to empty, or a transient empty
+            # index during a fresh-workspace recall before the embed/index
+            # queue drained. Require at least one non-empty doc, and fall back
+            # to no-BM25 (vector search still answers) on any error, instead of
+            # crashing recall.
+            if not any(self._bm25_tokens):
+                return
+            try:
+                self._bm25 = BM25Okapi(self._bm25_tokens)
+            except (ZeroDivisionError, ValueError):
+                self._bm25 = None
+                return
             # Persist the fitted index so the next process skips this rebuild
             self._save_bm25_cache()
 

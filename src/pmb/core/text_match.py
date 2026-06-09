@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import re
 
+from pmb.reference_data import extend_set as _extend_set
+
 
 # Tokens too common to be evidence of anything. Multilingual stop-ish set +
 # PMB-generic words + high-frequency English fillers + filesystem-path noise
@@ -44,6 +46,9 @@ STOPWORDS: frozenset[str] = frozenset({
     "tmp", "windows", "documents", "desktop", "onedrive", "home", "path",
     "folder", "directory", "drive",
 })
+
+# Per-deployment extension: reference.yaml `stopwords` (extend-only).
+STOPWORDS = _extend_set("stopwords", STOPWORDS)
 
 # A "distinctive" token: a word char start (incl. unicode), then word chars /
 # - . — so identifiers like record_batch / qwen2.5 / paraphrase-multilingual

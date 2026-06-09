@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
+from pmb.reference_data import override_dict as _override_dict
+
 
 @dataclass
 class RecallResult:
@@ -254,6 +256,8 @@ _KIND_PRIORITY: dict[str, int] = {
     "theme": 6,
     "concept": 7,
 }
+# Per-deployment override: reference.yaml `kind_priority` adds/overrides ranks.
+_KIND_PRIORITY = _override_dict("kind_priority", _KIND_PRIORITY)
 
 
 def _truncate_marker(s: str, limit: int) -> str:

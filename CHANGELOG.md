@@ -2,6 +2,75 @@
 
 All notable changes to PMB are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **No personal-name or test-name literals leak into ranking.** The recall
+  identity-marker boost no longer hardcodes a name — it is driven by the mined
+  user-name cache, and the router's identity-intent detection matches the
+  user's OWN learned names dynamically instead of a baked-in literal.
+  `DEFAULT_NAMED_ENTITIES` (which leaked benchmark names like alice/stripe/adyen
+  into every production query) is now empty; real entities come from the dynamic
+  proper-noun extractor + the user-name cache.
+- **Negation / "unknown" facts no longer linger as stale noise.** Once a
+  positive keyed value exists (e.g. `user::city = Tampa`), older facts that
+  negate or mark-unknown that attribute ("the user does not currently live in
+  Warsaw; current city is unknown") are archived (`superseded_by`,
+  archive-only). Runs at write time and as a `pmb repair-keyed` pass. Gated by
+  `keyed.archive_obsolete_negations` (default ON). Lessons and pinned events are
+  never touched.
+- **The CLI is English-only.** Russian docstrings/examples that leaked into
+  `--help` are translated; functional multilingual trigger templates
+  (`pmb connect`) are unchanged.
+- **Recall never crashes on an empty/degenerate BM25 corpus.** `rank_bm25`
+  divides by zero when the corpus has no terms (a fresh-workspace recall before
+  the embed/index queue drained); search now guards it and falls back to
+  vector-only ranking instead of raising. Also stabilized 4 long-flaky tests
+  (temporal proximity, rehearse cap, auto-consolidate, MCP e2e) so the full
+  suite is deterministic.
+
+### Added
+
+- **Status dashboard.** Bare `pmb` (no subcommand) prints a workspace status
+  panel — active workspace + how it resolved, storage sizes, event counts,
+  running MCP servers, embedding warm/cold. `pmb --help` is unchanged. Slow
+  paths (`recall`/`remember` first run, `index`, `migrate-workspaces`,
+  `compact`, `declutter`) show a loading spinner.
+- **Workspace switching.** `pmb workspace use <name>` persists a default
+  workspace (resolution: env → project `.pmb/workspace.yaml` → saved default →
+  git/cwd), `pmb workspace current` shows the active one + which rule won, and
+  `pmb workspaces` marks the active one. Fully additive — setups that never run
+  `use` resolve exactly as before.
+- **Time-based forgetting.** `pmb decay --archive-cold` archives facts/activities
+  that are old AND never recalled AND low-value (never pinned/keyed/lessons/
+  goals). Dry-run by default; config `decay.archive_cold_days` (90),
+  `decay.archive_cold_max_importance` (0.25).
+- **Junk sweeper.** `pmb declutter` archives test artifacts, near-empty/stopword
+  content, exact duplicates, and obsoleted negation tombstones; optional `--llm`
+  judge (bounded, capped, circuit-broken) reviews borderline low-value facts.
+  Dry-run + archive-only.
+- **Plans become goals.** A future-intent fact ("remember we'll do X next") is
+  routed to a goal: MCP docstrings + the `pmb connect` template carry the rule,
+  `record_batch` accepts `{"type": "plan"}` (a goal with `kind=plan`), and
+  `record_fact` flags forward-looking phrasing with `metadata.suggest_goal`
+  (a hint — never an auto-convert). New `pmb goals` / `pmb goals done <ulid>`.
+- **Offline LLM keyed-state tier.** During consolidation, an offline bounded LLM
+  proposes keyed current-state (`{attribute, value, negation, confidence}`) for
+  facts the cheap regex missed; confidence≥0.8 positives upsert via the
+  canonical keyed path, weaker ones are tagged `metadata.suggested_key`. Gated by
+  `consolidate.suggest_keyed`; never on the recall hot path.
+- **Per-deployment reference data.** Optional `PMB_HOME/reference.yaml` extends
+  attribute aliases / known techs / stopwords / function-words (extend-only) and
+  overrides kind priorities — no Python edits. Missing file = identical
+  behaviour.
+
+### Changed
+
+- **Write-time quality gate (opt-in, `write.quality_gate`, default OFF).** When
+  on, suspected-junk facts are flagged (`quality_flag=suspect_junk`) and capped
+  at importance 0.2 and excluded from keyed promotion — never rejected.
+
 ## [0.5.0]
 
 ### Fixed

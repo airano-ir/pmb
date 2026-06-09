@@ -38,6 +38,8 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
+from pmb.reference_data import extend_set as _extend_set
+
 
 _STOP = {
     "a", "an", "the", "is", "are", "was", "were", "of", "in", "on", "to",
@@ -113,9 +115,13 @@ VERB_SYNS: dict[str, set[str]] = {
 }
 
 
-# Named entities we recognise at query time. Extending this list per
-# workspace is the natural way to localise PAMVR.
-DEFAULT_NAMED_ENTITIES = {"alex", "bob", "carol", "dana", "alice", "stripe", "adyen"}
+# Named entities recognised at query time. Empty by default: real entities
+# come from the dynamic proper-noun extractor (`_extract_proper_nouns`,
+# Latin+Cyrillic+Greek) plus the mined user-name cache. The old non-empty
+# default leaked test/benchmark names (alice/stripe/adyen/…) into every
+# production query. Callers may still pass `named_entities=` to seed a
+# workspace-specific set, or extend it via reference data.
+DEFAULT_NAMED_ENTITIES: frozenset[str] = frozenset()
 
 
 # Dynamic proper-noun extractor - works on Latin AND Cyrillic AND Greek.
@@ -147,6 +153,9 @@ _NOT_PROPER = {
     "today", "yesterday", "tomorrow", "now", "this", "that",
     "ill", "iam", "youre", "weve", "they", "their",
 }
+
+# Per-deployment extension: reference.yaml `not_proper` (extend-only).
+_NOT_PROPER = _extend_set("not_proper", _NOT_PROPER)
 
 
 def _extract_proper_nouns(query: str) -> set[str]:

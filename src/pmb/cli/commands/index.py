@@ -13,6 +13,7 @@ from pmb.cli._common import (  # noqa: F401
     _open_config,
     app,
     console,
+    loading,
 )
 
 index_app = typer.Typer(help="Index external content into PMB memory (PDFs, code projects).")
@@ -113,9 +114,10 @@ def index_project_cmd(
     from pmb.core.engine import Engine
     from pmb.ingest.project import index_project
     eng = Engine()
-    result = index_project(eng, Path(path),
-                           importance=importance, force=force,
-                           max_files=max_files)
+    with loading("indexing project (scanning + embedding files)…"):
+        result = index_project(eng, Path(path),
+                               importance=importance, force=force,
+                               max_files=max_files)
     if result.get("error"):
         console.print(f"[red]Error:[/] {result['error']}")
         raise typer.Exit(1)
