@@ -127,9 +127,13 @@ def _run_claude_cli(prompt: str, timeout: float, model: str = "") -> str:
     cmd = shutil.which("claude")
     if not cmd:
         raise RuntimeError("`claude` CLI not on PATH")
+    # Security: entity extraction feeds untrusted event text into the prompt.
+    # Give the spawned agent NO tools and do NOT bypass permissions so an
+    # injected payload can't drive it into running Bash/Edit/Write. This is a
+    # text-in/JSON-out call — it never needs tools. See SECURITY.md.
     argv = [
         cmd, "-p", "--no-session-persistence",
-        "--permission-mode", "bypassPermissions",
+        "--allowed-tools", "",
         "--disable-slash-commands",
     ]
     # haiku / sonnet / opus / explicit anthropic id — pass through so the user
