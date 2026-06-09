@@ -11,7 +11,9 @@ from pmb.core.events import (
 from pmb.reasoning.attributes import (
     canonicalize_attribute,
     detect_current_state,
+    detect_negated_state,
     keyed_fact_key,
+    looks_like_future_intent,
 )
 from pmb.security.redact import redact, redact_metadata
 
@@ -149,6 +151,44 @@ class WriteMixin:
             self._bump_for_dup(dup_hit.canonical_ulid)
             return dup_hit.canonical_ulid
 
+        # Write-time quality gate (#8, default OFF): FLAG (never reject)
+        # suspected junk — cap importance and tag it so it can't be promoted to
+        # a keyed fact and is a first-class declutter candidate. A memory
+        # system must never silently drop user input, so we only down-weight.
+        if self.config.get("write.quality_gate"):
+            try:
+                from pmb.maintenance.declutter import is_suspect_junk
+                _mq = clean_metadata if isinstance(clean_metadata, dict) else {}
+                if (
+                    not _mq.get("keyed_fact_key")
+                    and _mq.get("kind") != "lesson"
+                    and _mq.get("source") != "lesson"
+                    and is_suspect_junk(clean_fact)
+                ):
+                    clean_metadata = dict(_mq)
+                    clean_metadata["quality_flag"] = "suspect_junk"
+                    importance = min(float(importance), 0.2)
+            except Exception:
+                pass
+
+        # Plan detector (#9): flag forward-looking "next we'll do X" facts so
+        # the dashboard / `pmb goals` can suggest promoting them to a goal.
+        # Non-destructive (a hint only) — we never auto-convert, since durable
+        # preferences ("we will always use pnpm") would false-positive.
+        try:
+            _m = clean_metadata if isinstance(clean_metadata, dict) else {}
+            if (
+                _m.get("source") in self._CURRENT_STATE_SOURCES
+                and not _m.get("keyed_fact_key")
+                and not _m.get("kind")
+                and not _m.get("is_subfact")
+                and looks_like_future_intent(clean_fact)
+            ):
+                clean_metadata = dict(_m)
+                clean_metadata["suggest_goal"] = True
+        except Exception:
+            pass
+
         ev = Event(
             workspace_id=self.workspace.id,
             event_type="fact",
@@ -213,6 +253,8 @@ class WriteMixin:
             meta = metadata if isinstance(metadata, dict) else {}
             if meta.get("keyed_fact_key"):
                 return  # already a keyed fact — don't re-key (prevents recursion)
+            if meta.get("quality_flag") == "suspect_junk":
+                return  # write-time gate flagged this as junk — never promote it
             if not self.config.get("keyed.auto_detect_current_state"):
                 return
             if meta.get("source") not in self._CURRENT_STATE_SOURCES:
@@ -335,12 +377,172 @@ class WriteMixin:
             except Exception:
                 continue
 
+        # Negation-tombstone cleanup (#5): now that a positive value exists,
+        # retire older "user does NOT live in X / current city is unknown"
+        # facts for the same attribute — they assert ignorance about a
+        # now-known attribute and are pure stale noise. Archive-only.
+        negated = self._archive_obsolete_negations(
+            canonicalize_attribute(attribute), new_ulid, now_ts,
+        )
+
         self.recall_cache.bump_generation()
         return {
             "new_ulid": new_ulid,
             "superseded_ulids": prior_ulids,
+            "negation_ulids": negated,
             "key": key,
         }
+
+    def _archive_obsolete_negations(
+        self, canon_attribute: str, new_ulid: str, before_ts: float,
+    ) -> list[str]:
+        """Archive active plain facts that NEGATE / mark-unknown the given
+        canonical attribute and predate `before_ts`, now that a positive keyed
+        value exists. Archive-only (reversible), tagged superseded_by +
+        superseded_reason. Skips pinned events, lessons, and keyed facts.
+        Bounded scan (last 2000 active facts) so the write path stays fast.
+        Gated by config `keyed.archive_obsolete_negations`. Returns archived
+        ulids (empty list when disabled or nothing matched)."""
+        if not self.config.get("keyed.archive_obsolete_negations"):
+            return []
+        archived: list[str] = []
+        try:
+            import json as _json
+            import sqlite3 as _sql
+
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                rows = conn.execute(
+                    "SELECT ulid, content, metadata_json, importance "
+                    "FROM events WHERE workspace_id = ? AND archived_at IS NULL "
+                    "AND event_type = 'fact' AND timestamp < ? "
+                    "ORDER BY timestamp DESC LIMIT 2000",
+                    (self.workspace.id, before_ts),
+                ).fetchall()
+            for r in rows:
+                if r["ulid"] == new_ulid:
+                    continue
+                try:
+                    meta = _json.loads(r["metadata_json"] or "{}")
+                except Exception:
+                    meta = {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                if meta.get("keyed_fact_key"):
+                    continue  # keyed facts handled by supersession, not here
+                if meta.get("kind") == "lesson" or meta.get("source") == "lesson":
+                    continue  # lessons are instructions, not state
+                if float(r["importance"] or 0.0) >= 0.99:
+                    continue  # pinned — never auto-archive
+                if detect_negated_state(r["content"] or "") != canon_attribute:
+                    continue
+                self.events.archive(r["ulid"])
+                meta["superseded_by"] = new_ulid
+                meta["superseded_reason"] = "negation_obsoleted_by_value"
+                with _sql.connect(str(self.workspace.db_path)) as conn:
+                    conn.execute(
+                        "UPDATE events SET metadata_json = ? WHERE ulid = ?",
+                        (_json.dumps(meta), r["ulid"]),
+                    )
+                archived.append(r["ulid"])
+        except Exception:
+            pass
+        return archived
+
+    def archive_negations_for_current_keys(self, dry_run: bool = True) -> dict:
+        """Repair pass (#5): for every attribute that currently has a positive
+        keyed value, archive older active negation/"unknown" facts about that
+        same attribute. Retroactive version of the write-time cleanup, for
+        corpora written before it existed. Archive-only; dry_run reports a plan.
+
+        Returns {plan: [{attribute, ulid, content}], n, dry_run}.
+        """
+        import json as _json
+        import sqlite3 as _sql
+
+        # Which canonical attributes have a current positive keyed value?
+        attrs_with_value: dict[str, tuple[str, float]] = {}  # canon -> (new_ulid, ts)
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                rows = conn.execute(
+                    "SELECT ulid, metadata_json, timestamp FROM events "
+                    "WHERE workspace_id = ? AND archived_at IS NULL "
+                    "AND event_type = 'fact' "
+                    "AND metadata_json LIKE '%\"keyed_fact_key\"%' "
+                    "ORDER BY timestamp ASC",
+                    (self.workspace.id,),
+                ).fetchall()
+            for r in rows:
+                try:
+                    meta = _json.loads(r["metadata_json"] or "{}")
+                except Exception:
+                    continue
+                attr = meta.get("keyed_fact_attribute")
+                if not attr:
+                    continue
+                canon = canonicalize_attribute(attr)
+                attrs_with_value[canon] = (r["ulid"], r["timestamp"])
+        except Exception:
+            return {"plan": [], "n": 0, "dry_run": dry_run, "error": "scan_failed"}
+
+        plan = []
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                rows = conn.execute(
+                    "SELECT ulid, content, metadata_json, importance, timestamp "
+                    "FROM events WHERE workspace_id = ? AND archived_at IS NULL "
+                    "AND event_type = 'fact' ORDER BY timestamp DESC LIMIT 5000",
+                    (self.workspace.id,),
+                ).fetchall()
+        except Exception:
+            return {"plan": [], "n": 0, "dry_run": dry_run, "error": "scan_failed"}
+
+        for r in rows:
+            try:
+                meta = _json.loads(r["metadata_json"] or "{}")
+            except Exception:
+                meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+            if meta.get("keyed_fact_key"):
+                continue
+            if meta.get("kind") == "lesson" or meta.get("source") == "lesson":
+                continue
+            if float(r["importance"] or 0.0) >= 0.99:
+                continue
+            attr = detect_negated_state(r["content"] or "")
+            if attr is None or attr not in attrs_with_value:
+                continue
+            new_ulid, val_ts = attrs_with_value[attr]
+            if r["timestamp"] >= val_ts:
+                continue  # negation is newer than the positive value — leave it
+            plan.append({"attribute": attr, "ulid": r["ulid"],
+                         "content": (r["content"] or "")[:120],
+                         "superseded_by": new_ulid})
+
+        if not dry_run:
+            for p in plan:
+                try:
+                    self.events.archive(p["ulid"])
+                    with _sql.connect(str(self.workspace.db_path)) as conn:
+                        row = conn.execute(
+                            "SELECT metadata_json FROM events WHERE ulid = ?",
+                            (p["ulid"],),
+                        ).fetchone()
+                        m = _json.loads(row[0] or "{}") if row else {}
+                        m["superseded_by"] = p["superseded_by"]
+                        m["superseded_reason"] = "negation_obsoleted_by_value"
+                        conn.execute(
+                            "UPDATE events SET metadata_json = ? WHERE ulid = ?",
+                            (_json.dumps(m), p["ulid"]),
+                        )
+                except Exception:
+                    continue
+            self.recall_cache.bump_generation()
+
+        return {"plan": plan, "n": len(plan), "dry_run": dry_run}
 
     def keyed_fact_as_of(
         self, subject: str, attribute: str, at_time: float,
@@ -658,6 +860,148 @@ class WriteMixin:
                 )
 
         return {"promotions": plan, "n": len(plan), "dry_run": dry_run}
+
+    def suggest_keyed_from_llm(self, dry_run: bool = True, limit: int = 40) -> dict:
+        """Offline LLM tier (#11): for recent plain facts the regex fast-path
+        MISSED, ask a bounded LLM to extract a current-state
+        {attribute, value, negation, confidence}. A positive suggestion with
+        confidence >= 0.8 is upserted via record_keyed_fact (which also runs
+        the Task-5 negation-tombstone cleanup); anything weaker is tagged
+        metadata.suggested_key for review.
+
+        Open-ended understanding belongs OFFLINE — this is invoked by
+        consolidation / `pmb consolidate`, NEVER on the recall hot path. It is
+        timeout-clamped (≤15s), capped, and behind the same circuit breaker as
+        recall decomposition. Gated by config consolidate.suggest_keyed.
+        """
+        import json as _json
+        import re as _re
+        import sqlite3 as _sql
+
+        out = {"suggestions": [], "applied": 0, "tagged": 0, "dry_run": dry_run}
+        if not self.config.get("consolidate.suggest_keyed"):
+            out["skipped"] = "disabled"
+            return out
+        from pmb.core import circuit_breaker as _breaker
+        if _breaker.is_open("llm"):
+            out["skipped"] = "breaker_open"
+            return out
+        thr = self.config.get("recall.breaker_threshold") or 2
+        cd = self.config.get("recall.breaker_cooldown_s") or 60.0
+
+        cands: list[tuple[str, str]] = []
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                rows = conn.execute(
+                    "SELECT ulid, content, metadata_json FROM events "
+                    "WHERE workspace_id=? AND archived_at IS NULL "
+                    "AND event_type='fact' ORDER BY timestamp DESC LIMIT ?",
+                    (self.workspace.id, limit * 4),
+                ).fetchall()
+        except Exception:
+            out["error"] = "scan_failed"
+            return out
+        for r in rows:
+            try:
+                meta = _json.loads(r["metadata_json"] or "{}")
+            except Exception:
+                meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+            if (meta.get("keyed_fact_key") or meta.get("suggested_key")
+                    or meta.get("kind") == "lesson" or meta.get("source") == "lesson"):
+                continue
+            content = r["content"] or ""
+            if detect_current_state(content):
+                continue  # cheap regex already covers it — no LLM needed
+            cands.append((r["ulid"], content))
+            if len(cands) >= limit:
+                break
+        if not cands:
+            return out
+
+        try:
+            from pmb.health.consolidate import resolve_llm_client
+            llm = resolve_llm_client(backend=self.config.get("consolidate.backend"))
+        except Exception:
+            _breaker.record_failure("llm", thr, cd, "resolve_llm_client failed")
+            out["skipped"] = "no_llm"
+            return out
+        if hasattr(llm, "timeout"):
+            try:
+                llm.timeout = max(1.0, min(float(llm.timeout), 15.0))
+            except Exception:
+                pass
+
+        _ALLOWED = {"city", "country", "employer", "job_title", "email", "phone",
+                    "timezone", "relationship_status", "current_project"}
+        for ulid, content in cands:
+            prompt = (
+                "Does the text state a CURRENT, mutable personal attribute of "
+                "the user? Allowed: city, country, employer, job_title, email, "
+                "phone, timezone, relationship_status, current_project. Answer "
+                'ONLY JSON {"attribute": "<one or empty>", "value": "<value or '
+                'empty>", "negation": true|false, "confidence": 0.0-1.0}.\n\n'
+                "TEXT: " + content[:300]
+            )
+            try:
+                resp = llm.complete(prompt, max_tokens=120)
+            except Exception as e:
+                _breaker.record_failure("llm", thr, cd, str(e))
+                break
+            _breaker.record_success("llm")
+            try:
+                m = _re.search(r"\{.*\}", resp or "", _re.DOTALL)
+                v = _json.loads(m.group(0)) if m else {}
+            except Exception:
+                v = {}
+            attr = canonicalize_attribute(str(v.get("attribute") or ""))
+            if not v.get("attribute") or attr not in _ALLOWED:
+                continue
+            out["suggestions"].append({
+                "ulid": ulid, "attribute": attr,
+                "value": v.get("value"), "negation": bool(v.get("negation")),
+                "confidence": float(v.get("confidence") or 0.0),
+            })
+
+        for s in out["suggestions"]:
+            if s["confidence"] >= 0.8 and not s["negation"] and s["value"]:
+                if not dry_run:
+                    self.record_keyed_fact(
+                        "user", s["attribute"], str(s["value"]),
+                        importance=0.8,
+                        metadata={"source": "llm_keyed_suggestion",
+                                  "derived_from_ulid": s["ulid"]},
+                    )
+                out["applied"] += 1
+            else:
+                if not dry_run:
+                    self._tag_suggested_key(s)
+                out["tagged"] += 1
+        return out
+
+    def _tag_suggested_key(self, s: dict) -> None:
+        """Stamp metadata.suggested_key on the source fact (below-threshold or
+        negation LLM keyed suggestion) for dashboard review. Best-effort."""
+        import json as _json
+        import sqlite3 as _sql
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                row = conn.execute(
+                    "SELECT metadata_json FROM events WHERE ulid=?",
+                    (s["ulid"],)).fetchone()
+                m = _json.loads(row[0] or "{}") if row else {}
+                if not isinstance(m, dict):
+                    m = {}
+                m["suggested_key"] = {
+                    "attribute": s["attribute"], "value": s.get("value"),
+                    "negation": s.get("negation"), "confidence": s.get("confidence"),
+                }
+                conn.execute("UPDATE events SET metadata_json=? WHERE ulid=?",
+                             (_json.dumps(m), s["ulid"]))
+        except Exception:
+            pass
 
     def migrate_workspace_into(
         self,

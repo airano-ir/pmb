@@ -26,12 +26,25 @@ try:
 except Exception:
     pass
 
+# no_args_is_help=False: a bare `pmb` runs the root callback (in pmb.cli.main),
+# which prints the status dashboard. `pmb --help` still shows the command list.
 app = typer.Typer(
-    no_args_is_help=True,
+    no_args_is_help=False,
     add_completion=False,
     pretty_exceptions_show_locals=False,
 )
 console = Console()
+
+
+def loading(message: str):
+    """Transient spinner for a slow CLI operation, e.g.
+
+        with loading("loading embedding model (first run only)…"):
+            ...
+
+    Rich auto-disables the spinner when stdout is not a TTY (CI, pytest
+    capture, pipes), so it never pollutes captured/piped output."""
+    return console.status(f"[cyan]{message}[/]", spinner="dots")
 
 
 def _humanize_time(ts: Optional[float]) -> str:

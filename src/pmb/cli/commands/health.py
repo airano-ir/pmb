@@ -52,7 +52,7 @@ def health_run(
     no_adaptive: bool = typer.Option(False, "--no-adaptive",
                                      help="Skip adaptive boost"),
 ):
-    """Запустить self-test: система задаёт сама себе вопросы из старой памяти."""
+    """Run a self-test: the system quizzes itself with questions from old memory."""
     eng = Engine()
     result = eng.run_self_test(
         n_samples=n, min_age_days=min_age_days,
@@ -121,7 +121,7 @@ def health_run(
 
 @health_app.command("trend")
 def health_trend():
-    """Показать trend self-test accuracy за время."""
+    """Show the self-test accuracy trend over time."""
     eng = Engine()
     t = eng.health_trend()
     if t["verdict"] == "insufficient":
@@ -144,7 +144,7 @@ def health_conflicts(
     resolve: bool = typer.Option(False, "--resolve",
                                   help="Auto-archive obvious supersede conflicts"),
 ):
-    """Найти противоречия между фактами разного времени."""
+    """Find contradictions between facts recorded at different times."""
     eng = Engine()
     conflicts = eng.detect_conflicts()
     if not conflicts:

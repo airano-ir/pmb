@@ -1,18 +1,22 @@
 """
 PMB CLI.
 
-Commands:
-- pmb init [--name NAME]              - инициализация workspace в текущей папке
-- pmb stats                           - статистика workspace
-- pmb list [--limit N] [--type T]     - список последних событий
-- pmb remember "query" "response"     - добавить Q/A
-- pmb recall "query" [-k 5]           - поиск
-- pmb pin ULID                        - закрепить
-- pmb forget ULID                     - архивировать
-- pmb workspaces                      - все workspaces
+Common commands:
+- pmb                                 - show this workspace's status dashboard
+- pmb init [--name NAME]              - initialize a workspace in the current folder
+- pmb stats                           - workspace statistics
+- pmb list [--limit N] [--type T]     - list recent events
+- pmb remember "query" "response"     - add a Q/A pair
+- pmb recall "query" [-k 5]           - search memory
+- pmb pin ULID                        - pin an event (kept, never auto-archived)
+- pmb forget ULID                     - archive an event
+- pmb workspaces                      - list all workspaces
+- pmb workspace use NAME              - switch the default workspace
 """
 
 from __future__ import annotations
+
+import typer
 
 import pmb.cli.commands.capture  # noqa: F401  (registers capture root commands)
 
@@ -51,6 +55,17 @@ from pmb.cli.commands.hooks import hooks_app, mcp_app
 
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(mcp_app, name="mcp")
+
+
+@app.callback(invoke_without_command=True)
+def _root(ctx: typer.Context):
+    """PMB — local-first memory for AI agents. Run with no command for status."""
+    # Only render the status dashboard for a bare `pmb`; any subcommand
+    # (and `--help`, which Click handles before this body) passes through.
+    if ctx.invoked_subcommand is None:
+        from pmb.cli._common import console
+        from pmb.cli.status_panel import render_status
+        render_status(console)
 
 
 if __name__ == "__main__":

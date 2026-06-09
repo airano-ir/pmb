@@ -105,7 +105,11 @@ def test_rehearse_skips_pinned(tmp_pmb_home, tmp_workspace_dir):
 
 
 def test_rehearse_respects_max_cap(tmp_pmb_home, tmp_workspace_dir):
-    eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home)
+    # Disable SEMANTIC dedup: the 15 near-identical fixtures ("Fact number i …")
+    # otherwise get merged by L2 dedup depending on embed-model warmup timing,
+    # making n_candidates non-deterministic (the pre-existing flake under load).
+    eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home,
+                 config_overrides={"dedup.enable_semantic": False})
     ulids = []
     for i in range(15):
         u = eng.record_fact(f"Fact number {i} about postgres setup", importance=0.7)

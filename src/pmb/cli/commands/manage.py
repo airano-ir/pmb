@@ -24,7 +24,7 @@ from pmb.cli._common import (  # noqa: F401
     console,
 )
 from pmb.core.engine import Engine
-from pmb.core.workspace import list_workspaces
+from pmb.core.workspace import detect_workspace, list_workspaces
 
 
 @app.command()
@@ -962,21 +962,89 @@ def reminders(
 
 @app.command()
 def workspaces():
-    """Все известные workspaces."""
+    """List all known workspaces."""
     items = list_workspaces()
     if not items:
         console.print("[yellow]No workspaces yet. Run `pmb init` in a project.[/]")
         return
 
+    try:
+        active_id = detect_workspace().id
+    except Exception:
+        active_id = None
+
     table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("", width=1)  # active marker
     table.add_column("ID")
     table.add_column("Name")
     table.add_column("Root")
     table.add_column("Source")
     table.add_column("Created")
     for w in items:
-        table.add_row(w.id[:12], w.name, str(w.root), w.source, w.created_at[:10])
+        mark = "[green]*[/]" if w.id == active_id else ""
+        table.add_row(mark, w.id[:12], w.name, str(w.root), w.source,
+                      w.created_at[:10])
     console.print(table)
+    console.print("[dim]* = active · switch with "
+                  "`pmb workspace use <name>`[/]")
+
+
+@app.command()
+def goals(
+    action: str = typer.Argument(
+        "list", help="list (default) | done"),
+    ulid: Optional[str] = typer.Argument(
+        None, help="Goal ULID (required for `done`)."),
+    all_: bool = typer.Option(
+        False, "--all", help="Include done/cancelled goals, not just open ones."),
+):
+    """List open goals, or mark one done.
+
+    Open goals are how PMB remembers what to do NEXT — the agent records them
+    from "remember we'll do X next" / "the plan is …". Examples:
+      pmb goals                 # open goals (pending + in_progress)
+      pmb goals --all           # everything, including done/cancelled
+      pmb goals done <ulid>     # mark a goal complete
+    """
+    eng = Engine()
+    if action == "done":
+        if not ulid:
+            console.print("[yellow]Usage:[/] pmb goals done <ulid>")
+            raise typer.Exit(2)
+        res = eng.update_goal(goal_ulid=ulid, status="done", progress=100)
+        if res.get("error"):
+            console.print(f"[red]{res['error']}[/]")
+            raise typer.Exit(1)
+        console.print(f"[green]✓ goal marked done:[/] {ulid}")
+        return
+    if action != "list":
+        console.print(f"[yellow]Unknown action[/] {action!r}. Use list | done.")
+        raise typer.Exit(2)
+
+    items = eng.list_goals(limit=200)
+    if not all_:
+        items = [g for g in items
+                 if (g.get("status") or "pending") in ("pending", "in_progress")]
+    if not items:
+        console.print("[yellow]No open goals.[/] The agent records goals from "
+                      "\"remember we'll do X next\" / \"the plan is …\".")
+        return
+    table = Table(show_header=True, header_style="bold magenta",
+                  title="goals" if all_ else "open goals")
+    table.add_column("Status"); table.add_column("Prog", justify="right")
+    table.add_column("Title"); table.add_column("Due")
+    table.add_column("ULID", style="dim")
+    for g in items:
+        due = g.get("due_at")
+        table.add_row(
+            str(g.get("status") or "pending"),
+            f"{g.get('progress', 0)}%",
+            esc((g.get("title") or "")[:70]),
+            _humanize_time(due) if due else "—",
+            g["ulid"][:12],
+        )
+    console.print(table)
+    console.print("[dim]Mark done: `pmb goals done <ulid>`[/]")
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -114,6 +114,7 @@ don't re-ask the user.
 | You made a project-shaping choice | activity, kind=decision |
 | User corrected you OR a non-obvious rule emerged | lesson (high-importance) |
 | User states a personal attribute that CAN CHANGE | record_keyed_fact(subject, attribute, value) |
+| FUTURE intent — "будем делать дальше X / next we'll do X / план такой" | goal (record_goal or batch {"type":"goal"/"plan", status="pending"}), NOT a fact |
 
 Never call `recall` after writing to "verify". Never call `pin`
 separately. Use absolute dates ("On May 25, 2026"), not "today".

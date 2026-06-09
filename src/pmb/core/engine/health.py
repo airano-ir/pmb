@@ -9,6 +9,99 @@ class HealthMixin:
 
         return apply_decay(self, days_since_last_decay=days_since)
 
+    def archive_cold(
+        self,
+        days: Optional[int] = None,
+        max_importance: Optional[float] = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """Time-based forgetting (#6): archive ACTIVE facts/activities that are
+        cold AND low-value AND old, so junk that decay only ever down-weighted
+        finally leaves recall. Archive-only (reversible, tagged archived_reason
+        = "decay_cold").
+
+        A candidate must be ALL of:
+          * event_type in {fact, activity}  (never lessons/goals/preferences/…)
+          * importance <= max_importance     (default config decay.archive_cold_max_importance)
+          * access_count == 0                (never recalled / reinforced)
+          * older than `days`                (default config decay.archive_cold_days)
+          * NOT pinned (importance < 0.99)
+          * NOT a current keyed fact         (keyed_fact_key in metadata)
+
+        Returns {candidates: [{ulid, age_days, importance, content}], n, dry_run}.
+        """
+        import json as _json
+        import sqlite3 as _sql
+        import time as _time
+
+        days = int(self.config.get("decay.archive_cold_days") if days is None else days)
+        max_importance = float(
+            self.config.get("decay.archive_cold_max_importance")
+            if max_importance is None else max_importance
+        )
+        cutoff_ts = _time.time() - days * 86400.0
+
+        candidates: list[dict] = []
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                rows = conn.execute(
+                    "SELECT ulid, content, metadata_json, importance, "
+                    "access_count, timestamp FROM events "
+                    "WHERE workspace_id = ? AND archived_at IS NULL "
+                    "AND event_type IN ('fact', 'activity') "
+                    "AND importance <= ? AND access_count = 0 AND timestamp < ? "
+                    "ORDER BY timestamp ASC",
+                    (self.workspace.id, max_importance, cutoff_ts),
+                ).fetchall()
+        except Exception:
+            return {"candidates": [], "n": 0, "dry_run": dry_run, "error": "scan_failed"}
+
+        now = _time.time()
+        for r in rows:
+            if float(r["importance"] or 0.0) >= 0.99:
+                continue  # pinned
+            try:
+                meta = _json.loads(r["metadata_json"] or "{}")
+            except Exception:
+                meta = {}
+            if isinstance(meta, dict) and meta.get("keyed_fact_key"):
+                continue  # current keyed attribute — keep
+            if isinstance(meta, dict) and (
+                meta.get("kind") == "lesson" or meta.get("source") == "lesson"
+            ):
+                continue  # lessons are stored as facts — never decay-archive them
+            candidates.append({
+                "ulid": r["ulid"],
+                "age_days": round((now - r["timestamp"]) / 86400.0, 1),
+                "importance": round(float(r["importance"] or 0.0), 3),
+                "content": (r["content"] or "")[:100],
+            })
+
+        if not dry_run and candidates:
+            for c in candidates:
+                try:
+                    self.events.archive(c["ulid"])
+                    with _sql.connect(str(self.workspace.db_path)) as conn:
+                        row = conn.execute(
+                            "SELECT metadata_json FROM events WHERE ulid = ?",
+                            (c["ulid"],),
+                        ).fetchone()
+                        m = _json.loads(row[0] or "{}") if row else {}
+                        if not isinstance(m, dict):
+                            m = {}
+                        m["archived_reason"] = "decay_cold"
+                        conn.execute(
+                            "UPDATE events SET metadata_json = ? WHERE ulid = ?",
+                            (_json.dumps(m), c["ulid"]),
+                        )
+                except Exception:
+                    continue
+            self.recall_cache.bump_generation()
+
+        return {"candidates": candidates, "n": len(candidates), "dry_run": dry_run,
+                "days": days, "max_importance": max_importance}
+
     def file_correlations(self, file_path: str, top_k: int = 10) -> list[tuple[str, int]]:
         from pmb.signals.files import FileCorrelation
 

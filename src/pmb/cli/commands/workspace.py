@@ -215,3 +215,78 @@ def workspace_clone(
     )
 
 
+@workspace_app.command("use")
+def workspace_use(
+    name: Optional[str] = typer.Argument(
+        None, help="Workspace id or name to make the default."),
+    clear: bool = typer.Option(
+        False, "--clear", help="Clear the saved default (revert to auto-detect)."),
+):
+    """Set the default workspace, persisted across sessions.
+
+    Resolution order: PMB_WORKSPACE env > a project's .pmb/workspace.yaml >
+    this saved default > git/cwd auto-detect. So `use` sticks everywhere
+    except inside a project that pins its own workspace.
+    """
+    import os as _os
+    from pmb.core.workspace import (
+        DEFAULT_PMB_HOME,
+        list_workspaces,
+        set_default_workspace,
+    )
+    pmb_home = Path(_os.environ.get("PMB_HOME", DEFAULT_PMB_HOME))
+
+    if clear:
+        set_default_workspace(pmb_home, None)
+        console.print("[green]Cleared[/] saved default workspace "
+                      "(now auto-detecting from project / git / cwd).")
+        return
+
+    if not name:
+        console.print("[yellow]Usage:[/] pmb workspace use <name>   "
+                      "(or --clear). See `pmb workspaces`.")
+        raise typer.Exit(2)
+
+    spaces = list_workspaces(pmb_home)
+    match = next((w for w in spaces if w.id == name), None)
+    if match is None:
+        match = next((w for w in spaces if w.name.lower() == name.lower()), None)
+    if match is None:
+        import difflib
+        cand = [w.id for w in spaces] + [w.name for w in spaces]
+        near = difflib.get_close_matches(name, cand, n=3, cutoff=0.5)
+        console.print(f"[red]No workspace[/] matching [bold]{name}[/].")
+        if near:
+            console.print("Did you mean: "
+                          + ", ".join(f"[cyan]{n}[/]" for n in near))
+        console.print("[dim]List all with `pmb workspaces`.[/]")
+        raise typer.Exit(1)
+
+    set_default_workspace(pmb_home, match.id)
+    console.print(Panel.fit(
+        f"default workspace → [bold cyan]{match.name}[/] ({match.id[:12]})\n"
+        f"[dim]saved in {pmb_home / 'current_workspace'}[/]\n"
+        f"[dim]overrides git/cwd auto-detect; a project's .pmb/workspace.yaml "
+        f"still wins. Clear with `pmb workspace use --clear`.[/]",
+        title="workspace use",
+    ))
+
+
+@workspace_app.command("current")
+def workspace_current():
+    """Show the active workspace and which rule resolved it."""
+    import os as _os
+    from pmb.core.workspace import DEFAULT_PMB_HOME, read_default_workspace
+    from pmb.cli.status_panel import _SOURCE_HELP
+    ws = detect_workspace()
+    pmb_home = Path(_os.environ.get("PMB_HOME", DEFAULT_PMB_HOME))
+    saved = read_default_workspace(pmb_home)
+    console.print(Panel.fit(
+        f"active:        [bold cyan]{ws.name}[/] ({ws.id[:12]})\n"
+        f"resolved via:  {ws.source} — {_SOURCE_HELP.get(ws.source, ws.source)}\n"
+        f"storage:       {ws.storage_dir}\n"
+        f"saved default: {saved or '- (none)'}",
+        title="workspace current",
+    ))
+
+

@@ -41,6 +41,36 @@ def _result_in_project(r, project_lc: str) -> bool:
 
 
 class RecallMixin:
+    def _get_user_names(self) -> set[str]:
+        """Lowercased set of names the user calls themselves, mined from
+        "My name is X" / "Меня зовут X" facts. Cached; refreshed lazily
+        every 25 active-event writes.
+
+        Single source of truth for BOTH the PAMVR self-reference rescue and
+        the identity-marker boost in recall(), so neither path hardcodes a
+        specific personal name. Safe to call when PAMVR is disabled.
+        """
+        if not hasattr(self, "_user_names_cache"):
+            self._user_names_cache: set[str] = set()
+            self._user_names_event_count = -1
+        try:
+            import sqlite3 as _sql
+
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM events WHERE archived_at IS NULL"
+                ).fetchone()
+                n_now = int(row[0] or 0)
+            if (
+                self._user_names_event_count < 0
+                or n_now - self._user_names_event_count >= 25
+            ):
+                self._user_names_cache = _mine_user_names(self.workspace.db_path)
+                self._user_names_event_count = n_now
+        except Exception:
+            pass
+        return self._user_names_cache
+
     def recall(
         self,
         query: str,
@@ -246,6 +276,13 @@ class RecallMixin:
             except Exception:
                 pass
 
+        # User-name set (mined from "My name is X" / "Меня зовут X" facts,
+        # cached, refreshed every 25 writes). Computed ONCE per recall and
+        # reused by the router (identity-by-name), PAMVR self-reference
+        # rescue, and the identity-marker boost — so no path hardcodes a
+        # personal name.
+        user_names = self._get_user_names()
+
         # Stage 0: Adaptive Layer Routing (Improvement E). Classify the query
         # and get per-layer multipliers; applied later in scoring loop.
         # Cheap — pure regex.
@@ -254,7 +291,7 @@ class RecallMixin:
             try:
                 from pmb.reasoning.router import QueryRouter
 
-                intent = QueryRouter().classify(query)
+                intent = QueryRouter().classify(query, user_names=user_names)
                 layer_weights = intent.weights
             except Exception:
                 layer_weights = None
@@ -728,33 +765,10 @@ class RecallMixin:
         pamvr_features = None
         if self._pamvr_enabled:
             try:
-                # Self-reference rescue: cache user names mined from
-                # "Меня зовут X" / "My name is X" facts. Lookup is O(1)
-                # at query time. Refreshed lazily every N writes.
-                if not hasattr(self, "_user_names_cache"):
-                    self._user_names_cache: set[str] = set()
-                    self._user_names_event_count = -1
-                try:
-                    import sqlite3 as _sql
-
-                    with _sql.connect(str(self.workspace.db_path)) as conn:
-                        row = conn.execute(
-                            "SELECT COUNT(*) FROM events WHERE archived_at IS NULL"
-                        ).fetchone()
-                        n_now = int(row[0] or 0)
-                    if (
-                        self._user_names_event_count < 0
-                        or n_now - self._user_names_event_count >= 25
-                    ):
-                        self._user_names_cache = _mine_user_names(self.workspace.db_path)
-                        self._user_names_event_count = n_now
-                except Exception:
-                    pass
-
                 pamvr_features = _pamvr_prepare(
                     query,
                     vocab_bridges=self._vocab_bridges,
-                    user_names=self._user_names_cache,
+                    user_names=user_names,
                 )
             except Exception:
                 pamvr_features = None
@@ -894,28 +908,39 @@ class RecallMixin:
                     base *= 1.0 + min(0.25, 0.25 * overlap)
 
             # Personal-marker boost: facts that literally start with a
-            # personal possessive ("User's", "Alex's", "I am", "My", "I
-            # work on") get boosted ONLY when the query itself has identity
-            # intent (router classified it as "identity"). Without this
-            # gate the boost mis-fires on topical queries that just happen
-            # to surface an identity-shaped fact (e.g. "What's the JWT
-            # lifetime?" surfacing "Alex's terminal is Wezterm" at top-1).
+            # personal possessive ("User's", the user's own name, "I am",
+            # "My", "I work on") get boosted ONLY when the query itself has
+            # identity intent (router classified it as "identity"). Without
+            # this gate the boost mis-fires on topical queries that just
+            # happen to surface an identity-shaped fact (e.g. "What's the
+            # JWT lifetime?" surfacing "<name>'s terminal is Wezterm" top-1).
             if (
                 ev.event_type == "fact"
                 and layer_weights
                 and layer_weights.identity_marker_boost > 1.0
             ):
                 content_head = (ev.content or "")[:60].lower()
-                if (
+                # Generic first-person / role markers — language-functional,
+                # NOT personal data, so they stay inline.
+                is_identity = (
                     content_head.startswith("user's ")
                     or content_head.startswith("user ")
-                    or content_head.startswith("alex ")
-                    or content_head.startswith("alex's ")
                     or content_head.startswith("i am ")
                     or content_head.startswith("my ")
                     or content_head.startswith("i work ")
                     or content_head.startswith("i prefer ")
-                ):
+                )
+                # A fact that opens with the user's OWN name ("Bob's
+                # terminal is ...") is an identity fact too. Driven by the
+                # mined user-name cache (user_names) — never a hardcoded
+                # personal-name literal.
+                if not is_identity and user_names:
+                    first_tok = content_head.split(" ", 1)[0]
+                    if first_tok.endswith("'s"):
+                        first_tok = first_tok[:-2]
+                    if first_tok in user_names:
+                        is_identity = True
+                if is_identity:
                     base *= layer_weights.identity_marker_boost
             # Decision-intent boost: activity events marked as a
             # decision/agreement should outrank arguments on the same

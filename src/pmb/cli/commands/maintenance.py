@@ -20,6 +20,7 @@ from pmb.cli._common import (  # noqa: F401
     _parse_duration,
     app,
     console,
+    loading,
 )
 from pmb.core.engine import Engine
 
@@ -74,14 +75,27 @@ def repair_keyed(
                           archived, "✓" if p["recanonicalize"] else "")
         console.print(table)
 
-    if not bf.get("promotions") and not plan:
+    # Pass 3 — negation tombstones: archive older "user does NOT live in X /
+    # current city is unknown" facts for any attribute that now has a positive
+    # keyed value (issue #5). They assert ignorance about a now-known attribute.
+    neg = eng.archive_negations_for_current_keys(dry_run=not apply)
+    if neg.get("plan"):
+        nt = Table(show_header=True, header_style="bold magenta",
+                   title="Pass 3 · archive obsolete negation / 'unknown' facts")
+        nt.add_column("Attribute"); nt.add_column("Archived fact (stale)")
+        for p in neg["plan"]:
+            nt.add_row(esc(p["attribute"]), esc(p["content"]))
+        console.print(nt)
+
+    if not bf.get("promotions") and not plan and not neg.get("plan"):
         console.print("[green]Nothing to repair — keyed facts are consistent.[/]")
         return
     console.print(
         f"\n{'[green]Applied[/]' if apply else '[yellow]Would apply[/]'}: "
         f"promote [bold]{bf['n']}[/] current-state fact(s); "
         f"archive [bold]{res['n_archived']}[/] stale value(s); "
-        f"recanonicalize [bold]{res['n_recanonicalized']}[/] key(s)."
+        f"recanonicalize [bold]{res['n_recanonicalized']}[/] key(s); "
+        f"archive [bold]{neg['n']}[/] obsolete negation fact(s)."
     )
     if not apply:
         console.print(
@@ -113,8 +127,9 @@ def migrate_workspaces(
     import os as _os
     if into:
         _os.environ["PMB_WORKSPACE"] = into
-    eng = Engine()
-    res = eng.migrate_workspace_into(source, project=project, dry_run=not apply)
+    with loading("migrating workspace memory (embedding migrated events)…"):
+        eng = Engine()
+        res = eng.migrate_workspace_into(source, project=project, dry_run=not apply)
     if res.get("error"):
         console.print(f"[red]{res['error']}[/]")
         raise typer.Exit(1)
@@ -147,7 +162,7 @@ def sync(
     days: Optional[int] = typer.Option(None, "--days",
                                        help="Sync commits from last N days (default: since last sync)"),
 ):
-    """Захватить git commits в memory."""
+    """Capture git commits into memory."""
     eng = Engine()
     since = None
     if days:
@@ -173,7 +188,7 @@ def session(
     action: str = typer.Argument(..., help="start | end | current | brief"),
     name: Optional[str] = typer.Argument(None, help="Session name (for start)"),
 ):
-    """Управление сессиями. `brief` = digest of what was decided/done this
+    """Manage sessions. `brief` = digest of what was decided/done this
     session (re-orient after a long session / context loss)."""
     eng = Engine()
     if action == "start":
@@ -580,14 +595,108 @@ def arcs(
 
 @app.command()
 def decay(
-    days: float = typer.Option(1.0, "--days", help="Days since last decay"),
+    days: Optional[float] = typer.Option(
+        None, "--days",
+        help="Forgetting curve: days since last decay (default 1). "
+             "With --archive-cold: minimum age in days (default 90)."),
+    archive_cold: bool = typer.Option(
+        False, "--archive-cold",
+        help="Archive cold, low-value, old facts/activities (time-based "
+             "forgetting) instead of running the decay curve."),
+    max_importance: Optional[float] = typer.Option(
+        None, "--max-importance",
+        help="[--archive-cold] Only archive at/below this importance (default 0.25)."),
+    apply: bool = typer.Option(
+        False, "--apply",
+        help="[--archive-cold] Actually archive (default is a dry-run preview)."),
 ):
-    """Применить forgetting curve. Понижает importance, архивирует устаревшее."""
+    """Apply the forgetting curve, or (--archive-cold) archive cold stale facts.
+
+    Decay only LOWERS importance; cold junk lingers forever. `--archive-cold`
+    retires facts/activities that are old AND never recalled AND low-value
+    (never pinned / keyed / lessons / goals). Archive-only (reversible);
+    dry-run by default."""
     eng = Engine()
-    result = eng.apply_daily_decay(days_since=days)
+    if archive_cold:
+        res = eng.archive_cold(
+            days=int(days) if days is not None else None,
+            max_importance=max_importance,
+            dry_run=not apply,
+        )
+        if res.get("error"):
+            console.print(f"[red]archive-cold failed: {res['error']}[/]")
+            raise typer.Exit(1)
+        mode = "APPLIED" if apply else "DRY-RUN (no changes written)"
+        console.print(f"[bold]decay --archive-cold — {mode}[/]  "
+                      f"[dim](age > {res['days']}d, importance ≤ "
+                      f"{res['max_importance']}, access_count = 0)[/]")
+        if not res["candidates"]:
+            console.print("[green]Nothing cold to archive.[/]")
+            return
+        table = Table(show_header=True, header_style="bold magenta",
+                      title="cold candidates")
+        table.add_column("Age", justify="right"); table.add_column("Imp", justify="right")
+        table.add_column("ULID", style="dim"); table.add_column("Content")
+        for c in res["candidates"][:50]:
+            table.add_row(f"{c['age_days']}d", f"{c['importance']}",
+                          c["ulid"][:12], esc(c["content"]))
+        console.print(table)
+        if res["n"] > 50:
+            console.print(f"[dim]… and {res['n'] - 50} more[/]")
+        console.print(
+            f"\n{'[green]Archived[/]' if apply else '[yellow]Would archive[/]'} "
+            f"[bold]{res['n']}[/] cold event(s)."
+            + ("" if apply else " Re-run with --apply (archive-only).")
+        )
+        return
+    result = eng.apply_daily_decay(days_since=days if days is not None else 1.0)
     console.print(
         f"[cyan]Decay applied:[/] {result['n_decayed']}/{result['n_active_processed']} events decayed, "
         f"{result['n_archived']} archived (factor={result['decay_factor']:.4f})"
+    )
+
+
+@app.command()
+def declutter(
+    apply: bool = typer.Option(
+        False, "--apply", help="Archive the junk (default is a dry-run preview)."),
+    llm: bool = typer.Option(
+        False, "--llm",
+        help="Also run a bounded LLM judge over borderline low-value facts."),
+):
+    """Sweep obvious junk out of memory (archive-only).
+
+    Heuristics: test artifacts, near-empty/stopword content, exact duplicates,
+    and negation tombstones already obsoleted by a positive keyed value. With
+    --llm, a bounded judge (capped + circuit-broken, ≤15s) also reviews
+    low-value borderline facts. Dry-run by default; --apply archives
+    (reversible — restore with `pmb unforget`)."""
+    from pmb.maintenance.declutter import declutter as run_declutter
+    eng = Engine()
+    if llm:
+        with loading("declutter: heuristics + bounded LLM judge…"):
+            res = run_declutter(eng, apply=apply, use_llm=True)
+    else:
+        res = run_declutter(eng, apply=apply, use_llm=False)
+
+    if not res["candidates"]:
+        console.print("[green]Nothing to declutter — memory looks clean.[/]")
+        return
+    mode = "APPLIED" if apply else "DRY-RUN (no changes written)"
+    console.print(f"[bold]declutter — {mode}[/]  [dim]{res['by_reason']}[/]")
+    table = Table(show_header=True, header_style="bold magenta",
+                  title="junk candidates")
+    table.add_column("Reason"); table.add_column("ULID", style="dim")
+    table.add_column("Content")
+    for c in res["candidates"][:60]:
+        table.add_row(c["reason"], c["ulid"][:12], esc(c["content"]))
+    console.print(table)
+    if res["n"] > 60:
+        console.print(f"[dim]… and {res['n'] - 60} more[/]")
+    console.print(
+        f"\n{'[green]Archived[/]' if apply else '[yellow]Would archive[/]'} "
+        f"[bold]{res['n']}[/] event(s)."
+        + ("" if apply else " Re-run with --apply (archive-only).")
     )
 
 
@@ -596,7 +705,7 @@ def correlate(
     file_path: str = typer.Argument(...),
     top_k: int = typer.Option(10, "-k"),
 ):
-    """Файлы которые часто меняются вместе с указанным."""
+    """Files that frequently change together with the given one."""
     eng = Engine()
     pairs = eng.file_correlations(file_path, top_k)
     if not pairs:
@@ -614,7 +723,7 @@ def correlate(
 
 @app.command()
 def history(file_path: str = typer.Argument(...)):
-    """История commit'ов для файла."""
+    """Commit history for a file."""
     eng = Engine()
     items = eng.file_history(file_path)
     if not items:
@@ -760,15 +869,33 @@ def consolidate(
         + (" [dim](dry-run, no writes)[/]" if dry_run else "")
     )
 
+    # Offline LLM tier (#11): also extract keyed current-state from plain facts
+    # the cheap regex missed. Best-effort — never fails the consolidate command.
+    if eng.config.get("consolidate.suggest_keyed"):
+        try:
+            with loading("extracting keyed current-state (offline LLM)…"):
+                ks = eng.suggest_keyed_from_llm(dry_run=dry_run)
+            if ks.get("suggestions"):
+                console.print(
+                    f"[cyan]keyed suggestions:[/] {len(ks['suggestions'])} found, "
+                    f"{ks.get('applied', 0)} applied"
+                    + (f", {ks.get('tagged', 0)} tagged for review"
+                       if ks.get("tagged") else "")
+                    + (" [dim](dry-run)[/]" if dry_run else "")
+                )
+        except Exception as e:
+            console.print(f"[dim]keyed-suggestion step skipped: {e}[/]")
+
 
 @app.command()
 def compact(
     dry_run: bool = typer.Option(False, "--dry-run"),
     age_days: int = typer.Option(30, "--age", help="Min age of archived events to move"),
 ):
-    """Compact storage: переместить старые archived events в cold storage + VACUUM."""
+    """Compact storage: move old archived events to cold storage + VACUUM."""
     eng = Engine()
-    result = eng.compact(dry_run=dry_run, age_days=age_days)
+    with loading("compacting storage (moving cold events + VACUUM)…"):
+        result = eng.compact(dry_run=dry_run, age_days=age_days)
     if result["dry_run"]:
         console.print(f"[cyan]Dry run:[/] would move {result['moved_to_cold']} events")
     else:
@@ -802,7 +929,7 @@ def doctor(
              "Format: user@host:/abs/path/to/repo",
     ),
 ):
-    """Диагностика установки и runtime state.
+    """Diagnose the installation and runtime state.
 
     With --remote user@host:/path, also prints a `.mcp.json` snippet that
     tunnels MCP over ssh - for the case where PMB and Ollama live on
