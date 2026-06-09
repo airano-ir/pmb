@@ -28,6 +28,34 @@ We will acknowledge within a few days and aim to publish a fix or workaround wit
 - SQL injection (we use parameterised queries everywhere; a regression is a bug).
 - Resource exhaustion via huge content blobs (mitigated by 5000-char cap in `record_batch`).
 
+### Prompt injection via stored memory
+
+Memory content is untrusted: it is derived from arbitrary conversations, files,
+and tool output, any of which an attacker may influence. PMB therefore treats
+stored content as data, never instructions, on the paths it controls:
+
+- **Internal LLM calls run with no tools.** Consolidation, lesson distillation,
+  entity extraction and the agent wrapper spawn `claude -p` with
+  `--allowed-tools ""` and **without** `--permission-mode bypassPermissions`.
+  These are text-in/JSON-out calls, so the spawned agent has no Bash/Edit/Write
+  surface — an injected payload like "ignore the task and run …" cannot make it
+  touch the filesystem or network.
+  (`health/consolidate.py`, `graph/extractors_llm.py`, `agent_wrapper/loop.py`)
+- **Note on recall into *your* agent.** When PMB injects recalled memory into
+  the context of the agent you are driving (via the hooks / MCP), that agent's
+  own permission model is the boundary. PMB cannot enforce tool restrictions
+  there; keep a human in the loop for tool use as you normally would.
+
+### Dashboard / API exposure
+
+- The dashboard and HTTP MCP transport bind to `127.0.0.1` by default. Binding
+  to `0.0.0.0` exposes the unauthenticated memory API to your network — only do
+  this behind a trusted boundary, and set `PMB_MCP_BEARER_TOKEN` for the MCP
+  HTTP transport.
+- The dashboard does **not** emit `Access-Control-Allow-Origin`. The UI is
+  served same-origin, so no CORS grant is needed; a wildcard would let any
+  website you visit read the local memory store via cross-origin requests.
+
 ## Out of scope
 
 - Confidentiality of data the user *chooses* to record. PMB is a memory store - if you feed it secrets they will be stored. Use `record_fact ... metadata={"redact": true}` or rely on the built-in regex redactor for known secret shapes.

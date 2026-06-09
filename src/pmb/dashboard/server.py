@@ -48,7 +48,11 @@ def make_handler(engine):
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Access-Control-Allow-Origin", "*")
+            # No Access-Control-Allow-Origin: the dashboard UI is served
+            # same-origin from this very server, so it needs no CORS grant.
+            # A wildcard ("*") would let ANY website the user visits read the
+            # local memory store via cross-origin fetch to 127.0.0.1:8765
+            # (and POST to the archive/merge endpoints). See SECURITY.md.
             self.end_headers()
             self.wfile.write(body)
 

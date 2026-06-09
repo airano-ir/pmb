@@ -186,6 +186,27 @@ class ClaudeCLIClient:
             return _os.path.isfile(cmd)
         return shutil.which(cmd) is not None
 
+    def _argv(self, prompt: str) -> list[str]:
+        """Build the `claude -p` argv for a one-shot text-in/JSON-out call.
+
+        Security: these calls feed STORED MEMORY CONTENT (untrusted — derived
+        from arbitrary conversations/files) into the prompt. We therefore give
+        the spawned agent NO tools (`--allowed-tools ""`) and do NOT bypass
+        permissions, so an injected payload like "ignore the task and run Bash"
+        cannot make it touch the filesystem/network. These tasks only need
+        text in and JSON out. See SECURITY.md.
+        """
+        return [
+            self.command,
+            "-p",
+            "--model", self.model,
+            "--no-session-persistence",
+            "--allowed-tools", "",
+            "--disable-slash-commands",
+            *self.extra_args,
+            prompt,
+        ]
+
     def consolidate(self, events_text: list[str]) -> dict:
         import subprocess
 
@@ -197,16 +218,7 @@ class ClaudeCLIClient:
             + "Output JSON only — no prose, no fences."
         )
 
-        argv = [
-            self.command,
-            "-p",
-            "--model", self.model,
-            "--no-session-persistence",
-            "--permission-mode", "bypassPermissions",
-            "--disable-slash-commands",
-            *self.extra_args,
-            prompt,
-        ]
+        argv = self._argv(prompt)
         try:
             result = subprocess.run(
                 argv,
@@ -236,16 +248,7 @@ class ClaudeCLIClient:
         """Generic prompt → text. Same subprocess invocation as consolidate
         but skips the consolidation system prompt and JSON parser."""
         import subprocess
-        argv = [
-            self.command,
-            "-p",
-            "--model", self.model,
-            "--no-session-persistence",
-            "--permission-mode", "bypassPermissions",
-            "--disable-slash-commands",
-            *self.extra_args,
-            prompt,
-        ]
+        argv = self._argv(prompt)
         try:
             result = subprocess.run(
                 argv,
