@@ -202,11 +202,15 @@ class AgentLoop:
         """Send the rendered conversation through `claude -p`."""
         import subprocess
         prompt = self._render_conversation_for_cli()
+        # Security: the rendered prompt carries recalled memory (untrusted).
+        # No tools + no permission bypass so injected content can't make the
+        # spawned agent act on the system. The wrapper only wants text back.
+        # See SECURITY.md.
         argv = [
             "claude", "-p",
             "--model", self.config.model,
             "--no-session-persistence",
-            "--permission-mode", "bypassPermissions",
+            "--allowed-tools", "",
             "--disable-slash-commands",
             prompt,
         ]
