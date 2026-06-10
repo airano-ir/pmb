@@ -2,7 +2,54 @@
 
 All notable changes to PMB are documented here.
 
-## [Unreleased]
+## [0.7.0] — 2026-06-10
+
+This release lands the daemon + language packs + MCP token diet + write-quality
+work (PLAN.md phases B–E, on top of the 0.6.0 keyed-memory correctness fixes)
+plus the recall-singleflight and semantic-intent follow-ups.
+
+### Added (recall + hook follow-ups)
+
+- **Recall singleflight (D4).** Concurrent IDENTICAL top-level recalls (same
+  workspace, query and top_k) now collapse to one computation — useful under
+  the daemon / multi-agent fan-out; followers reuse the leader's result and
+  fall back to an independent recall on timeout, so it can never deadlock.
+  Config `recall.singleflight` (default on); a no-op for single-client stdio.
+- **Semantic intent fallback (C5, opt-in, default OFF).** When lexical intent
+  detection finds nothing AND the engine is warm (daemon-served), the hook can
+  classify the message by embedding cosine against per-intent exemplars, so a
+  query in a language the lexical patterns don't cover still fires. Default OFF
+  and eval-gated by design — the measured finding is the semantic tier doesn't
+  beat lexical with the default embedder. Config `hooks.semantic_intents`.
+
+### Fixed (write quality — Phase E)
+
+- **A user negation now CLOSES the keyed value it contradicts.** Task-5 retired
+  stale negations when a positive value arrived; the reverse was unhandled — with
+  `user::city = Tampa`, "I no longer live in Tampa" left Tampa asserted as current
+  forever. The negation now closes the keyed value (the active keyed fact is
+  archived and stamped `valid_to` / `closed_by` / `closed_reason`), so recall
+  stops asserting it while `keyed_fact_as_of` still sees it as history. Only the
+  user's own negation (post-0.6.0 subject-adjacent detector) triggers it; gated
+  by `keyed.close_on_negation` (default on).
+
+### Changed (write quality — Phase E)
+
+- **The write-time quality gate now defaults ON.** Safe since the junk detector
+  became length-aware in 0.6.0 (it flags only empty / placeholder / test-pattern
+  / pure-stopword content, never real short facts like "O+"). Flagged facts are
+  down-weighted (importance capped at 0.2) and excluded from keyed promotion,
+  never rejected. `pmb doctor` reports how many facts were flagged in the last
+  30 days so you can audit; set `write.quality_gate=false` to record everything
+  unweighted.
+- **Routine activities can't crowd out real facts.** Activity importance is
+  capped at `write.max_activity_importance` (default 0.8) unless pinned, with an
+  `importance_clamped` breadcrumb — agents habitually pass ≈0.9 for routine
+  actions. Facts, lessons and goals are never clamped.
+- **Agent guidance gained a "DON'T record" section** (in the MCP server
+  instructions): skip secrets, transient tool output / stack traces / file
+  listings, and anything trivially re-derivable from the repo; future intent
+  goes to a goal, not a fact.
 
 ### Changed (MCP token diet — Phase D)
 
@@ -42,6 +89,18 @@ All notable changes to PMB are documented here.
   corpus and SUGGESTS packs but never enables one silently — auto-activation by
   script would pollute (German and English share the Latin alphabet), so
   enabling is an explicit opt-in. See `docs/adding-a-language.md`.
+- **Offline keyed-fact extraction is now pack-aware (C4).** The first-person
+  prefilter that gates the offline LLM keyed-suggestion pass recognises the
+  user in an enabled language (German "ich"/"mein" passes once `de` is on),
+  so keyed extraction works for packed languages too — third-party facts are
+  still rejected.
+
+### Changed (faster cold start — Phase D follow-up)
+
+- **`pmb warmup` suggests `fastembed` when the model cold-load is slow (>10s),**
+  a lower-RAM, faster-starting backend for the same multilingual model family
+  (with the required `pmb reindex` caveat). The warmup message also now points
+  at `pmb daemon start` for warm hook recall (the daemon shipped in 0.6.0).
 
 ### Fixed (Unicode-correct tokenization — Phase C1)
 

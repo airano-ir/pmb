@@ -185,6 +185,21 @@ SCHEMA: dict[str, _Setting] = {
         "noise.",
         min=1, max=200,
     ),
+    "hooks.semantic_intents": _Setting(
+        bool, False,
+        "C5 (opt-in, default OFF): when lexical intent detection finds nothing "
+        "AND the engine is warm (daemon-served), classify the message by "
+        "embedding cosine against per-intent exemplars — so a query in a "
+        "language the lexical patterns don't cover still fires. Default OFF "
+        "because the measured finding is the semantic tier doesn't beat lexical "
+        "with the default embedder; enable only after an intent eval.",
+    ),
+    "hooks.semantic_intent_threshold": _Setting(
+        float, 0.45,
+        "Minimum embedding cosine for the C5 semantic-intent fallback to "
+        "accept a match. Higher = stricter (fewer false intents).",
+        min=0.0, max=1.0,
+    ),
     "auto_recall.budget_chars": _Setting(
         int, 4000,
         "Hard cap on the formatted context block size. Hosts truncate "
@@ -403,6 +418,14 @@ SCHEMA: dict[str, _Setting] = {
         "Conservative: fires only on explicit present-state phrasing from "
         "user-origin facts — never reflections / project index / autowrite.",
     ),
+    "keyed.close_on_negation": _Setting(
+        bool, True,
+        "When the user NEGATES a current attribute they have a keyed value for "
+        "(\"I no longer live in Tampa\" while user::city = Tampa), close that "
+        "keyed value: the active keyed fact is archived and stamped valid_to / "
+        "closed_by / closed_reason so recall stops asserting it as current, "
+        "while keyed_fact_as_of still sees it as history. Reversible.",
+    ),
     "keyed.archive_obsolete_negations": _Setting(
         bool, True,
         "When a positive keyed value is set (e.g. user::city = Tampa), archive "
@@ -413,12 +436,14 @@ SCHEMA: dict[str, _Setting] = {
         "and lessons. This is a bug-class fix, so it defaults ON.",
     ),
     "write.quality_gate": _Setting(
-        bool, False,
-        "Write-time junk gate (opt-in, default OFF). When ON, a fact that "
-        "looks like junk (placeholder / test patterns / pure stopwords) is NOT "
-        "rejected — it is flagged metadata.quality_flag=suspect_junk, its "
-        "importance is capped at 0.2, and it is excluded from keyed-fact "
-        "promotion. `pmb declutter` then treats it as a first-class candidate.",
+        bool, True,
+        "Write-time junk gate (default ON since the detector became length-safe "
+        "in 0.6.0 — it flags only empty / placeholder / test-pattern / "
+        "pure-stopword content, never real short facts like 'O+'). A flagged "
+        "fact is NOT rejected: it is tagged metadata.quality_flag=suspect_junk, "
+        "its importance is capped at 0.2, and it is excluded from keyed-fact "
+        "promotion. `pmb declutter` then treats it as a first-class candidate. "
+        "Set false to record every input unweighted.",
     ),
     "daemon.idle_exit_min": _Setting(
         float, 120.0,
@@ -433,6 +458,23 @@ SCHEMA: dict[str, _Setting] = {
         "background (rate-limited) so the NEXT message hits a warm daemon with "
         "real semantic recall. The current message still answers cold. Set "
         "false to require an explicit `pmb daemon start`.",
+    ),
+    "write.max_activity_importance": _Setting(
+        float, 0.8,
+        "Cap on the importance of an `activity` event (unless pinned). Agents "
+        "habitually pass importance≈0.9 for routine actions, which crowds out "
+        "real facts in ranking; activities above this ceiling are clamped (a "
+        "metadata.importance_clamped breadcrumb is left). Facts/lessons/goals "
+        "are never clamped. 1.0 disables the cap.",
+        min=0.1, max=1.0,
+    ),
+    "recall.singleflight": _Setting(
+        bool, True,
+        "Collapse concurrent IDENTICAL top-level recalls (same workspace, query "
+        "and top_k) so the work runs once and followers reuse the result — "
+        "useful in the daemon / multi-agent fan-out. A no-op for single-client "
+        "stdio. Followers fall back to an independent recall on timeout, so it "
+        "can never deadlock.",
     ),
     "mcp.compact_responses": _Setting(
         bool, True,

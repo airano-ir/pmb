@@ -245,6 +245,12 @@ class WriteMixin:
         # matching keyed fact so the live value supersedes any stale one. The
         # plain fact above stays as history.
         self._maybe_promote_current_state(clean_fact, clean_metadata, importance)
+        # Reverse direction (#E1): if this fact NEGATES an attribute the user
+        # has a keyed value for ("I no longer live in Tampa"), close that value
+        # so recall stops asserting it as current.
+        self._maybe_close_on_negation(
+            clean_fact, clean_metadata, ev.ulid,
+            getattr(ev, "timestamp", None) or time.time())
 
         self.recall_cache.bump_generation()
         return ev.ulid
@@ -285,6 +291,59 @@ class WriteMixin:
             )
         except Exception:
             pass  # promotion is best-effort
+
+    def _maybe_close_on_negation(self, content, metadata, new_ulid, now_ts) -> None:
+        """If CONTENT is the user negating an attribute they currently have a
+        keyed value for ("I no longer live in Tampa" while user::city=Tampa),
+        CLOSE that value: archive the active keyed fact and stamp valid_to /
+        closed_by / closed_reason. Recall stops asserting it; keyed_fact_as_of
+        still sees it as history (it reads archived versions too). The negation
+        fact itself stays. Gated by keyed.close_on_negation; best-effort."""
+        try:
+            meta = metadata if isinstance(metadata, dict) else {}
+            if meta.get("keyed_fact_key"):
+                return  # the keyed fact itself, not a negation OF one
+            if meta.get("kind") == "lesson" or meta.get("source") == "lesson":
+                return
+            if meta.get("source") not in self._CURRENT_STATE_SOURCES:
+                return  # user-origin only, never internal pipelines
+            if not self.config.get("keyed.close_on_negation"):
+                return
+            attr = detect_negated_state(content)  # post-A1: user-subject only
+            if not attr:
+                return
+            import json as _json
+            import sqlite3 as _sql
+            key = keyed_fact_key("user", attr)
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.row_factory = _sql.Row
+                rows = conn.execute(
+                    "SELECT ulid, metadata_json, timestamp FROM events "
+                    "WHERE workspace_id=? AND archived_at IS NULL "
+                    "AND event_type='fact' AND metadata_json LIKE ? "
+                    "ORDER BY timestamp DESC",
+                    (self.workspace.id, f'%"keyed_fact_key": "{key}"%'),
+                ).fetchall()
+            for r in rows:
+                if r["timestamp"] >= now_ts:
+                    continue  # never close a value newer than the negation
+                self.events.archive(r["ulid"])
+                m = _json.loads(r["metadata_json"] or "{}")
+                if not isinstance(m, dict):
+                    m = {}
+                m["valid_to"] = now_ts
+                m["closed_by"] = new_ulid
+                m["closed_reason"] = "negated_by_user"
+                with _sql.connect(str(self.workspace.db_path)) as conn:
+                    conn.execute("UPDATE events SET metadata_json=? WHERE ulid=?",
+                                 (_json.dumps(m), r["ulid"]))
+                break  # only the current value
+        except Exception as e:
+            try:
+                from pmb.core.errlog import log_error
+                log_error(self.workspace.db_path, "keyed_close_negation", e)
+            except Exception:
+                pass
 
     def record_keyed_fact(
         self,

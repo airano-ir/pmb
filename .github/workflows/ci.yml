@@ -47,6 +47,20 @@ jobs:
           - os: macos-latest
             python: "3.12"
 
+    # Stability on memory-constrained runners. transformers materialises model
+    # weights in several parallel threads (GLOBAL_WORKERS); under the runners'
+    # limited RAM that spiked peak memory and segfaulted with a native "access
+    # violation" / pagefile-too-small. conftest.py caps GLOBAL_WORKERS=1; these
+    # env vars also pin BLAS/tokenizer threads, and faulthandler turns any
+    # remaining native crash into a readable Python traceback instead of a bare
+    # exit code.
+    env:
+      PYTHONUTF8: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      PYTHONFAULTHANDLER: "1"
+
     steps:
       - uses: actions/checkout@v4
 
@@ -98,6 +112,28 @@ jobs:
 
       - name: MCP end-to-end suite (tool exposure / session_brief / recall via in-memory client)
         run: pytest tests/test_mcp_e2e.py -q --tb=short
+
+      - name: Keyed-memory + write-quality suite (A/E)
+        run: >
+          pytest tests/test_negation_tombstones.py
+          tests/test_keyed_close_negation.py tests/test_keyed_suggestions_llm.py
+          tests/test_keyed_canonical.py tests/test_quality_gate.py
+          tests/test_declutter.py tests/test_plans_as_goals.py
+          tests/test_identity_boost_names.py -q --tb=short
+
+      - name: Daemon + durable-writes suite (B)
+        run: pytest tests/test_write_outbox.py tests/test_daemon.py -q --tb=short
+
+      - name: Language packs + Unicode tokenization suite (C)
+        run: >
+          pytest tests/test_unicode_tokenization.py tests/test_language_packs.py
+          -q --tb=short
+
+      - name: MCP token-diet + recall/intent follow-ups (D/C5)
+        run: >
+          pytest tests/test_toolspec_budget.py tests/test_mcp_compaction.py
+          tests/test_recall_singleflight.py tests/test_semantic_intent.py
+          -q --tb=short
 
       - name: Lightweight tests (no heavy ML)
         run: pytest tests/test_config.py tests/test_redact.py -q --tb=short

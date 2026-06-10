@@ -385,12 +385,31 @@ def run_auto_context(
     res.intents = intents
 
     if intents == [Intent.SKIP]:
-        # Safety net — detect_intents shouldn't return SKIP for non-trivial
-        # input, but if it does, treat the same as trivial.
-        res.skipped = True
-        res.skip_reason = "no-intent-matched"
-        res.latency_ms = int((time.perf_counter() - t0) * 1000)
-        return res
+        # C5: lexical detection found nothing. If semantic intents are enabled
+        # AND the engine is warm (daemon-served — never load the model on the
+        # cold per-process hook path), try an embedding-based classification so
+        # a query in a language the lexical patterns don't cover still fires.
+        sem = None
+        try:
+            warm = hasattr(engine, "is_warm") and engine.is_warm()
+            if warm and engine.config.get("hooks.semantic_intents"):
+                from pmb.hooks.semantic_intent import classify_semantic_intent
+                sem = classify_semantic_intent(
+                    engine, msg,
+                    threshold=float(engine.config.get(
+                        "hooks.semantic_intent_threshold") or 0.45))
+        except Exception:
+            sem = None
+        if sem:
+            intents = [sem]
+            res.intents = intents + ["SEMANTIC_INTENT"]
+        else:
+            # Safety net — detect_intents shouldn't return SKIP for non-trivial
+            # input, but if it does, treat the same as trivial.
+            res.skipped = True
+            res.skip_reason = "no-intent-matched"
+            res.latency_ms = int((time.perf_counter() - t0) * 1000)
+            return res
 
     # Step 2: dispatch per intent.
     # PROJECT_PREP / OVERVIEW share the project_overview call; PREP also

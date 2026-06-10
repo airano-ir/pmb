@@ -99,6 +99,60 @@ class RecallMixin:
         rerank_top_n: Optional[int] = None,
         _skip_decompose: bool = False,
     ) -> RecallPack:
+        """D4 singleflight wrapper: collapse concurrent IDENTICAL top-level
+        recalls (daemon multi-client / agent fan-out) so the work runs once —
+        followers wait for the leader and reuse its result. On timeout or a
+        leader error they compute independently, so this can never deadlock.
+        Recursive sub-query calls (``_skip_decompose=True``) and the disabled
+        config bypass it entirely. All real work is in ``_recall_impl``."""
+        if _skip_decompose or not self.config.get("recall.singleflight"):
+            return self._recall_impl(
+                query, top_k, recency_half_life_days, graph_boost, rerank,
+                rerank_top_n, _skip_decompose)
+        import threading as _th
+        if top_k is None:
+            top_k = self.config.get("recall.top_k")
+        key = (self.workspace.id, (query or "").strip().lower(), int(top_k))
+        leader = False
+        with self._sf_lock:
+            ev = self._sf_inflight.get(key)
+            if ev is None:
+                ev = _th.Event()
+                self._sf_inflight[key] = ev
+                leader = True
+        if leader:
+            try:
+                res = self._recall_impl(
+                    query, top_k, recency_half_life_days, graph_boost, rerank,
+                    rerank_top_n, _skip_decompose)
+                ev._sf_result = res          # carried on the event, no dict to GC
+                ev._sf_ok = True
+                return res
+            except BaseException:
+                ev._sf_ok = False
+                raise
+            finally:
+                with self._sf_lock:
+                    self._sf_inflight.pop(key, None)
+                ev.set()
+        # follower: wait for the leader, fall back to own compute on miss
+        deadline_s = float(self.config.get("recall.smart_deadline_ms") or 15000) / 1000.0
+        if ev.wait(timeout=deadline_s) and getattr(ev, "_sf_ok", False):
+            return ev._sf_result
+        return self._recall_impl(
+            query, top_k, recency_half_life_days, graph_boost, rerank,
+            rerank_top_n, _skip_decompose)
+
+    def _recall_impl(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        recency_half_life_days: Optional[float] = None,
+        graph_boost: Optional[float] = None,
+        rerank: Optional[bool] = None,
+        rerank_top_n: Optional[int] = None,
+        _skip_decompose: bool = False,
+    ) -> RecallPack:
         # Resolve defaults from config (per-workspace > global > schema default)
         if top_k is None:
             top_k = self.config.get("recall.top_k")

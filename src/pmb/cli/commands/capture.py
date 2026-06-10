@@ -126,15 +126,29 @@ def warmup():
     table.add_row("First probe query", f"{result['first_query_ms']:.1f}")
     table.add_row("[bold]Total[/]",   f"[bold]{result['total_ms']:.1f}[/]")
     console.print(table)
-    # Honest scope: warmup only warms THIS process. The hook-based auto-recall
-    # (`pmb prepare-context`) spawns a fresh, cold process per user message, so
-    # its semantic recall stays SQL-only until a persistent daemon ships.
+    # warmup only warms THIS process. For hooks, the persistent daemon
+    # (`pmb daemon start`, shipped in 0.6.0) is what keeps auto-recall warm.
     console.print(
         "[green]Engine warm for THIS process.[/] CLI recalls in this shell are "
-        "now fast.\n[dim]Note: hook-based auto-recall runs in its own "
-        "short-lived process and stays SQL-only (no semantic recall) until the "
-        "persistent memory daemon ships.[/]"
+        "now fast.\n[dim]For warm hook-based auto-recall, run "
+        "[/][cyan]pmb daemon start[/][dim] — one persistent process serves the "
+        "hooks so they get real semantic recall, not the per-process cold "
+        "skip.[/]"
     )
+    # D6: a slow cold load on a memory/CPU-constrained box → suggest fastembed
+    # (ONNX), a lower-RAM, faster-cold-start backend for the SAME multilingual
+    # model family. Don't auto-switch (mixing embedders needs a reindex).
+    try:
+        backend = eng.config.get("embedding.backend") or "sentence-transformers"
+        if result["model_load_ms"] > 10000 and backend == "sentence-transformers":
+            console.print(
+                "[yellow]Model cold-load was slow (>10s).[/] Consider the "
+                "lower-RAM, faster-starting [cyan]fastembed[/] backend:\n"
+                "  [dim]pmb config set embedding.backend fastembed  &&  pmb reindex[/]\n"
+                "  [dim](reindex is required — never mix embedders in one index.)[/]"
+            )
+    except Exception:
+        pass
 
 
 @app.command()

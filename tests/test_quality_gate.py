@@ -1,8 +1,9 @@
-"""T8: write-time quality gate (config write.quality_gate, default OFF).
+"""T8: write-time quality gate (config write.quality_gate, default ON in 0.6.0+).
 
-OFF → byte-for-byte today's behaviour. ON → suspected junk is FLAGGED (never
+OFF → record every input unweighted. ON → suspected junk is FLAGGED (never
 rejected): importance capped at 0.2, metadata.quality_flag=suspect_junk, and
-excluded from keyed-fact promotion. Good content is untouched.
+excluded from keyed-fact promotion. Good content is untouched. (The "off" tests
+set the flag explicitly now that ON is the default.)
 """
 from __future__ import annotations
 
@@ -71,7 +72,8 @@ def _active_keyed(eng, subj, attr):
 # ── default OFF ─────────────────────────────────────────────────────────────
 
 def test_gate_off_does_not_flag(tmp_pmb_home, tmp_workspace_dir):
-    eng = _engine(tmp_workspace_dir, tmp_pmb_home)  # default: gate off
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home,
+                  **{"write.quality_gate": False})  # explicit off
     u = eng.record_fact("ok", importance=0.7)
     imp, meta = _row(eng, u)
     assert "quality_flag" not in meta
@@ -109,7 +111,8 @@ def test_gate_on_excludes_flagged_from_keyed_promotion(tmp_pmb_home, tmp_workspa
 def test_gate_off_would_promote_same_content(tmp_pmb_home, tmp_workspace_dir):
     """Contrast: with the gate OFF the junkish current-state IS promoted —
     showing the gate is what prevents it."""
-    eng = _engine(tmp_workspace_dir, tmp_pmb_home)  # gate off
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home,
+                  **{"write.quality_gate": False})  # explicit off
     eng.record_fact("I now live in final_value")
     active = _active_keyed(eng, "user", "city")
     assert len(active) == 1 and active[0]["value"] == "final_value"
