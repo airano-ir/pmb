@@ -126,7 +126,15 @@ def warmup():
     table.add_row("First probe query", f"{result['first_query_ms']:.1f}")
     table.add_row("[bold]Total[/]",   f"[bold]{result['total_ms']:.1f}[/]")
     console.print(table)
-    console.print("[green]Engine warm.[/] Next recall will be fast.")
+    # Honest scope: warmup only warms THIS process. The hook-based auto-recall
+    # (`pmb prepare-context`) spawns a fresh, cold process per user message, so
+    # its semantic recall stays SQL-only until a persistent daemon ships.
+    console.print(
+        "[green]Engine warm for THIS process.[/] CLI recalls in this shell are "
+        "now fast.\n[dim]Note: hook-based auto-recall runs in its own "
+        "short-lived process and stays SQL-only (no semantic recall) until the "
+        "persistent memory daemon ships.[/]"
+    )
 
 
 @app.command()

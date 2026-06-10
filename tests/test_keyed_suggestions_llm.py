@@ -108,7 +108,8 @@ def test_high_confidence_positive_is_upserted(tmp_pmb_home, tmp_workspace_dir, m
     eng = _engine(tmp_workspace_dir, tmp_pmb_home)
     _seed(eng)
     _patch_llm(monkeypatch,
-               '{"attribute":"city","value":"Berlin","negation":false,"confidence":0.92}')
+               '{"subject":"user","attribute":"city","value":"Berlin",'
+               '"negation":false,"confidence":0.92}')
     res = eng.suggest_keyed_from_llm(dry_run=False)
     assert res["applied"] == 1
     active = _active_keyed(eng, "user", "city")
@@ -119,7 +120,8 @@ def test_low_confidence_is_tagged_not_applied(tmp_pmb_home, tmp_workspace_dir, m
     eng = _engine(tmp_workspace_dir, tmp_pmb_home)
     u = _seed(eng)
     _patch_llm(monkeypatch,
-               '{"attribute":"city","value":"Berlin","negation":false,"confidence":0.5}')
+               '{"subject":"user","attribute":"city","value":"Berlin",'
+               '"negation":false,"confidence":0.5}')
     res = eng.suggest_keyed_from_llm(dry_run=False)
     assert res["applied"] == 0 and res["tagged"] == 1
     assert _active_keyed(eng, "user", "city") == []
@@ -130,7 +132,8 @@ def test_negation_suggestion_is_tagged_not_applied(tmp_pmb_home, tmp_workspace_d
     eng = _engine(tmp_workspace_dir, tmp_pmb_home)
     _seed(eng)
     _patch_llm(monkeypatch,
-               '{"attribute":"city","value":"","negation":true,"confidence":0.95}')
+               '{"subject":"user","attribute":"city","value":"",'
+               '"negation":true,"confidence":0.95}')
     res = eng.suggest_keyed_from_llm(dry_run=False)
     assert res["applied"] == 0
     assert _active_keyed(eng, "user", "city") == []
@@ -140,10 +143,80 @@ def test_dry_run_writes_nothing(tmp_pmb_home, tmp_workspace_dir, monkeypatch):
     eng = _engine(tmp_workspace_dir, tmp_pmb_home)
     _seed(eng)
     _patch_llm(monkeypatch,
-               '{"attribute":"city","value":"Berlin","negation":false,"confidence":0.92}')
+               '{"subject":"user","attribute":"city","value":"Berlin",'
+               '"negation":false,"confidence":0.92}')
     res = eng.suggest_keyed_from_llm(dry_run=True)
-    assert res["applied"] == 1  # counted as would-apply
-    assert _active_keyed(eng, "user", "city") == []  # but nothing written
+    assert res["applied"] == 0          # nothing written in a dry run
+    assert res["would_apply"] == 1      # but it WOULD have applied
+    assert _active_keyed(eng, "user", "city") == []  # nothing written
+
+
+# ── A2: third-party facts must never become user state ──────────────────────
+
+def test_third_party_fact_never_reaches_llm(tmp_pmb_home, tmp_workspace_dir, monkeypatch):
+    """A fact with no first-person/user cue ('Alice relocated to Berlin') is
+    filtered out BEFORE the LLM is called — gate 1."""
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    _seed(eng, content="Alice relocated to Berlin this spring.")
+
+    def _boom(**k):
+        raise AssertionError("LLM called on a third-party fact")
+    monkeypatch.setattr("pmb.health.consolidate.resolve_llm_client", _boom)
+    res = eng.suggest_keyed_from_llm(dry_run=False)
+    assert res["applied"] == 0 and not res["suggestions"]
+
+
+def test_llm_other_person_verdict_not_applied(tmp_pmb_home, tmp_workspace_dir, monkeypatch):
+    """Even when a fact mentions the user ('my sister'), if the LLM says the
+    attribute belongs to another person it is dropped — gate 2."""
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    _seed(eng, content="My sister Alice relocated her home base to Berlin.")
+    _patch_llm(monkeypatch,
+               '{"subject":"other_person","attribute":"city","value":"Berlin",'
+               '"negation":false,"confidence":0.95}')
+    res = eng.suggest_keyed_from_llm(dry_run=False)
+    assert res["applied"] == 0 and not res["suggestions"]
+    assert _active_keyed(eng, "user", "city") == []
+
+
+def test_quality_flagged_fact_is_not_a_candidate(tmp_pmb_home, tmp_workspace_dir, monkeypatch):
+    """A fact flagged suspect_junk by the write-time gate is never sent to the
+    LLM — gate 3."""
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    ev = Event(workspace_id=eng.workspace.id, event_type="fact",
+               content=_CAND, metadata={"quality_flag": "suspect_junk"},
+               importance=0.2)
+    eng.events.append(ev)
+
+    def _boom(**k):
+        raise AssertionError("LLM called on a quality-flagged fact")
+    monkeypatch.setattr("pmb.health.consolidate.resolve_llm_client", _boom)
+    res = eng.suggest_keyed_from_llm(dry_run=False)
+    assert res["applied"] == 0 and not res["suggestions"]
+
+
+# ── A3: the whole pass is wall-clock / call bounded ─────────────────────────
+
+def test_offline_budget_caps_calls(tmp_pmb_home, tmp_workspace_dir, monkeypatch):
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home,
+                  **{"llm.offline_max_calls": 2})
+    for i in range(6):
+        _seed(eng, content=f"The user relocated their home base to City{i} lately.")
+    calls = {"n": 0}
+
+    class _CountLLM:
+        timeout = 120.0
+
+        def complete(self, prompt, max_tokens=120):
+            calls["n"] += 1
+            return '{"subject":"unknown","attribute":"","value":"","negation":false,"confidence":0.1}'
+
+    monkeypatch.setattr("pmb.health.consolidate.resolve_llm_client",
+                        lambda **k: _CountLLM())
+    res = eng.suggest_keyed_from_llm(dry_run=True)
+    assert calls["n"] == 2
+    assert res.get("stopped") == "budget"
+    assert res["budget"]["llm_calls"] == 2
 
 
 def test_breaker_open_skips_quietly(tmp_pmb_home, tmp_workspace_dir, monkeypatch):

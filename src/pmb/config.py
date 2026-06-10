@@ -415,10 +415,25 @@ SCHEMA: dict[str, _Setting] = {
     "write.quality_gate": _Setting(
         bool, False,
         "Write-time junk gate (opt-in, default OFF). When ON, a fact that "
-        "looks like junk (too short / placeholder / pure stopwords) is NOT "
+        "looks like junk (placeholder / test patterns / pure stopwords) is NOT "
         "rejected — it is flagged metadata.quality_flag=suspect_junk, its "
         "importance is capped at 0.2, and it is excluded from keyed-fact "
         "promotion. `pmb declutter` then treats it as a first-class candidate.",
+    ),
+    "llm.offline_max_calls": _Setting(
+        int, 40,
+        "Hard cap on the number of LLM calls a SINGLE offline pass (keyed "
+        "suggestions / declutter judge / consolidation) may make. Bounds the "
+        "whole pass, not just one call. Lower = cheaper, less thorough.",
+        min=1, max=1000,
+    ),
+    "llm.offline_budget_s": _Setting(
+        float, 120.0,
+        "Hard wall-clock cap (seconds) on a SINGLE offline LLM pass. The pass "
+        "stops launching new calls once exceeded (a call already in flight "
+        "finishes). Prevents a slow local model from holding `pmb consolidate` "
+        "for many minutes.",
+        min=1.0, max=3600.0,
     ),
     "recall.breaker_threshold": _Setting(
         int, 2,

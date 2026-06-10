@@ -31,10 +31,14 @@ from pmb.reasoning.attributes import detect_negated_state
     ("As of June 8 2026, the user does not currently live in Warsaw; "
      "current city is unknown.", "city"),
     ("I no longer live in Kyiv.", "city"),
+    ("I no longer live in Paris.", "city"),
+    ("I'm no longer living in Berlin.", "city"),
     ("The user's current city is unknown.", "city"),
     ("The user no longer works at Stripe.", "employer"),
     ("My current employer is unknown.", "employer"),
     ("The user no longer lives in Warsaw.", "city"),
+    ("я больше не живу в Варшаве", "city"),
+    ("I learned a lot, but I no longer live in Paris.", "city"),  # preamble ok
 ])
 def test_detect_negated_state_positive(text, attr):
     assert detect_negated_state(text) == attr
@@ -46,6 +50,13 @@ def test_detect_negated_state_positive(text, attr):
     "He no longer lives in Paris.",                 # third party — no subject cue
     "The user currently lives in Tampa.",           # positive, not negated
     "Do not log secrets to the console.",           # unrelated instruction
+    # ── third-party facts that the OLD decoupled detector mis-archived ──
+    "I learned that Alice no longer lives in Paris.",   # subject cue ≠ negator
+    "Alice no longer lives in Paris.",                  # no user subject
+    "My sister doesn't work at Google anymore.",        # possessive ≠ subj-adj
+    "My sister's employer is unknown.",                 # third-party possessive
+    "Алиса больше не живёт в Париже.",                  # RU third party
+    "We noted that the user's friend no longer lives in Rome.",
 ])
 def test_detect_negated_state_negative(text):
     assert detect_negated_state(text) is None
@@ -194,3 +205,43 @@ def test_repair_pass_archives_preexisting_negation(tmp_pmb_home, tmp_workspace_d
     assert res["n"] >= 1
     assert not _is_active(eng, neg)
     assert _meta(eng, neg).get("superseded_reason") == "negation_obsoleted_by_value"
+
+
+# ── A1: third-party facts must NEVER be archived ────────────────────────────
+
+def test_third_party_negation_not_archived_on_positive_value(
+    tmp_pmb_home, tmp_workspace_dir
+):
+    """The core A1 bug: recording the user's own city must not archive a fact
+    about someone else that happens to contain "I" + "no longer lives"."""
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    now = time.time()
+    alice = _seed_fact(
+        eng, "I learned that Alice no longer lives in Paris.", now - 50)
+    sister = _seed_fact(
+        eng, "My sister doesn't work at Google anymore.", now - 50)
+    eng.record_keyed_fact("user", "city", "Tampa")
+    eng.record_keyed_fact("user", "employer", "Acme")
+    assert _is_active(eng, alice)   # about Alice, not the user
+    assert _is_active(eng, sister)  # about the sister, not the user
+
+
+# ── A4: hometown is a separate key from current city ────────────────────────
+
+def test_hometown_does_not_overwrite_current_city(tmp_pmb_home, tmp_workspace_dir):
+    from pmb.reasoning.attributes import canonicalize_attribute, keyed_fact_key
+    assert canonicalize_attribute("hometown") == "hometown"
+    assert canonicalize_attribute("home_city") == "hometown"
+    assert canonicalize_attribute("current_city") == "city"
+    assert keyed_fact_key("user", "hometown") != keyed_fact_key("user", "city")
+
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    eng.record_keyed_fact("user", "hometown", "Kyiv")
+    eng.record_keyed_fact("user", "city", "Tampa")
+    # both keys live independently — origin did not clobber current residence
+    with sqlite3.connect(str(eng.workspace.db_path)) as c:
+        rows = c.execute(
+            "SELECT content FROM events WHERE archived_at IS NULL "
+            "AND metadata_json LIKE '%keyed_fact_key%'").fetchall()
+    blob = " ".join(r[0] for r in rows)
+    assert "Kyiv" in blob and "Tampa" in blob

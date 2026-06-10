@@ -12,6 +12,7 @@ from pmb.reasoning.attributes import (
     canonicalize_attribute,
     detect_current_state,
     detect_negated_state,
+    has_user_subject_cue,
     keyed_fact_key,
     looks_like_future_intent,
 )
@@ -199,6 +200,15 @@ class WriteMixin:
             tier=default_tier_for_event_type("fact"),
         )
         ev = self.events.append(ev)
+        # Keep the user-name cache fresh: a "My name is X" fact must take effect
+        # on the very NEXT recall (mark dirty), not after 25 more events.
+        try:
+            self.note_user_names_write()
+            from pmb.reasoning.user_names import looks_like_name_statement
+            if looks_like_name_statement(clean_fact):
+                self.mark_user_names_dirty()
+        except Exception:
+            pass
         # Improvement W: embed inline if model loaded, else queue
         self._embed_or_defer(ev.ulid, ev.to_text())
         self._index_graph_or_defer(ev, full_text=clean_fact)
@@ -861,24 +871,39 @@ class WriteMixin:
 
         return {"promotions": plan, "n": len(plan), "dry_run": dry_run}
 
-    def suggest_keyed_from_llm(self, dry_run: bool = True, limit: int = 40) -> dict:
+    def suggest_keyed_from_llm(
+        self,
+        dry_run: bool = True,
+        limit: int = 40,
+        backend: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> dict:
         """Offline LLM tier (#11): for recent plain facts the regex fast-path
         MISSED, ask a bounded LLM to extract a current-state
-        {attribute, value, negation, confidence}. A positive suggestion with
-        confidence >= 0.8 is upserted via record_keyed_fact (which also runs
-        the Task-5 negation-tombstone cleanup); anything weaker is tagged
-        metadata.suggested_key for review.
+        {subject, attribute, value, negation, confidence}. A positive suggestion
+        about the USER with confidence >= 0.8 is upserted via record_keyed_fact
+        (which also runs the negation-tombstone cleanup); anything weaker is
+        tagged metadata.suggested_key for review.
 
-        Open-ended understanding belongs OFFLINE — this is invoked by
-        consolidation / `pmb consolidate`, NEVER on the recall hot path. It is
-        timeout-clamped (≤15s), capped, and behind the same circuit breaker as
-        recall decomposition. Gated by config consolidate.suggest_keyed.
+        Three independent gates keep a third-party fact ("Alice relocated to
+        Berlin") from ever becoming user state: (1) a cheap first-person
+        prefilter before the LLM is even called, (2) the LLM's own
+        subject=="user" verdict, (3) flagged-junk facts are skipped.
+
+        Open-ended understanding belongs OFFLINE — invoked by consolidation /
+        `pmb consolidate`, NEVER on the recall hot path. Each call is
+        timeout-clamped (≤15s) and behind the recall circuit breaker; the WHOLE
+        pass is bounded by an LLMBudget (config llm.offline_max_calls /
+        llm.offline_budget_s). `backend`/`model` override the config backend
+        (so the consolidate CLI's --backend/--model reach this pass). Gated by
+        config consolidate.suggest_keyed.
         """
         import json as _json
         import re as _re
         import sqlite3 as _sql
 
-        out = {"suggestions": [], "applied": 0, "tagged": 0, "dry_run": dry_run}
+        out = {"suggestions": [], "applied": 0, "would_apply": 0, "tagged": 0,
+               "dry_run": dry_run}
         if not self.config.get("consolidate.suggest_keyed"):
             out["skipped"] = "disabled"
             return out
@@ -912,7 +937,13 @@ class WriteMixin:
             if (meta.get("keyed_fact_key") or meta.get("suggested_key")
                     or meta.get("kind") == "lesson" or meta.get("source") == "lesson"):
                 continue
+            if meta.get("quality_flag") == "suspect_junk":
+                continue  # gate 3: flagged junk never becomes user state
             content = r["content"] or ""
+            # gate 1: third-party text ("Alice relocated to Berlin") never even
+            # reaches the LLM — only facts that mention the user/first person.
+            if not has_user_subject_cue(content):
+                continue
             if detect_current_state(content):
                 continue  # cheap regex already covers it — no LLM needed
             cands.append((r["ulid"], content))
@@ -923,7 +954,10 @@ class WriteMixin:
 
         try:
             from pmb.health.consolidate import resolve_llm_client
-            llm = resolve_llm_client(backend=self.config.get("consolidate.backend"))
+            llm = resolve_llm_client(
+                backend=backend or self.config.get("consolidate.backend") or "auto",
+                model=model,
+            )
         except Exception:
             _breaker.record_failure("llm", thr, cd, "resolve_llm_client failed")
             out["skipped"] = "no_llm"
@@ -934,15 +968,27 @@ class WriteMixin:
             except Exception:
                 pass
 
+        from pmb.core.llm_budget import budget_from_config
+        budget = budget_from_config(self.config)
+
         _ALLOWED = {"city", "country", "employer", "job_title", "email", "phone",
                     "timezone", "relationship_status", "current_project"}
         for ulid, content in cands:
+            if not budget.allow():
+                out["stopped"] = "budget"
+                break
             prompt = (
-                "Does the text state a CURRENT, mutable personal attribute of "
-                "the user? Allowed: city, country, employer, job_title, email, "
-                "phone, timezone, relationship_status, current_project. Answer "
-                'ONLY JSON {"attribute": "<one or empty>", "value": "<value or '
-                'empty>", "negation": true|false, "confidence": 0.0-1.0}.\n\n'
+                "Does the text state a CURRENT, mutable personal attribute, "
+                "and WHOSE attribute is it? Allowed attributes: city, country, "
+                "employer, job_title, email, phone, timezone, "
+                "relationship_status, current_project. (NOTE: hometown / "
+                "birthplace is NOT current city.) Answer ONLY JSON "
+                '{"subject": "user" | "other_person" | "unknown", '
+                '"attribute": "<one or empty>", "value": "<value or empty>", '
+                '"negation": true|false, "confidence": 0.0-1.0}. If the '
+                'attribute belongs to anyone other than the speaker/user '
+                '(e.g. "Alice relocated to Berlin"), subject MUST be '
+                '"other_person".\n\n'
                 "TEXT: " + content[:300]
             )
             try:
@@ -950,12 +996,16 @@ class WriteMixin:
             except Exception as e:
                 _breaker.record_failure("llm", thr, cd, str(e))
                 break
+            budget.spend()
             _breaker.record_success("llm")
             try:
                 m = _re.search(r"\{.*\}", resp or "", _re.DOTALL)
                 v = _json.loads(m.group(0)) if m else {}
             except Exception:
                 v = {}
+            # gate 2: the LLM's own subject verdict must be the user.
+            if str(v.get("subject") or "").strip().lower() != "user":
+                continue
             attr = canonicalize_attribute(str(v.get("attribute") or ""))
             if not v.get("attribute") or attr not in _ALLOWED:
                 continue
@@ -967,18 +1017,21 @@ class WriteMixin:
 
         for s in out["suggestions"]:
             if s["confidence"] >= 0.8 and not s["negation"] and s["value"]:
-                if not dry_run:
+                if dry_run:
+                    out["would_apply"] += 1      # nothing written in a dry run
+                else:
                     self.record_keyed_fact(
                         "user", s["attribute"], str(s["value"]),
                         importance=0.8,
                         metadata={"source": "llm_keyed_suggestion",
                                   "derived_from_ulid": s["ulid"]},
                     )
-                out["applied"] += 1
+                    out["applied"] += 1
             else:
                 if not dry_run:
                     self._tag_suggested_key(s)
                 out["tagged"] += 1
+        out["budget"] = budget.report()
         return out
 
     def _tag_suggested_key(self, s: dict) -> None:

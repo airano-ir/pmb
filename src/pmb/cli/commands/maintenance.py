@@ -663,21 +663,27 @@ def declutter(
     llm: bool = typer.Option(
         False, "--llm",
         help="Also run a bounded LLM judge over borderline low-value facts."),
+    aggressive: bool = typer.Option(
+        False, "--aggressive",
+        help="Also archive SHORT (1-7 char) non-stopword facts. RISKY: real "
+             "memories like 'O+', 'ADHD', 'Tampa' are short — review first."),
 ):
     """Sweep obvious junk out of memory (archive-only).
 
-    Heuristics: test artifacts, near-empty/stopword content, exact duplicates,
-    and negation tombstones already obsoleted by a positive keyed value. With
-    --llm, a bounded judge (capped + circuit-broken, ≤15s) also reviews
-    low-value borderline facts. Dry-run by default; --apply archives
-    (reversible — restore with `pmb unforget`)."""
+    Heuristics: test artifacts, empty/stopword content, exact duplicates, and
+    negation tombstones already obsoleted by a positive keyed value. Short
+    (1-7 char) non-stopword facts are shown as `short_review` but NOT archived
+    unless you pass --aggressive — short is not the same as junk. With --llm, a
+    bounded judge (capped + circuit-broken, ≤15s) also reviews low-value
+    borderline facts. Dry-run by default; --apply archives (reversible —
+    restore with `pmb unforget`)."""
     from pmb.maintenance.declutter import declutter as run_declutter
     eng = Engine()
     if llm:
         with loading("declutter: heuristics + bounded LLM judge…"):
-            res = run_declutter(eng, apply=apply, use_llm=True)
+            res = run_declutter(eng, apply=apply, use_llm=True, aggressive=aggressive)
     else:
-        res = run_declutter(eng, apply=apply, use_llm=False)
+        res = run_declutter(eng, apply=apply, use_llm=False, aggressive=aggressive)
 
     if not res["candidates"]:
         console.print("[green]Nothing to declutter — memory looks clean.[/]")
@@ -689,15 +695,25 @@ def declutter(
     table.add_column("Reason"); table.add_column("ULID", style="dim")
     table.add_column("Content")
     for c in res["candidates"][:60]:
-        table.add_row(c["reason"], c["ulid"][:12], esc(c["content"]))
+        label = c["reason"]
+        if label.split(":")[0] == "short_review" and not aggressive:
+            label += " [dim](review)[/]"
+        table.add_row(label, c["ulid"][:12], esc(c["content"]))
     console.print(table)
     if res["n"] > 60:
         console.print(f"[dim]… and {res['n'] - 60} more[/]")
-    console.print(
-        f"\n{'[green]Archived[/]' if apply else '[yellow]Would archive[/]'} "
-        f"[bold]{res['n']}[/] event(s)."
-        + ("" if apply else " Re-run with --apply (archive-only).")
-    )
+    if apply:
+        review_only = res["n"] - res["n_applied"]
+        console.print(
+            f"\n[green]Archived[/] [bold]{res['n_applied']}[/] event(s)."
+            + (f" [dim]{review_only} short_review left untouched "
+               f"(pass --aggressive to include).[/]" if review_only else "")
+        )
+    else:
+        console.print(
+            f"\n[yellow]Would archive[/] [bold]{res['n']}[/] candidate(s). "
+            "Re-run with --apply (archive-only)."
+        )
 
 
 @app.command()
@@ -837,48 +853,54 @@ def consolidate(
         console.print(f"[red]Consolidation failed:[/] {e}")
         raise typer.Exit(code=1)
 
+    # NOTE: do NOT return on zero clusters — the keyed-suggestion pass below
+    # must still run (quiet workspaces accumulate plain facts but rarely form
+    # clusters). Only the cluster TABLE is skipped when there are no results.
     if result["n_clusters_found"] == 0:
         console.print(f"[yellow]No clusters found[/] "
                       f"(threshold={threshold}, since={since_days}d, min_size={min_size}). "
                       f"Try lowering --threshold or --min-size.")
-        return
-
-    table = Table(show_header=True, header_style="bold magenta",
-                  title="Consolidation Results" + (" (dry-run)" if dry_run else ""))
-    table.add_column("Anchor", style="dim", width=22)
-    table.add_column("Size", justify="right")
-    table.add_column("Sim", justify="right")
-    table.add_column("Conf", justify="right")
-    table.add_column("Result")
-    table.add_column("Summary", overflow="fold")
-    for r in result["results"]:
-        status = "[green]stored[/]" if r["consolidated"] else "[dim]skipped[/]"
-        table.add_row(
-            r["cluster_anchor"][:20],
-            str(r["cluster_size"]),
-            f"{r['avg_similarity']:.2f}",
-            f"{r['confidence']:.2f}",
-            status,
-            r["summary"] if r["consolidated"] else r["reasoning"],
+    else:
+        table = Table(show_header=True, header_style="bold magenta",
+                      title="Consolidation Results" + (" (dry-run)" if dry_run else ""))
+        table.add_column("Anchor", style="dim", width=22)
+        table.add_column("Size", justify="right")
+        table.add_column("Sim", justify="right")
+        table.add_column("Conf", justify="right")
+        table.add_column("Result")
+        table.add_column("Summary", overflow="fold")
+        for r in result["results"]:
+            status = "[green]stored[/]" if r["consolidated"] else "[dim]skipped[/]"
+            table.add_row(
+                r["cluster_anchor"][:20],
+                str(r["cluster_size"]),
+                f"{r['avg_similarity']:.2f}",
+                f"{r['confidence']:.2f}",
+                status,
+                r["summary"] if r["consolidated"] else r["reasoning"],
+            )
+        console.print(table)
+        console.print(
+            f"[cyan]{result['n_consolidated']}[/] consolidated, "
+            f"[yellow]{result['n_archived']}[/] source events archived "
+            f"({result['n_clusters_found']} clusters total)"
+            + (" [dim](dry-run, no writes)[/]" if dry_run else "")
         )
-    console.print(table)
-    console.print(
-        f"[cyan]{result['n_consolidated']}[/] consolidated, "
-        f"[yellow]{result['n_archived']}[/] source events archived "
-        f"({result['n_clusters_found']} clusters total)"
-        + (" [dim](dry-run, no writes)[/]" if dry_run else "")
-    )
 
     # Offline LLM tier (#11): also extract keyed current-state from plain facts
-    # the cheap regex missed. Best-effort — never fails the consolidate command.
+    # the cheap regex missed. Runs even with zero clusters. The command's
+    # --backend/--model are threaded through so a chosen backend reaches it.
+    # Best-effort — never fails the consolidate command.
     if eng.config.get("consolidate.suggest_keyed"):
         try:
             with loading("extracting keyed current-state (offline LLM)…"):
-                ks = eng.suggest_keyed_from_llm(dry_run=dry_run)
+                ks = eng.suggest_keyed_from_llm(
+                    dry_run=dry_run, backend=backend, model=model)
             if ks.get("suggestions"):
+                applied = ks.get("would_apply", 0) if dry_run else ks.get("applied", 0)
                 console.print(
                     f"[cyan]keyed suggestions:[/] {len(ks['suggestions'])} found, "
-                    f"{ks.get('applied', 0)} applied"
+                    f"{applied} {'would apply' if dry_run else 'applied'}"
                     + (f", {ks.get('tagged', 0)} tagged for review"
                        if ks.get("tagged") else "")
                     + (" [dim](dry-run)[/]" if dry_run else "")

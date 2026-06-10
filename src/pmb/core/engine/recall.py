@@ -41,35 +41,53 @@ def _result_in_project(r, project_lc: str) -> bool:
 
 
 class RecallMixin:
-    def _get_user_names(self) -> set[str]:
-        """Lowercased set of names the user calls themselves, mined from
-        "My name is X" / "Меня зовут X" facts. Cached; refreshed lazily
-        every 25 active-event writes.
-
-        Single source of truth for BOTH the PAMVR self-reference rescue and
-        the identity-marker boost in recall(), so neither path hardcodes a
-        specific personal name. Safe to call when PAMVR is disabled.
-        """
+    def _ensure_user_names_state(self) -> None:
         if not hasattr(self, "_user_names_cache"):
             self._user_names_cache: set[str] = set()
-            self._user_names_event_count = -1
-        try:
-            import sqlite3 as _sql
+            self._user_names_dirty = True       # force a first-call refresh
+            self._writes_since_names = 0
+            self._user_names_last_refresh = 0.0
 
-            with _sql.connect(str(self.workspace.db_path)) as conn:
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM events WHERE archived_at IS NULL"
-                ).fetchone()
-                n_now = int(row[0] or 0)
-            if (
-                self._user_names_event_count < 0
-                or n_now - self._user_names_event_count >= 25
-            ):
+    def _get_user_names(self) -> set[str]:
+        """Lowercased set of names the user calls themselves, mined from
+        "My name is X" / "Меня зовут X" facts. Cached.
+
+        Refreshed when: (a) first call, (b) a name-statement write marked the
+        cache dirty — so a newly recorded name takes effect on the very NEXT
+        recall, not after 25 more events, (c) 25 writes have accrued, or (d) a
+        300 s TTL elapsed (covers a name written by ANOTHER process). No
+        per-recall ``SELECT COUNT(*)`` — the common path is a flag check, which
+        matters in a long-lived daemon serving many recalls.
+
+        Single source of truth for BOTH the PAMVR self-reference rescue and the
+        identity-marker boost in recall(), so neither path hardcodes a specific
+        personal name. Safe to call when PAMVR is disabled.
+        """
+        self._ensure_user_names_state()
+        now = time.time()
+        if (self._user_names_dirty
+                or self._writes_since_names >= 25
+                or (now - self._user_names_last_refresh) > 300.0):
+            try:
                 self._user_names_cache = _mine_user_names(self.workspace.db_path)
-                self._user_names_event_count = n_now
-        except Exception:
-            pass
+            except Exception:
+                pass
+            self._user_names_dirty = False
+            self._writes_since_names = 0
+            self._user_names_last_refresh = now
         return self._user_names_cache
+
+    def mark_user_names_dirty(self) -> None:
+        """Write-path hook: a name-statement fact was just recorded, so the
+        next _get_user_names() must re-mine immediately."""
+        self._ensure_user_names_state()
+        self._user_names_dirty = True
+
+    def note_user_names_write(self) -> None:
+        """Write-path hook: advance the cheap write-since-refresh counter (no
+        SQL) so the cache still refreshes periodically without a name signal."""
+        self._ensure_user_names_state()
+        self._writes_since_names += 1
 
     def recall(
         self,

@@ -153,3 +153,46 @@ def test_generic_my_marker_boost_without_any_name(tmp_pmb_home, tmp_workspace_di
     pack = eng.recall("what's my terminal", top_k=5)
     assert pack.results, "no results"
     assert (pack.results[0].content or "").lower().startswith("my terminal")
+
+
+# ── A8: a freshly recorded name takes effect on the NEXT recall ─────────────
+
+def test_new_name_takes_effect_immediately(tmp_pmb_home, tmp_workspace_dir):
+    """Recording "My name is Bob" must influence the very next recall — not
+    after 25 more events. Warm the (empty) cache first, THEN record the name."""
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    eng.record_fact("The api service listens on port 5433")
+    # Warm the name cache while it is still empty (no name on file yet).
+    eng.recall("anything", top_k=3)
+    assert eng._get_user_names() == set()
+
+    # Name arrives AFTER the cache was warmed.
+    eng.record_fact("My name is Bob")
+    # Picked up immediately — no 25-event wait.
+    assert "bob" in eng._get_user_names()
+
+    eng.record_fact("Bob's editor is vim and tmux")
+    eng.record_fact("Zorg's editor is vim and tmux")
+    scores = _score_by_head(eng.recall("what's my editor", top_k=5))
+    assert scores.get("bob'", 0) > scores.get("zorg", 0)
+
+
+def test_user_names_cache_not_remined_per_recall(tmp_pmb_home, tmp_workspace_dir, monkeypatch):
+    """After a refresh, repeated _get_user_names() calls with no writes must NOT
+    re-run the (SQL) miner — the common path is a cheap flag check."""
+    import pmb.core.engine.recall as _rc
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    eng.record_fact("My name is Bob")
+    eng._get_user_names()  # one real refresh (dirty after the name write)
+
+    calls = {"n": 0}
+    real = _rc._mine_user_names
+
+    def _counting(db_path):
+        calls["n"] += 1
+        return real(db_path)
+    monkeypatch.setattr(_rc, "_mine_user_names", _counting)
+
+    for _ in range(10):
+        eng._get_user_names()
+    assert calls["n"] == 0  # served from cache, no re-mine within TTL

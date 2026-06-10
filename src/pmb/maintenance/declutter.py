@@ -50,11 +50,13 @@ def _is_pure_stopwords(content: str) -> bool:
 
 def is_suspect_junk(content: str) -> bool:
     """Cheap write-time quality heuristic shared with the declutter sweeper:
-    True if CONTENT looks like junk (too short, placeholder/test text, or pure
-    stopwords). Used by the optional write-time quality gate (config
-    write.quality_gate). Conservative — it only FLAGS, never rejects."""
+    True only for EVIDENCE of junk — empty, placeholder/test patterns, or pure
+    stopwords. Length ALONE never condemns content: real memories are routinely
+    2-7 chars ("O+", "B-", "HIV+", "ADHD", "INTJ", "Tampa"). Used by the
+    optional write-time quality gate (config write.quality_gate). Conservative —
+    it only FLAGS, never rejects."""
     s = (content or "").strip()
-    if len(s) < 8:
+    if not s:
         return True
     if _TEST_CONTENT_RE.search(s):
         return True
@@ -69,15 +71,23 @@ def _protected(meta: dict, importance: float) -> bool:
 
 
 def find_heuristic_candidates(engine) -> list[dict]:
-    """Return [{ulid, reason, content}] for clear junk — no LLM."""
+    """Return [{ulid, reason, content}] for clear junk — no LLM.
+
+    Reasons that are SAFE to auto-archive (apply set): quality_flag,
+    test_artifact, near_empty (empty/stopword only), exact_duplicate.
+    The `short_review` reason (1-7 char non-stopword content like "O+",
+    "ADHD") is REVIEW-ONLY — surfaced in the dry-run table but excluded from
+    `--apply` unless the caller passes aggressive=True, because short ≠ junk.
+    """
     out: list[dict] = []
     chosen: set[str] = set()
-    dup_groups: dict[str, list[tuple]] = defaultdict(list)
+    dup_groups: dict[str, list[dict]] = defaultdict(list)
 
     with sqlite3.connect(str(engine.workspace.db_path)) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT ulid, content, metadata_json, importance, timestamp, event_type "
+            "SELECT ulid, content, metadata_json, importance, access_count, "
+            "timestamp, event_type "
             "FROM events WHERE workspace_id = ? AND archived_at IS NULL "
             "ORDER BY timestamp ASC",
             (engine.workspace.id,),
@@ -101,11 +111,18 @@ def find_heuristic_candidates(engine) -> list[dict]:
                         "content": content[:100]})
             chosen.add(r["ulid"])
             continue
-        # 2. near-empty / pure-stopword plain facts & activities
-        if r["event_type"] in ("fact", "activity"):
+        # 2. near-empty / short plain facts & activities. A KEYED value ("O+"
+        #    under user::blood_type) is structure, never near-empty — skip it.
+        if r["event_type"] in ("fact", "activity") and not key:
             stripped = content.strip()
-            if len(stripped) < 8 or _is_pure_stopwords(stripped):
+            if not stripped or _is_pure_stopwords(stripped):
                 out.append({"ulid": r["ulid"], "reason": "near_empty",
+                            "content": content[:100]})
+                chosen.add(r["ulid"])
+                continue
+            if len(stripped) < 8:
+                # short but NOT empty/stopword — review-only, never auto-applied
+                out.append({"ulid": r["ulid"], "reason": "short_review",
                             "content": content[:100]})
                 chosen.add(r["ulid"])
                 continue
@@ -113,18 +130,25 @@ def find_heuristic_candidates(engine) -> list[dict]:
         if r["event_type"] == "fact" and not key:
             norm = re.sub(r"\s+", " ", content.strip().lower())
             if norm:
-                dup_groups[norm].append((r["timestamp"], r["ulid"]))
+                dup_groups[norm].append({
+                    "ulid": r["ulid"], "ts": r["timestamp"],
+                    "importance": float(r["importance"] or 0.0),
+                    "access": int(r["access_count"] or 0),
+                })
 
-    # 3b. duplicates — keep the NEWEST, archive the older copies
+    # 3b. duplicates — keep the most VALUABLE copy (importance, then access
+    #     count, then recency), archive the rest. Keeping "newest" alone would
+    #     discard a pinned-adjacent / frequently-recalled older original.
     for norm, lst in dup_groups.items():
         if len(lst) < 2:
             continue
-        lst.sort()  # ascending timestamp
-        for _ts, ulid in lst[:-1]:
-            if ulid not in chosen:
-                out.append({"ulid": ulid, "reason": "exact_duplicate",
-                            "content": norm[:100]})
-                chosen.add(ulid)
+        keep = max(lst, key=lambda e: (e["importance"], e["access"], e["ts"]))
+        for e in lst:
+            if e["ulid"] == keep["ulid"] or e["ulid"] in chosen:
+                continue
+            out.append({"ulid": e["ulid"], "reason": "exact_duplicate",
+                        "content": norm[:100], "kept": keep["ulid"]})
+            chosen.add(e["ulid"])
     return out
 
 
@@ -201,11 +225,23 @@ def _llm_judge(engine, pool: list[dict]) -> list[dict]:
     return judged
 
 
-def declutter(engine, apply: bool = False, use_llm: bool = False) -> dict:
+# Reasons that are evidence enough to auto-archive on --apply. `short_review`
+# is deliberately NOT here: short content is surfaced for human review only.
+_APPLYABLE_REASONS = frozenset({
+    "quality_flag", "test_artifact", "near_empty", "exact_duplicate",
+    "negation_obsolete", "llm",
+})
+
+
+def declutter(engine, apply: bool = False, use_llm: bool = False,
+              aggressive: bool = False) -> dict:
     """Find (and optionally archive) junk memories.
 
-    Returns {candidates: [{ulid, reason, content}], n, dry_run, llm_used,
-    by_reason: {reason: count}}.
+    `aggressive=True` also archives the review-only `short_review` class
+    (1-7 char non-stopword facts) — off by default because short ≠ junk.
+
+    Returns {candidates: [{ulid, reason, content}], n, n_applied, dry_run,
+    llm_used, aggressive, by_reason: {reason: count}}.
     """
     candidates = find_heuristic_candidates(engine)
     seen = {c["ulid"] for c in candidates}
@@ -231,8 +267,17 @@ def declutter(engine, apply: bool = False, use_llm: bool = False) -> dict:
                 candidates.append(j)
                 seen.add(j["ulid"])
 
+    def _applyable(reason: str) -> bool:
+        base = reason.split(":")[0]
+        if base == "short_review":
+            return aggressive
+        return base in _APPLYABLE_REASONS
+
+    n_applied = 0
     if apply and candidates:
         for c in candidates:
+            if not _applyable(c["reason"]):
+                continue  # review-only class — never auto-archived
             try:
                 engine.events.archive(c["ulid"])
                 with sqlite3.connect(str(engine.workspace.db_path)) as conn:
@@ -242,8 +287,11 @@ def declutter(engine, apply: bool = False, use_llm: bool = False) -> dict:
                     m = _meta(row[0]) if row else {}
                     m["archived_reason"] = "declutter"
                     m["declutter_reason"] = c["reason"]
+                    if c.get("kept"):
+                        m["duplicate_of"] = c["kept"]
                     conn.execute("UPDATE events SET metadata_json=? WHERE ulid=?",
                                  (json.dumps(m), c["ulid"]))
+                n_applied += 1
             except Exception:
                 continue
         try:
@@ -254,5 +302,6 @@ def declutter(engine, apply: bool = False, use_llm: bool = False) -> dict:
     by_reason: dict[str, int] = defaultdict(int)
     for c in candidates:
         by_reason[c["reason"].split(":")[0]] += 1
-    return {"candidates": candidates, "n": len(candidates), "dry_run": not apply,
-            "llm_used": llm_used, "by_reason": dict(by_reason)}
+    return {"candidates": candidates, "n": len(candidates),
+            "n_applied": n_applied, "dry_run": not apply, "llm_used": llm_used,
+            "aggressive": aggressive, "by_reason": dict(by_reason)}
