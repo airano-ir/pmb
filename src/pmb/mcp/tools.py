@@ -11,6 +11,28 @@ from typing import Optional
 from pmb.mcp._toolspec import _maybe_tool  # noqa: F401
 
 
+def _compact_recall(out, engine):
+    """D3: trim a recall response before it goes over the wire — cap each
+    result's content (mcp.max_item_chars) and drop top-level fields that are
+    genuinely NULL (None). Empty collections are kept: `results`/`lessons` are
+    STRUCTURAL — consumers index them directly, so dropping an empty `results`
+    would KeyError. 0/False are kept (they carry meaning). Gated by config
+    mcp.compact_responses; never raises — returns the original on any problem."""
+    try:
+        if not isinstance(out, dict) or not engine.config.get("mcp.compact_responses"):
+            return out
+        cap = int(engine.config.get("mcp.max_item_chars") or 0)
+        if cap > 0:
+            for it in out.get("results") or []:
+                if isinstance(it, dict):
+                    c = it.get("content")
+                    if isinstance(c, str) and len(c) > cap:
+                        it["content"] = c[:cap].rstrip() + "…"
+        return {k: v for k, v in out.items() if v is not None}
+    except Exception:
+        return out
+
+
 def register_all(mcp, engine):
     @mcp.tool()
     def recall(query: str, top_k: int = 5, project: str = "") -> dict:
@@ -67,7 +89,7 @@ def register_all(mcp, engine):
                 out["project_context"] = ov
         except Exception:
             pass
-        return out
+        return _compact_recall(out, engine)
 
     @mcp.tool()
     def overview(topic: str, max_events: int = 20) -> dict:
@@ -748,7 +770,7 @@ def register_all(mcp, engine):
             query, top_k=top_k,
             confidence_threshold=confidence_threshold,
         )
-        return pack.to_dict()
+        return _compact_recall(pack.to_dict(), engine)
 
     @mcp.tool()
     def recall_deep(query: str, top_k: int = 5) -> dict:
@@ -762,7 +784,7 @@ def register_all(mcp, engine):
         genuinely needs it and the latency is acceptable — never for routine
         lookups.
         """
-        return engine.recall_deep(query, top_k=top_k).to_dict()
+        return _compact_recall(engine.recall_deep(query, top_k=top_k).to_dict(), engine)
 
     @mcp.tool()
     def reflect_batch(limit: int = 10, backend: str = "auto") -> dict:

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -51,6 +50,21 @@ def pytest_configure(config):
     # directly and skips that check, making model loads deterministic.
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+    # Memory-constrained machines: transformers materializes model weights in
+    # GLOBAL_WORKERS (=min(4, cpus)) parallel threads, which multiplies peak RAM
+    # during a model load. On a low-free-RAM box the full suite (many engines ×
+    # embedding/rerank models) then segfaults mid-load — "Windows fatal
+    # exception: access violation" / WinError 1455 (pagefile too small). Cap the
+    # loader to a single worker so peak memory stays bounded; loads are a touch
+    # slower but deterministic. Best-effort and test-only.
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    try:
+        import transformers.core_model_loading as _cml
+        _cml.GLOBAL_WORKERS = 1
+    except Exception:
+        pass
 
     missing = []
     for mod in ("numpy", "fastmcp", "typer"):
