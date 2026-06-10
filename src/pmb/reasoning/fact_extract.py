@@ -54,9 +54,13 @@ class AtomicFact:
     confidence: float            # 0.0-1.0
 
 
-# Sentence boundary regex (EN + RU + UK).
+# Sentence boundary regex. Latin/Cyrillic/Ukrainian + accented-Latin + Greek
+# capitals after a terminator (keeps the capital requirement so abbreviations
+# like "U.S. army" don't over-split), PLUS CJK terminators (。！？) which carry
+# no following space. EN/RU/UK behaviour is unchanged; other scripts are added.
 _SENT_SPLIT = re.compile(
-    r"(?<=[.!?])\s+(?=[A-ZА-ЯІЇЄҐ])"
+    r"(?<=[.!?])\s+(?=[A-ZА-ЯІЇЄҐÀ-ÖØ-ÞĀ-ŽΆ-Ώ])"
+    r"|(?<=[。！？])"
 )
 
 

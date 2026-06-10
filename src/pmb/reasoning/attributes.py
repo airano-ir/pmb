@@ -91,11 +91,16 @@ for _canon, _aliases in _ALIAS_GROUPS.items():
 
 
 def normalize_label(label: str) -> str:
-    """Lowercase, trim, and collapse any run of non-alphanumeric characters
-    (spaces, hyphens, dots, …) to a single underscore.
-    'Current City ' → 'current_city'."""
-    s = (label or "").strip().lower()
-    s = re.sub(r"[^0-9a-zа-яё]+", "_", s)
+    """Casefold, trim, and collapse any run of non-word characters (spaces,
+    hyphens, dots, …) to a single underscore. 'Current City ' → 'current_city'.
+
+    Uses Unicode word chars + casefold so accented-Latin / Turkish / German
+    attribute labels keep their letters instead of being silently dropped
+    (the old ``[^0-9a-zа-яё]`` class deleted ä/ñ/ç/ş). Provably identical to
+    the old behaviour on ASCII + Cyrillic + digits, so existing keyed-fact
+    keys are unaffected; only previously-mangled scripts change."""
+    s = (label or "").strip().casefold()
+    s = re.sub(r"[^\w]+", "_", s, flags=re.UNICODE)
     return s.strip("_")
 
 

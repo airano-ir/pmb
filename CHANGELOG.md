@@ -4,6 +4,21 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+### Fixed (Unicode-correct tokenization — Phase C1)
+
+- **Tokenizers no longer silently drop non-EN/RU letters.** The keyed-fact label
+  normalizer, the PAMVR token/proper-noun extractors, the vocabulary miner, and
+  the sentence splitter used Latin+Cyrillic-only character classes
+  (`[^0-9a-zа-яё]`, `[a-zA-Zа-яА-Я]`, `[A-ZА-ЯІЇЄҐ]…`) that deleted German
+  umlauts, Spanish ñ, Turkish letters, Greek, CJK — and even **Ukrainian
+  і/ї/є/ґ** (so "Львові" tokenized as "львов"). They are now Unicode-aware
+  (`\w`/`str.isupper`/casefold), **provably byte-identical on EN/RU** (a parity
+  test pins this against the old regexes) and additive for every other script;
+  proper-noun detection keeps its capital-word shape so acronyms still don't
+  match. NOTE: this changes tokenization of Ukrainian and other non-EN/RU
+  content already in a workspace — run `pmb reindex` to align the BM25 index
+  with the corrected tokenizer.
+
 ### Added (persistent memory daemon — Phase B)
 
 - **`pmb daemon` — a persistent warm memory process.** It holds ONE warm Engine

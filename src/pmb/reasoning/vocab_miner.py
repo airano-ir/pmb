@@ -63,8 +63,11 @@ _STOP = {
 }
 
 
-# Token regex (latin + cyrillic + digits, but at boundaries — keeps "type_hints" intact)
-_TOKEN_RE = re.compile(r"[a-zа-я][a-zа-я0-9_]{2,}", re.IGNORECASE)
+# Token regex: a Unicode letter start, then word chars (letters/digits/_) —
+# keeps "type_hints" intact. Identical to the old Latin+Cyrillic class on EN/RU;
+# also keeps other scripts' letters. Deliberately NO hyphens in the class:
+# including them silently broke compound-word matching (caught by a live run).
+_TOKEN_RE = re.compile(r"[^\W\d_][\w]{2,}", re.UNICODE)
 
 # Default parameters — chosen empirically so a 200-event workspace yields
 # ~50-150 bridges, low noise.

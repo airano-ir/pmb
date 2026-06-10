@@ -124,12 +124,12 @@ VERB_SYNS: dict[str, set[str]] = {
 DEFAULT_NAMED_ENTITIES: frozenset[str] = frozenset()
 
 
-# Dynamic proper-noun extractor - works on Latin AND Cyrillic AND Greek.
-# Matches any capitalised token of length >= 3 that isn't a sentence opener
-# of a known function-word (we strip those via post-filter).
-_PROPER_NOUN_RE = re.compile(
-    r"\b(?P<n>[A-ZА-ЯІЇЄҐ][a-zа-яіїєґ']{2,})\b"
-)
+# Dynamic proper-noun extractor. Tokenises on Unicode letters (+ apostrophes);
+# the capitalisation decision is made by Unicode-aware str.isupper/islower in
+# _extract_proper_nouns, so Greek / accented-Latin / German names are caught,
+# not just the Latin+Cyrillic+Ukrainian the old explicit class enumerated.
+# EN/RU/UK extraction is unchanged.
+_PN_TOKEN_RE = re.compile(r"[^\W\d_](?:[^\W\d_]|')*", re.UNICODE)
 
 # Function words that often appear capitalised at sentence start; they are
 # NOT proper nouns even if capitalised.
@@ -163,8 +163,15 @@ def _extract_proper_nouns(query: str) -> set[str]:
     proper nouns. Skips known function-words to avoid false matches on
     sentence-initial capitals."""
     out: set[str] = set()
-    for m in _PROPER_NOUN_RE.finditer(query):
-        tok = m.group("n").lower()
+    for m in _PN_TOKEN_RE.finditer(query):
+        raw = m.group(0).strip("'")
+        if len(raw) < 3:
+            continue
+        # Capitalised word: first letter upper, the rest lowercase — matches the
+        # old [A-Z][a-z]{2,} shape, so acronyms ("NASA") stay excluded.
+        if not (raw[0].isupper() and raw[1:].islower()):
+            continue
+        tok = raw.lower()
         if tok in _NOT_PROPER:
             continue
         if tok in _STOP:
@@ -181,8 +188,10 @@ _TIME_DURATION_RE = re.compile(
 
 
 def _tokens(s: str) -> set[str]:
+    # [^\W_] = Unicode letters + digits (no underscore). Identical to the old
+    # Latin+Cyrillic+digit class on EN/RU; also keeps other scripts' letters.
     return {
-        t for t in re.findall(r"[a-zA-Zа-яА-Я0-9]+", s.lower())
+        t for t in re.findall(r"[^\W_]+", s.lower(), flags=re.UNICODE)
         if len(t) > 2 and t not in _STOP
     }
 
