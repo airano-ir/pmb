@@ -181,6 +181,25 @@ def check_current_workspace() -> dict:
     )
 
 
+def check_recent_errors() -> dict:
+    """Surface swallowed-exception breadcrumbs from the error_log (B5) so a
+    silently-degrading path is visible instead of invisible."""
+    try:
+        from pmb.core.errlog import error_counts
+        from pmb.core.workspace import detect_workspace
+        ws = detect_workspace()
+        if not ws.db_path.exists():
+            return _ok("no error log yet")
+        counts = error_counts(ws.db_path, since_s=24 * 3600)
+    except Exception as e:
+        return _ok(f"error log unavailable: {e}")
+    if not counts:
+        return _ok("no errors in the last 24h")
+    total = sum(counts.values())
+    top = ", ".join(f"{k}={v}" for k, v in list(counts.items())[:5])
+    return _warn(f"{total} swallowed error(s) in last 24h — {top}")
+
+
 def mcp_config_hint() -> dict:
     """Print Claude Code MCP config snippet for the user to copy."""
     pmb_mcp = shutil.which("pmb-mcp")
@@ -329,6 +348,7 @@ def run_doctor(remote: Optional[str] = None) -> list[tuple[str, dict]]:
         ("Git", check_git()),
         ("Consolidation backend", check_consolidation_backend()),
         ("Current workspace", check_current_workspace()),
+        ("Recent errors (24h)", check_recent_errors()),
         ("MCP config hint", mcp_config_hint()),
     ]
     if remote:

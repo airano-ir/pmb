@@ -661,3 +661,36 @@ def format_context(
     if len(text) > max_chars:
         text = text[: max_chars - 30].rstrip() + "\n... [context truncated]"
     return text
+
+
+def compute_prepare_context_text(engine, message: str,
+                                 max_chars: int = 4000) -> "str | None":
+    """Run the auto-recall pipeline for `message` and return the formatted
+    context text, or None when there is nothing to inject.
+
+    Single source of truth shared by the `pmb prepare-context` CLI command
+    (cold, per-process) and the daemon's /internal/hook/prepare-context
+    endpoint (warm), so hook output is identical whichever path served it.
+    Honors the same config knobs as the CLI command. Returns None when
+    auto-recall is disabled (the caller may fall back to the legacy bundle)."""
+    msg = (message or "").strip()
+    if not msg:
+        return None
+    if not bool(engine.config.get("auto_recall.enabled")):
+        return None
+    res = run_auto_context(
+        engine, msg,
+        min_chars=int(engine.config.get("auto_recall.min_message_chars") or 5),
+        recall_top_k=int(engine.config.get("auto_recall.recall_top_k") or 5),
+        recall_min_score=float(engine.config.get("auto_recall.recall_min_score") or 0.30),
+        surface_decisions=bool(engine.config.get("auto_recall.surface_decisions")),
+    )
+    if res.skipped or res.is_empty():
+        return None
+    cap = min(int(max_chars),
+              int(engine.config.get("auto_recall.budget_chars") or 4000))
+    text = format_context(
+        res, max_chars=cap,
+        include_trace=bool(engine.config.get("auto_recall.include_trace")),
+    )
+    return text or None

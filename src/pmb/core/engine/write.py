@@ -455,8 +455,12 @@ class WriteMixin:
                         (_json.dumps(meta), r["ulid"]),
                     )
                 archived.append(r["ulid"])
-        except Exception:
-            pass
+        except Exception as e:
+            try:
+                from pmb.core.errlog import log_error
+                log_error(self.workspace.db_path, "negation_tombstone", e)
+            except Exception:
+                pass
         return archived
 
     def archive_negations_for_current_keys(self, dry_run: bool = True) -> dict:
@@ -1053,8 +1057,12 @@ class WriteMixin:
                 }
                 conn.execute("UPDATE events SET metadata_json=? WHERE ulid=?",
                              (_json.dumps(m), s["ulid"]))
-        except Exception:
-            pass
+        except Exception as e:
+            try:
+                from pmb.core.errlog import log_error
+                log_error(self.workspace.db_path, "tag_suggested_key", e)
+            except Exception:
+                pass
 
     def migrate_workspace_into(
         self,

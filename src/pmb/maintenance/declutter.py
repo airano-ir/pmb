@@ -292,7 +292,13 @@ def declutter(engine, apply: bool = False, use_llm: bool = False,
                     conn.execute("UPDATE events SET metadata_json=? WHERE ulid=?",
                                  (json.dumps(m), c["ulid"]))
                 n_applied += 1
-            except Exception:
+            except Exception as e:
+                try:
+                    from pmb.core.errlog import log_error
+                    log_error(engine.workspace.db_path, "declutter_apply", e,
+                              c.get("ulid", ""))
+                except Exception:
+                    pass
                 continue
         try:
             engine.recall_cache.bump_generation()

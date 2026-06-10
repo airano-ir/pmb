@@ -2,6 +2,41 @@
 
 All notable changes to PMB are documented here.
 
+## [Unreleased]
+
+### Added (persistent memory daemon — Phase B)
+
+- **`pmb daemon` — a persistent warm memory process.** It holds ONE warm Engine
+  + embedding model + LanceDB so hook-based auto-recall finally gets REAL
+  semantic recall instead of the per-process cold skip (`RECALL_COLD_SKIP`).
+  `pmb daemon start` spawns it detached, `status`/`stop`/`restart` manage it.
+  It is the same streamable-http MCP server with three internal routes
+  (`/internal/health`, `/internal/hook/prepare-context`) mounted via fastmcp's
+  `custom_route`, behind a per-start bearer token (`$PMB_HOME/daemon.token`).
+- **Hooks are now daemon clients with a hard cold fallback.** `pmb
+  prepare-context` asks the warm daemon first (localhost, ~0.6s timeout) and
+  falls back to the existing in-process cold path the instant the daemon is
+  absent or a version mismatch is detected — behaviour is unchanged when no
+  daemon runs. When the cold path runs and `daemon.autostart` is on (default),
+  a daemon is spawned detached (rate-limited) so the NEXT message is warm.
+- **Idle exit.** The daemon exits after `daemon.idle_exit_min` (default 120)
+  minutes with no request so it doesn't hold ~400MB forever; the next message
+  autostarts a fresh one.
+
+### Fixed (durability + observability — Phase B)
+
+- **`record_batch_async` is crash-safe via a durable outbox.** The batch is
+  persisted to a `write_outbox` SQLite table SYNCHRONOUSLY before returning,
+  then replayed by a background drainer; a crash between accept and write loses
+  nothing (`recover_outbox()` replays leftovers on the next start). The old
+  fire-and-forget daemon-thread path — which dropped items on process death —
+  is kept only behind `write.outbox=False`. Gated ON by default.
+- **Swallowed exceptions leave a breadcrumb.** A new `error_log` table + the
+  `pmb.core.errlog` helper replace several bare `except: pass` sites (negation
+  tombstone, suggested-key tagging, declutter apply, outbox drain) so a
+  silently-degrading path shows up in `pmb doctor` ("Recent errors (24h)")
+  instead of being invisible.
+
 ## [0.6.0] — 2026-06-09
 
 ### Fixed (keyed-memory correctness — Phase A)

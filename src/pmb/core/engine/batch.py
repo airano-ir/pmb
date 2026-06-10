@@ -56,57 +56,52 @@ class BatchMixin:
         return result
 
     def record_batch_async(self, items: list[dict]) -> dict:
-        """Improvement AA: fire-and-forget batch write.
+        """Fire-and-forget batch write, now CRASH-SAFE via a durable outbox.
 
-        Returns IMMEDIATELY (~5-50ms) after spawning a background thread that
-        runs the full `record_batch` pipeline (embedding, LanceDB, graph,
-        dedup). The MCP caller doesn't wait — no more 120s timeouts on big
-        batches.
+        The items are written to the `write_outbox` SQLite table SYNCHRONOUSLY
+        (~1ms — this is the durability point), then a single background drainer
+        replays them through the full `record_batch` pipeline (embedding,
+        LanceDB, graph, dedup). If the process dies between this call and the
+        write completing, the row stays `pending` and is replayed on the next
+        drainer start / `recover_outbox()` — nothing is lost. The old
+        fire-and-forget daemon-thread path lost items on process death; it is
+        kept only behind `write.outbox=False` for bisecting.
 
-        Trade-off: the caller can't see the resulting ULIDs synchronously
-        (just a count of accepted items). That's fine — agents almost never
-        use ULIDs from record_batch's return, they just confirm the write
-        happened.
-
-        Recall called immediately after this MAY miss the new events for
-        ~100-1000ms while embedding completes. For typical agent flow
-        (write now, read on next user turn) this is invisible.
+        Returns IMMEDIATELY. The caller can't see resulting ULIDs (agents don't
+        use them); a recall right after MAY miss the new events for ~100-1000ms
+        while the drainer writes + embeds.
         """
         # Light validation only — heavy lifting in background
         if not items or not isinstance(items, list):
             return {"n_accepted": 0, "processing": "skipped", "errors": ["empty or invalid items"]}
         n_items = sum(1 for i in items if isinstance(i, dict) and i.get("type"))
 
-        import threading
+        use_outbox = True
+        try:
+            use_outbox = bool(self.config.get("write.outbox"))
+        except Exception:
+            pass
 
-        # Counter+condition: wait_for_writes() blocks until this reaches 0.
-        # Increment BEFORE spawning so a fast caller can still see "in flight".
-        with self._async_writes_cv:
-            self._async_writes_in_flight += 1
-
-        def _process():
+        if use_outbox:
+            outbox_id = self._outbox_enqueue(items)
+            out = {"ok": True, "n": n_items}
+            if outbox_id is not None:
+                out["outbox_id"] = outbox_id
+            else:
+                # Durable enqueue failed (disk full / locked) — fall back to the
+                # in-memory thread so the write still has a chance, and log it.
+                out["outbox"] = "enqueue_failed_fell_back"
+                self._spawn_legacy_async(items)
             try:
-                self.record_batch(items)
-            except Exception as e:
-                # Last-resort log — silent failure is dangerous
-                import logging
-                logging.getLogger(__name__).exception(
-                    "async batch processing failed: %s", e,
-                )
-            finally:
-                with self._async_writes_cv:
-                    self._async_writes_in_flight -= 1
-                    self._async_writes_cv.notify_all()
+                n = self._adherence_nudge()
+                if n:
+                    out["_nudge"] = n
+            except Exception:
+                pass
+            return out
 
-        threading.Thread(
-            target=_process,
-            daemon=True,
-            name="pmb-async-batch",
-        ).start()
-
-        # Improvement II: minimal response. Smaller payload, faster Codex
-        # UI processing. Background flag suppressed because the caller
-        # doesn't need it (we always run in background by default).
+        # ── legacy path (write.outbox=False): fire-and-forget daemon thread ──
+        self._spawn_legacy_async(items)
         out = {"ok": True, "n": n_items}
         # Adherence nudge — short consequence-framed reminder when the
         # agent has been writing without reading. The agent SEES this in
@@ -119,6 +114,202 @@ class BatchMixin:
         except Exception:
             pass
         return out
+
+    # ── durable write outbox (B4) ──────────────────────────────────────────
+
+    def _spawn_legacy_async(self, items: list[dict]) -> None:
+        """Old fire-and-forget path: a daemon thread runs record_batch. Used
+        when write.outbox is off, or as a last resort if the durable enqueue
+        itself fails. Increments the in-flight counter so wait_for_writes works."""
+        import threading
+        with self._async_writes_cv:
+            self._async_writes_in_flight += 1
+
+        def _process():
+            try:
+                self.record_batch(items)
+            except Exception as e:
+                try:
+                    from pmb.core.errlog import log_error
+                    log_error(self.workspace.db_path, "async_batch", e)
+                except Exception:
+                    pass
+            finally:
+                with self._async_writes_cv:
+                    self._async_writes_in_flight -= 1
+                    self._async_writes_cv.notify_all()
+
+        threading.Thread(target=_process, daemon=True,
+                         name="pmb-async-batch").start()
+
+    def _outbox_enqueue(self, items: list[dict]) -> "int | None":
+        """Synchronously persist a batch to write_outbox (the durability point)
+        and wake the drainer. Returns the row id, or None on failure."""
+        import json as _json
+        import sqlite3 as _sql
+        import time as _t
+        try:
+            payload = _json.dumps(items)
+        except Exception:
+            return None
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                cur = conn.execute(
+                    "INSERT INTO write_outbox (workspace_id, created_at, "
+                    "items_json, status) VALUES (?, ?, ?, 'pending')",
+                    (self.workspace.id, _t.time(), payload),
+                )
+                row_id = cur.lastrowid
+        except Exception as e:
+            try:
+                from pmb.core.errlog import log_error
+                log_error(self.workspace.db_path, "write_outbox", e, "enqueue")
+            except Exception:
+                pass
+            return None
+        self._ensure_outbox_drainer()
+        self._outbox_wake.set()
+        return row_id
+
+    def _ensure_outbox_drainer(self) -> None:
+        """Start the single per-engine drainer thread if it isn't running."""
+        import threading
+        with self._outbox_lock:
+            t = self._outbox_thread
+            if t is not None and t.is_alive():
+                return
+            self._outbox_thread = threading.Thread(
+                target=self._outbox_drain_loop, daemon=True, name="pmb-outbox")
+            self._outbox_thread.start()
+
+    def recover_outbox(self) -> int:
+        """Replay any leftover rows from a previous (possibly crashed) process:
+        reset orphaned 'processing' rows to 'pending' and start the drainer.
+        Returns the number of pending rows found. Call once at the start of a
+        long-lived process (MCP server / daemon). Best-effort."""
+        import sqlite3 as _sql
+        n = 0
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.execute(
+                    "UPDATE write_outbox SET status='pending' "
+                    "WHERE status='processing' AND workspace_id=?",
+                    (self.workspace.id,))
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM write_outbox "
+                    "WHERE status='pending' AND workspace_id=?",
+                    (self.workspace.id,)).fetchone()
+                n = int(row[0] or 0)
+        except Exception as e:
+            try:
+                from pmb.core.errlog import log_error
+                log_error(self.workspace.db_path, "write_outbox", e, "recover")
+            except Exception:
+                pass
+            return 0
+        self._outbox_recovered = True
+        if n:
+            self._ensure_outbox_drainer()
+            self._outbox_wake.set()
+        return n
+
+    def _outbox_pending_count(self) -> int:
+        import sqlite3 as _sql
+        try:
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM write_outbox WHERE workspace_id=? "
+                    "AND status IN ('pending','processing')",
+                    (self.workspace.id,)).fetchone()
+            return int(row[0] or 0)
+        except Exception:
+            return 0
+
+    def _outbox_drain_loop(self) -> None:
+        """Process pending rows oldest-first until the table is empty, then
+        wait for a wake signal. Each row: mark processing → record_batch →
+        done; on failure back off and retry up to 5 times, then mark failed.
+
+        Exits cleanly the moment the workspace DB no longer exists (the dir was
+        torn down — e.g. a temp test workspace), so finished-test drainer
+        threads don't linger and race on the storage layer."""
+        import os as _os
+        import sqlite3 as _sql
+        import time as _t
+        while True:
+            try:
+                if not _os.path.exists(str(self.workspace.db_path)):
+                    return
+            except Exception:
+                return
+            try:
+                with _sql.connect(str(self.workspace.db_path)) as conn:
+                    conn.row_factory = _sql.Row
+                    row = conn.execute(
+                        "SELECT id, items_json, attempts FROM write_outbox "
+                        "WHERE workspace_id=? AND status='pending' "
+                        "ORDER BY id LIMIT 1", (self.workspace.id,)).fetchone()
+            except Exception:
+                row = None
+            if row is None:
+                # Nothing pending. Wait briefly for a wake, then EXIT the
+                # thread if still idle — the next _outbox_enqueue / recover
+                # respawns it. This bounds lingering drainer threads (one per
+                # engine would otherwise sleep forever and pile up across a
+                # test session, raising the odds of a native fault under load).
+                woken = self._outbox_wake.wait(timeout=20.0)
+                self._outbox_wake.clear()
+                if not woken:
+                    # Decide to exit UNDER the lock with a final pending re-check
+                    # so an enqueue racing here can't orphan its row: it either
+                    # sees a live thread (we process below) or, after we clear
+                    # _outbox_thread, _ensure_outbox_drainer respawns.
+                    with self._outbox_lock:
+                        if self._outbox_pending_count() == 0:
+                            self._outbox_thread = None
+                            return
+                continue
+            self._outbox_process_one(row["id"], row["items_json"],
+                                     int(row["attempts"] or 0))
+            # tiny yield so a burst of enqueues doesn't starve other threads
+            _t.sleep(0)
+
+    def _outbox_process_one(self, row_id: int, items_json: str,
+                            attempts: int) -> None:
+        import json as _json
+        import sqlite3 as _sql
+        import time as _t
+        db = str(self.workspace.db_path)
+        try:
+            with _sql.connect(db) as conn:
+                conn.execute("UPDATE write_outbox SET status='processing' "
+                             "WHERE id=?", (row_id,))
+            items = _json.loads(items_json)
+            self.record_batch(items)
+            with _sql.connect(db) as conn:
+                conn.execute("UPDATE write_outbox SET status='done', done_at=? "
+                             "WHERE id=?", (_t.time(), row_id))
+        except Exception as e:
+            attempts += 1
+            terminal = attempts >= 5
+            try:
+                with _sql.connect(db) as conn:
+                    conn.execute(
+                        "UPDATE write_outbox SET status=?, attempts=?, "
+                        "last_error=? WHERE id=?",
+                        ("failed" if terminal else "pending", attempts,
+                         f"{type(e).__name__}: {e}"[:300], row_id))
+            except Exception:
+                pass
+            try:
+                from pmb.core.errlog import log_error
+                log_error(db, "write_outbox", e,
+                          f"row={row_id} attempt={attempts}"
+                          + (" TERMINAL" if terminal else ""))
+            except Exception:
+                pass
+            if not terminal:
+                _t.sleep(min(1.5 * attempts, 8.0))  # exponential-ish backoff
 
     def wait_for_writes(self, timeout: float = 120.0) -> bool:
         """Block the current thread until ALL in-flight async batches
@@ -143,17 +334,27 @@ class BatchMixin:
 
         Returns:
             True if drained cleanly, False on timeout.
+
+        Waits for BOTH the durable outbox (pending+processing rows for this
+        workspace) and the legacy in-flight counter, so it is correct whether
+        write.outbox is on or off.
         """
         import time as _t
         deadline = _t.time() + timeout
-        with self._async_writes_cv:
-            while self._async_writes_in_flight > 0:
-                remaining = deadline - _t.time()
-                if remaining <= 0:
-                    return False
-                # `wait()` releases the lock while waiting; re-acquired on wake.
-                self._async_writes_cv.wait(timeout=min(remaining, 1.0))
-        return True
+        while True:
+            with self._async_writes_cv:
+                inflight = self._async_writes_in_flight
+            pending = self._outbox_pending_count()
+            if inflight == 0 and pending == 0:
+                return True
+            if _t.time() >= deadline:
+                return False
+            # nudge the drainer in case it is asleep, then re-check shortly
+            try:
+                self._outbox_wake.set()
+            except Exception:
+                pass
+            _t.sleep(0.05)
 
     def record_batch(self, items: list[dict]) -> dict:
         """Improvement T: single-shot batch write across all record_* APIs.

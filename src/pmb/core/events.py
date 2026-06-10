@@ -265,6 +265,40 @@ _DDL = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_ls_lesson ON lesson_surfaces(lesson_ulid)",
     "CREATE INDEX IF NOT EXISTS idx_ls_ws_time ON lesson_surfaces(workspace_id, surfaced_at DESC)",
+    # ------------------------------------------------------------------
+    # v7: durable write outbox + error log (additive, IF NOT EXISTS so
+    # existing DBs pick them up on next open; no schema-version bump needed).
+    #
+    # write_outbox: record_batch_async enqueues a row HERE synchronously
+    # (~1ms) before returning, so a crash between accept and the background
+    # write loses nothing — the drainer (and recover_on_start) replay pendings.
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS write_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id TEXT NOT NULL,
+        created_at REAL NOT NULL,
+        items_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        done_at REAL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_outbox_status ON write_outbox(status, id)",
+    # error_log: one row per swallowed exception that used to be a bare
+    # `except Exception: pass`. Surfaced by `pmb doctor` / the status panel.
+    """
+    CREATE TABLE IF NOT EXISTS error_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts REAL NOT NULL,
+        component TEXT NOT NULL,
+        message TEXT,
+        trace_head TEXT,
+        note TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_errlog_ts ON error_log(ts DESC)",
 ]
 
 

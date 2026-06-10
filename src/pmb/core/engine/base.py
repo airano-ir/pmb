@@ -182,6 +182,16 @@ class Engine(
         self._async_writes_in_flight = 0
         self._async_writes_cv = _threading.Condition(_threading.Lock())
 
+        # B4: durable write outbox. record_batch_async enqueues a row into the
+        # write_outbox SQLite table synchronously, then a single lazy drainer
+        # thread replays pendings — so a crash between accept and write loses
+        # nothing. State here; logic in BatchMixin. Lazy: a read-only CLI that
+        # never calls record_batch_async starts no thread.
+        self._outbox_lock = _threading.Lock()
+        self._outbox_wake = _threading.Event()
+        self._outbox_thread = None
+        self._outbox_recovered = False
+
         # Improvement #5: bulk-import mode. When True, every per-item
         # cross-cutting step (dedup L1+L2, graph indexing, temporal
         # parsing, causation edges, L2.5 queue) is skipped. Only the
