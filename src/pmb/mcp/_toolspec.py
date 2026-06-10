@@ -70,6 +70,134 @@ _LEAN_TOOLS = _DEFAULT_TOOLS - {
 }
 
 
+# D1: compact tool descriptions. The full multi-paragraph docstrings (the
+# read-before-write workflow, the write-triggers table, examples) are ALSO in
+# the server `instructions` block, so repeating them per tool burns ~16KB of
+# context every session. For non-"full" profiles we serve these short
+# descriptions instead (one sentence: purpose + when-to-use + key args). The
+# `full` profile keeps the long docstrings for debugging/dev. Tools not listed
+# here keep their docstring unchanged.
+_SHORT_DESC: dict[str, str] = {
+    "record_batch": (
+        "⚡ PREFERRED for any message with multiple memories — stores N atomic "
+        "items in ONE call (each ~3-5s of agent thinking saved vs separate "
+        "record_* calls). items: list of dicts, each with a `type`: "
+        "fact{content,importance} | fact_tree{main,subfacts[],importance} | "
+        "goal{title,status,due_at} | plan{title} (future intent) | "
+        "activity{content,kind} | milestone{chain_name,title,state}. ONE "
+        "record_batch per turn; use ABSOLUTE dates."
+    ),
+    "prepare": (
+        "READ-FIRST bundle at the start of work on a known project. "
+        "prepare(message=<the user's message>) returns project_context, "
+        "surfaced lessons (each with surface_id — FOLLOW them, then "
+        "mark_lesson_followed), recent_activity and open_goals in one ~10ms "
+        "call. Replaces several recall() calls."
+    ),
+    "record_fact": (
+        "Store ONE atomic fact. record_fact(fact, importance=0.7, metadata?). "
+        "For several facts use record_batch instead. Future intent "
+        "('we'll do X next') → record_goal, not a fact."
+    ),
+    "record_fact_tree": (
+        "Store a main fact + linked subfacts in one call. "
+        "record_fact_tree(main, subfacts=[...], importance=0.9). Each subfact "
+        "becomes a sibling event searchable on its own."
+    ),
+    "recall": (
+        "Search memory for anything about the user/past/project. "
+        "recall(query, top_k=5). Returns results + auto-attached lessons "
+        "(read & FOLLOW them) + project_context. Trust results with score>0.2 "
+        "as the user's recorded reality."
+    ),
+    "recall_smart": (
+        "recall for IMPORTANT queries — auto-escalates on low confidence within "
+        "a bounded wall-clock budget. recall_smart(query, top_k=5). Returns "
+        "escalation info so you don't fan out more recalls."
+    ),
+    "recall_deep": (
+        "Explicit slow/deep recall with LLM query-decomposition. "
+        "recall_deep(query). Opt-in — use only when recall/recall_smart aren't "
+        "enough; may take seconds."
+    ),
+    "record_activity": (
+        "Log ONE working-memory activity (lighter than a fact, 3-day decay). "
+        "record_activity(content, kind='edit'|'completed'|'decision'|"
+        "'tool_call', actor='agent'). For work you finished or a decision made."
+    ),
+    "record_goal": (
+        "Record ONE goal/intention. record_goal(title, status='pending'|"
+        "'in_progress'|'done', due_at=<epoch>, parent_goal_ulid?). Future "
+        "intent ('next we'll do X') belongs here, not in a fact."
+    ),
+    "record_milestone": (
+        "Record a checkpoint in a named state-chain. "
+        "record_milestone(chain_name, title, state={...}, triggered_by_ulid?). "
+        "For a metric's evolution (e.g. test count 6→7→11)."
+    ),
+    "record_keyed_fact": (
+        "Upsert a mutable personal attribute. record_keyed_fact(subject, "
+        "attribute, value) — e.g. user/city/Tampa. A new value SUPERSEDES the "
+        "old under one canonical key instead of piling up."
+    ),
+    "project_overview": (
+        "One-call full context for a NAMED project at the start of work. "
+        "project_overview(name) → lessons (rules to follow), decisions, open "
+        "goals, recent activity, related entities."
+    ),
+    "find_lessons": (
+        "Standalone 'what procedural rules apply to X'. find_lessons(query) → "
+        "lessons with surface_id. FOLLOW them, then mark_lesson_followed."
+    ),
+    "mark_lesson_followed": (
+        "Report whether a surfaced lesson changed your behaviour. "
+        "mark_lesson_followed(surface_id, followed=True|False, note='...'). "
+        "Call after acting on a lesson — powers the self-improvement loop."
+    ),
+    "overview": (
+        "Structured 'what do I know about <topic>'. overview(topic) → facts, "
+        "entities and relations grouped for that topic."
+    ),
+    "session_brief": (
+        "Re-orient after YOUR context compacted. session_brief() → what THIS "
+        "session decided/built. Don't re-ask the user."
+    ),
+    "recent_activity": (
+        "Instant (no vector search) list of the last X minutes of activity. "
+        "recent_activity(minutes=60). For 'what did we just do'."
+    ),
+    "what_just_happened": (
+        "Instant last-N events of the current session. "
+        "what_just_happened(n=5). For 'what were we just doing'."
+    ),
+    "list_recent": (
+        "List the last N events of any type. list_recent(limit=20, "
+        "event_type?). A plain browse — recall/recent_activity are usually "
+        "better."
+    ),
+    "list_goals": (
+        "List open goals. list_goals(status='in_progress'). For 'what are my "
+        "goals/what's in flight'."
+    ),
+    "index_pdf": (
+        "Ingest a PDF into memory. index_pdf(path) — extracts, chunks and "
+        "embeds the document so its content is recallable."
+    ),
+    "index_project": (
+        "Ingest a code-project's structure into memory. index_project(path) — "
+        "indexes files/symbols for project-aware recall."
+    ),
+}
+
+
+def short_description(tool_name: str) -> "str | None":
+    """The compact description to serve for `tool_name` under non-full
+    profiles, or None to keep the function's docstring."""
+    if _TOOL_PROFILE == "full":
+        return None
+    return _SHORT_DESC.get(tool_name)
+
+
 def _should_register(tool_name: str) -> bool:
     """True if `tool_name` should be visible to the LLM under current profile."""
     if _TOOL_PROFILE == "full":

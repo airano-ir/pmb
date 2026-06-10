@@ -412,10 +412,18 @@ def build_server(
         workspace_id=engine.workspace.id,
     )
     _original_tool = mcp.tool
+    from pmb.mcp._toolspec import short_description as _short_desc
 
     def _timed_tool(*t_args, **t_kwargs):
-        original = _original_tool(*t_args, **t_kwargs)
         def _inner(fn):
+            # D1: serve a compact description (non-"full" profiles) instead of
+            # the long docstring, unless the call already set one explicitly.
+            kwargs = dict(t_kwargs)
+            if "description" not in kwargs:
+                sd = _short_desc(getattr(fn, "__name__", ""))
+                if sd:
+                    kwargs["description"] = sd
+            original = _original_tool(*t_args, **kwargs)
             return original(_timing_decorator(fn))
         return _inner
 

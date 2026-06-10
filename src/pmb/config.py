@@ -434,6 +434,20 @@ SCHEMA: dict[str, _Setting] = {
         "real semantic recall. The current message still answers cold. Set "
         "false to require an explicit `pmb daemon start`.",
     ),
+    "mcp.compact_responses": _Setting(
+        bool, True,
+        "Trim MCP tool responses before sending: drop null/empty fields and "
+        "cap each recall result's content (see mcp.max_item_chars). Saves "
+        "tokens per call without losing information the agent needs. Off "
+        "restores verbose responses.",
+    ),
+    "mcp.max_item_chars": _Setting(
+        int, 600,
+        "When mcp.compact_responses is on, cap each recall result's content at "
+        "this many chars (… suffix when trimmed). Generous by default so normal "
+        "facts are untouched; only pathologically long items shrink. 0 = no cap.",
+        min=0, max=100000,
+    ),
     "write.outbox": _Setting(
         bool, True,
         "Durable write outbox for record_batch_async. When ON (default), an "

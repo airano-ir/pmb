@@ -183,6 +183,77 @@ def mcp_status_cmd():
     )
 
 
+@mcp_app.command("perf")
+def mcp_perf_cmd(
+    days: float = typer.Option(7.0, "--days", help="Look-back window in days."),
+):
+    """Per-tool MCP latency + error report (reads the mcp_calls table).
+
+    The measurement loop for the token-diet / daemon work: shows whether tools
+    actually got faster. p50/p95 in ms, error and client-timeout rates."""
+    import sqlite3
+    import time
+
+    from pmb.core.workspace import detect_workspace
+    ws = detect_workspace()
+    if not ws.db_path.exists():
+        console.print("[yellow]No workspace database yet.[/]")
+        return
+    cutoff = time.time() - days * 86400.0
+    try:
+        with sqlite3.connect(str(ws.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT tool_name, duration_ms, success, outcome, client_timeout "
+                "FROM mcp_calls WHERE timestamp >= ?", (cutoff,)).fetchall()
+    except Exception as e:
+        console.print(f"[yellow]No MCP perf data ({e}).[/]")
+        return
+    if not rows:
+        console.print(f"[yellow]No MCP calls in the last {days:g} day(s).[/] "
+                      "[dim]Perf is recorded once tools are called via MCP.[/]")
+        return
+
+    from collections import defaultdict
+    agg: dict[str, dict] = defaultdict(
+        lambda: {"durs": [], "err": 0, "to": 0, "n": 0})
+    for r in rows:
+        a = agg[r["tool_name"]]
+        a["n"] += 1
+        a["durs"].append(float(r["duration_ms"] or 0.0))
+        if r["outcome"] == "error" or (r["success"] is not None and not r["success"]):
+            a["err"] += 1
+        if r["client_timeout"]:
+            a["to"] += 1
+
+    def _pct(xs, p):
+        if not xs:
+            return 0.0
+        s = sorted(xs)
+        i = min(len(s) - 1, int(round((p / 100.0) * (len(s) - 1))))
+        return s[i]
+
+    table = Table(show_header=True, header_style="bold magenta",
+                  title=f"MCP tool performance (last {days:g}d)")
+    table.add_column("Tool")
+    table.add_column("Calls", justify="right")
+    table.add_column("p50 ms", justify="right")
+    table.add_column("p95 ms", justify="right")
+    table.add_column("Err%", justify="right")
+    table.add_column("Timeouts", justify="right")
+    for name, a in sorted(agg.items(), key=lambda kv: -kv[1]["n"]):
+        err_pct = 100.0 * a["err"] / a["n"] if a["n"] else 0.0
+        table.add_row(
+            name, str(a["n"]),
+            f"{_pct(a['durs'], 50):.0f}", f"{_pct(a['durs'], 95):.0f}",
+            (f"[red]{err_pct:.0f}[/]" if err_pct >= 5 else f"{err_pct:.0f}"),
+            str(a["to"]) if a["to"] else "—",
+        )
+    console.print(table)
+    total = sum(a["n"] for a in agg.values())
+    console.print(f"[dim]{total} call(s) across {len(agg)} tool(s).[/]")
+
+
 @hooks_app.command("install")
 def hooks_install_cmd(
     agent: str = typer.Argument(

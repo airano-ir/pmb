@@ -4,6 +4,31 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+### Changed (MCP token diet — Phase D)
+
+- **Tool descriptions shrank ~71%.** The full multi-paragraph tool docstrings
+  duplicated the read-before-write workflow and write-triggers table that are
+  already in the server `instructions` block, costing ~15.7 KB (~3.9k tokens)
+  of context on every `default`-profile session. Non-`full` profiles now serve
+  compact one-line descriptions (purpose + when-to-use + key args): default
+  drops to ~4.5 KB, lean ~4.1 KB, minimal ~2.2 KB. The `full` profile keeps the
+  long docstrings for debugging. A budget test pins this so a docstring can't
+  silently re-bloat every session.
+- **Recall responses are trimmed before they go over the wire.** `recall` /
+  `recall_smart` / `recall_deep` drop genuinely-null (`None`) top-level fields
+  and cap each result's content at `mcp.max_item_chars` (default 600 —
+  generous, so normal facts are untouched; only pathologically long items
+  shrink). Gated by `mcp.compact_responses` (default on). Structural fields
+  (`results`, `lessons`) and 0/False values are always kept.
+
+### Added (MCP token diet — Phase D)
+
+- **`pmb mcp perf`** — per-tool latency (p50/p95), error rate and client-timeout
+  count from the `mcp_calls` table, so "did the token diet / daemon make tools
+  faster" is a number, not a feeling. `pmb connect` already selects the `lean`
+  tool profile when it installs hooks (the read-status tools the hooks cover are
+  dropped), which now also benefits from the smaller descriptions.
+
 ### Added (language packs — Phase C2/C3)
 
 - **Adding a language is now one YAML file.** PMB's lexical fast-paths
