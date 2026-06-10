@@ -397,6 +397,18 @@ class GoalsMixin:
             clean_details, _ = redact_metadata(details)
             meta.update(clean_details)
 
+        # E4: keep routine activities from crowding real facts in ranking.
+        # Unless effectively pinned (>=0.99), cap activity importance at the
+        # configured ceiling and leave a breadcrumb. Facts/lessons/goals are
+        # written by other methods and never pass through here.
+        try:
+            ceiling = float(self.config.get("write.max_activity_importance") or 0.8)
+            if importance < 0.99 and importance > ceiling:
+                meta["importance_clamped"] = importance
+                importance = ceiling
+        except Exception:
+            pass
+
         # Bulk-import shortcut: skip graph + L2.5 queue, just persist
         if getattr(self, "_bulk_mode", False):
             ev = Event(

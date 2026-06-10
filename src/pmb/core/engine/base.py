@@ -182,6 +182,11 @@ class Engine(
         self._async_writes_in_flight = 0
         self._async_writes_cv = _threading.Condition(_threading.Lock())
 
+        # D4: recall singleflight — collapse concurrent identical top-level
+        # recalls (one Event per in-flight key; result carried on the Event).
+        self._sf_lock = _threading.Lock()
+        self._sf_inflight: dict = {}
+
         # B4: durable write outbox. record_batch_async enqueues a row into the
         # write_outbox SQLite table synchronously, then a single lazy drainer
         # thread replays pendings — so a crash between accept and write loses

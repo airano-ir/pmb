@@ -83,6 +83,17 @@ behaviour. "We use pnpm, never npm" → use pnpm. No discussion.
        They will surface in every future recall — record them so the
        NEXT session of yourself reads them and gets smarter.
 
+══════════ DON'T record ══════════
+
+Memory is for what's NOT trivially re-derivable. Skip:
+  - secrets / tokens / API keys (they're redacted anyway — don't rely on it)
+  - transient tool output, stack traces, file/dir listings as "facts"
+  - restating repo content (code structure, file contents, git history) —
+    the agent can just read the repo
+  - future intent as a fact → use a goal instead (see trigger table)
+Junk is cheap but not free: it dilutes recall. When unsure whether something
+is durable signal vs. transient noise, lean toward NOT recording it.
+
 ══════════ RULES ══════════
 
 - ONE record_batch per turn (never multiple)

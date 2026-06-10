@@ -313,11 +313,34 @@ _USER_CUE_RE = re.compile(
 )
 
 
+def _pack_first_person() -> frozenset:
+    """First-person markers from active language packs (C4), lowercased.
+    Lets the offline keyed-suggestion prefilter recognise the user in an
+    unpacked-by-default language (e.g. German 'ich'/'mein') once its pack is
+    enabled. Empty + cached when no pack adds first_person."""
+    try:
+        from pmb import lang as _lang
+        return frozenset(_lang.merged_set("first_person", set()))
+    except Exception:
+        return frozenset()
+
+
 def has_user_subject_cue(content: str) -> bool:
     """True if CONTENT mentions the user / first person anywhere. Cheap, broad
     prefilter for the offline keyed-suggestion LLM — keeps "Alice relocated to
-    Berlin" from ever being proposed as the user's city."""
-    return bool(content and _USER_CUE_RE.search(content))
+    Berlin" from ever being proposed as the user's city. EN/RU markers are
+    built in; an enabled language pack's first_person markers extend it (C4)
+    so keyed extraction also works for that language."""
+    if not content:
+        return False
+    if _USER_CUE_RE.search(content):
+        return True
+    extra = _pack_first_person()
+    if extra:
+        toks = set(re.findall(r"[^\W\d_]+", content.lower(), flags=re.UNICODE))
+        if toks & extra:
+            return True
+    return False
 
 
 # ── future-intent ("plan") detection ──────────────────────────────────────

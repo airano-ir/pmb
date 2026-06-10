@@ -85,6 +85,18 @@ def test_malformed_pack_is_ignored(tmp_home):
 
 # ── built-in templates ──────────────────────────────────────────────────────
 
+def test_c4_user_cue_is_pack_aware(tmp_home):
+    """C4: the offline keyed-suggestion prefilter recognises the user in a
+    packed language. German 'ich' passes only once de is enabled; third-party
+    'Alice wohnt' is still rejected; EN works with no pack."""
+    from pmb.reasoning.attributes import has_user_subject_cue
+    assert has_user_subject_cue("I moved to Berlin")          # EN built-in
+    assert not has_user_subject_cue("Ich wohne in Berlin")    # de not enabled yet
+    _write_pack(tmp_home, "de", "first_person: [ich, mein]")
+    assert has_user_subject_cue("Ich wohne in Berlin")        # de enabled → passes
+    assert not has_user_subject_cue("Alice wohnt in Berlin")  # third party rejected
+
+
 def test_builtin_templates_present_and_load():
     bt = lang.builtin_templates()
     assert "de" in bt and "es" in bt

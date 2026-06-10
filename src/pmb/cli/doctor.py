@@ -200,6 +200,31 @@ def check_recent_errors() -> dict:
     return _warn(f"{total} swallowed error(s) in last 24h — {top}")
 
 
+def check_quality_flags() -> dict:
+    """Surface how many incoming facts the write-time quality gate (#E2,
+    default ON) flagged as suspect_junk recently, so the user can audit for
+    false positives and review/clean them with `pmb declutter`."""
+    try:
+        import sqlite3
+        import time as _t
+        from pmb.core.workspace import detect_workspace
+        ws = detect_workspace()
+        if not ws.db_path.exists():
+            return _ok("no events yet")
+        cutoff = _t.time() - 30 * 86400.0
+        with sqlite3.connect(str(ws.db_path)) as conn:
+            n = conn.execute(
+                "SELECT COUNT(*) FROM events WHERE timestamp >= ? "
+                "AND metadata_json LIKE '%\"quality_flag\": \"suspect_junk\"%'",
+                (cutoff,)).fetchone()[0]
+    except Exception as e:
+        return _ok(f"quality-flag count unavailable: {e}")
+    if not n:
+        return _ok("no facts flagged as junk in the last 30d")
+    return _ok(f"{n} fact(s) flagged suspect_junk (30d) — review with "
+               f"`pmb declutter`")
+
+
 def mcp_config_hint() -> dict:
     """Print Claude Code MCP config snippet for the user to copy."""
     pmb_mcp = shutil.which("pmb-mcp")
@@ -349,6 +374,7 @@ def run_doctor(remote: Optional[str] = None) -> list[tuple[str, dict]]:
         ("Consolidation backend", check_consolidation_backend()),
         ("Current workspace", check_current_workspace()),
         ("Recent errors (24h)", check_recent_errors()),
+        ("Quality gate (30d)", check_quality_flags()),
         ("MCP config hint", mcp_config_hint()),
     ]
     if remote:
