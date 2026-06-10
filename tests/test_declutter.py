@@ -121,7 +121,61 @@ def test_exact_duplicate_keeps_newest(eng):
     newer = _seed(eng, "Postgres runs on port 5432", ts=NOW - 50)
     cand = _by_ulid(declutter(eng, apply=False))
     assert cand.get(older) == "exact_duplicate"
-    assert newer not in cand  # newest copy kept
+    assert newer not in cand  # newest copy kept (equal importance → recency)
+
+
+# ── A5: short non-stopword facts are review-only, never auto-archived ────────
+
+@pytest.mark.parametrize("val", ["O+", "HIV+", "ADHD", "Tampa", "B-", "INTJ"])
+def test_short_real_fact_is_review_only(eng, val):
+    u = _seed(eng, val, imp=0.2)
+    res = declutter(eng, apply=False)
+    assert _by_ulid(res).get(u) == "short_review"
+    # default --apply must NOT archive a short_review item
+    res2 = declutter(eng, apply=True)
+    assert _is_active(eng, u)
+    assert res2["n_applied"] == 0
+
+
+def test_short_fact_archived_only_with_aggressive(eng):
+    u = _seed(eng, "Tampa", imp=0.2)
+    res = declutter(eng, apply=True, aggressive=True)
+    assert not _is_active(eng, u)
+    assert res["n_applied"] == 1
+
+
+def test_keyed_short_value_not_decluttered(eng):
+    """A keyed value ("O+" under user::blood_type) is structure, not junk —
+    it must never appear as a near_empty/short candidate."""
+    eng.record_keyed_fact("user", "blood_type", "O+")
+    cand = _by_ulid(declutter(eng, apply=False))
+    # no candidate carries the O+ content under a near_empty/short reason
+    assert all(r not in ("near_empty", "short_review") for r in cand.values())
+
+
+# ── A6: duplicate keep-policy prefers the most valuable copy ─────────────────
+
+def test_duplicate_keeps_most_valuable_not_newest(eng):
+    older_important = _seed(eng, "we deploy on fly.io", imp=0.9, ts=NOW - 200)
+    newer_cheap = _seed(eng, "we deploy on fly.io", imp=0.4, ts=NOW - 50)
+    cand = _by_ulid(declutter(eng, apply=False))
+    assert cand.get(newer_cheap) == "exact_duplicate"  # cheap newer archived
+    assert older_important not in cand                  # valuable older kept
+
+
+def test_duplicate_keeps_more_accessed_copy(eng):
+    accessed = _seed(eng, "the cron runs at 03:00 UTC", imp=0.5, ac=7, ts=NOW - 200)
+    fresh = _seed(eng, "the cron runs at 03:00 UTC", imp=0.5, ac=0, ts=NOW - 50)
+    cand = _by_ulid(declutter(eng, apply=False))
+    assert cand.get(fresh) == "exact_duplicate"
+    assert accessed not in cand
+
+
+def test_duplicate_archive_stamps_duplicate_of(eng):
+    older = _seed(eng, "redis on 6379", imp=0.9, ts=NOW - 200)
+    newer = _seed(eng, "redis on 6379", imp=0.4, ts=NOW - 50)
+    declutter(eng, apply=True)
+    assert _meta(eng, newer).get("duplicate_of") == older
 
 
 def test_pinned_and_lessons_protected(eng):

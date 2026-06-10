@@ -2,9 +2,51 @@
 
 All notable changes to PMB are documented here.
 
-## [Unreleased]
+## [0.6.0] — 2026-06-09
 
-### Fixed
+### Fixed (keyed-memory correctness — Phase A)
+
+- **Negation detection no longer archives facts about OTHER people.** The
+  detector previously checked a user cue and a negation INDEPENDENTLY anywhere
+  in the text, so "I learned that Alice no longer lives in Paris" was read as
+  the USER negating their own city — and recording the user's real city then
+  auto-archived Alice's fact. The user subject must now sit immediately before
+  the negated verb, evaluated per sentence. Third-party and possessive-chain
+  forms ("my sister doesn't work at Google", "my sister's employer is unknown")
+  return None.
+- **Offline keyed-state suggestions can no longer mislabel a third party as the
+  user.** `suggest_keyed_from_llm` gained three gates: a first-person prefilter
+  before the LLM is called, an explicit `subject=="user"` field the LLM must
+  return, and exclusion of `suspect_junk`-flagged facts. "Alice relocated to
+  Berlin" can never become `user::city`.
+- **Offline LLM passes are now wall-clock bounded.** A shared `LLMBudget`
+  (config `llm.offline_max_calls`=40, `llm.offline_budget_s`=120) caps the WHOLE
+  pass, not just a single call — keyed suggestions and the declutter judge can
+  no longer run for many minutes on a slow local model.
+- **`hometown` is a separate key from current `city`.** "I'm from Kyiv" no
+  longer overwrites "I live in Tampa" — origin and current residence are
+  distinct keyed attributes.
+- **`pmb declutter` stops treating short facts as junk.** The `<8 chars → junk`
+  rule archived real memories like `O+`, `HIV+`, `ADHD`, `Tampa`. Short
+  non-stopword facts are now surfaced as `short_review` and excluded from
+  `--apply` unless `--aggressive` is passed; keyed values are never near-empty
+  candidates.
+- **Duplicate resolution keeps the most valuable copy.** Exact-duplicate
+  archiving previously always kept the newest; it now keeps the copy with the
+  highest importance, then access count, then recency, and stamps the archived
+  copies with `duplicate_of`.
+- **`pmb consolidate` runs the keyed-suggestion pass even with zero clusters,**
+  and the command's `--backend`/`--model` now reach that pass (previously it
+  returned early on quiet workspaces and ignored the chosen backend).
+- **A freshly recorded name takes effect on the next recall.** The user-name
+  cache is marked dirty on a "My name is X" write instead of refreshing only
+  every 25 events, and the per-recall `SELECT COUNT(*)` is gone (a flag check
+  on the common path) — important for a long-lived process.
+- **`pmb warmup` no longer over-promises.** Its message now states that warmup
+  only warms the current process; hook-based auto-recall stays SQL-only until
+  the persistent daemon ships.
+
+### Fixed (Phase 0.6.0 baseline — previously merged)
 
 - **No personal-name or test-name literals leak into ranking.** The recall
   identity-marker boost no longer hardcodes a name — it is driven by the mined

@@ -35,9 +35,15 @@ _ALIAS_GROUPS: dict[str, set[str]] = {
     "city": {
         "city", "current_city", "city_now", "current_city_2026", "town",
         "lives_in", "live_in", "living_in", "residence", "resides_in",
-        "location", "current_location", "based_in", "home_city", "hometown",
+        "location", "current_location", "based_in",
         "город", "город_проживания", "живет", "живёт", "проживает",
         "место_жительства", "местожительства", "проживание",
+    },
+    # Hometown is immutable ORIGIN, NOT current residence — it must never share
+    # the `city` key, or "I'm from Kyiv" would overwrite "I live in Tampa".
+    "hometown": {
+        "hometown", "home_city", "home_town", "birthplace", "born_in",
+        "родной_город", "откуда_родом", "родом_из",
     },
     "country": {
         "country", "current_country", "nation", "страна",
@@ -218,39 +224,91 @@ def detect_current_state(content: str) -> Optional[tuple[str, str]]:
 # pure stale noise — it asserts ignorance about a now-known attribute. These
 # patterns find such facts so the write/repair paths can archive them.
 #
-# Precision matters (a false positive archives a real fact), so the negation
-# must sit ADJACENT to the attribute verb — "doesn't work on weekends" must
-# NOT register as a negated employer state — and a subject cue (I / my / user)
-# must be present so third-party statements ("he no longer lives in Paris")
-# are ignored.
-_SUBJECT_RE = re.compile(
-    r"\b(?:i|i'?m|i've|my|me|user|user'?s|я|мне|меня|мо[йяё]|пользовател\w*)\b",
-    re.IGNORECASE,
+# Precision is paramount: a false positive ARCHIVES a real fact. The earlier
+# design checked a subject cue and a negation INDEPENDENTLY anywhere in the
+# text, so "I learned that Alice no longer lives in Paris" was mis-read as the
+# USER negating their own city — and recording the user's real city then
+# auto-archived a fact about Alice. The fix: the user subject must sit
+# IMMEDIATELY before the negated verb (one optional adverb allowed), evaluated
+# per sentence, so a first-person cue in one clause can't license a
+# third-party negation in another.
+
+# Subject cue that must be ADJACENT to the negation: "I no longer live",
+# "the user does not currently live", "я больше не живу". Longest alternatives
+# first so "I've"/"I'm" win over bare "i". NOTE: deliberately excludes "my" —
+# possessive belongs to the "<poss> X is unknown" form (`_POSS`), not here.
+_SUBJ_ADJ = (
+    r"\b(?:i've|i'?m|i|the\s+user|user|я|пользовател\w*)\b"
+    r"(?:\s+(?:still|also|really|currently|всё\s+ещё|уже|сейчас))?"
 )
-_NEG = r"(?:does not|doesn'?t|do not|don'?t|did not|didn'?t|no longer|not currently|больше не|уже не|не)"
+# Possessive user cue for the "<poss> (current) <attr> … is unknown" form. The
+# attribute noun must follow CLOSELY (optional "current" only) so a third-party
+# possessive chain ("my sister's employer is unknown") can't match.
+_POSS = r"\b(?:my|the\s+user'?s|user'?s|мо[йяё]|пользовател\w*)\b"
+_NEG = (
+    r"(?:does\s+not|doesn'?t|do\s+not|don'?t|did\s+not|didn'?t|"
+    r"no\s+longer|not\s+currently|больше\s+не|уже\s+не|не)"
+)
 _UNK = r"(?:unknown|not known|unclear|неизвест\w*)"
 
 _NEGATED_STATE_PATTERNS: list[tuple[re.Pattern, str]] = [
-    # "<neg> (currently) live/reside in …" → city
+    # user-adjacent negation + live verb → city
     (re.compile(
-        _NEG + r"\s+(?:currently\s+)?(?:live|lives|living|reside|resides|жив\w*)\b",
+        _SUBJ_ADJ + r"\s+" + _NEG +
+        r"\s+(?:currently\s+)?(?:live|lives|living|reside|resides|жив\w*)\b",
         re.IGNORECASE), "city"),
-    # "(current) city / location / residence … is unknown" → city
+    # user-adjacent negation + work verb → employer
     (re.compile(
-        r"\b(?:current\s+)?(?:city|location|residence|town|город|местожительства)\b"
-        r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "city"),
-    # "<neg> (currently) work at/for …" → employer
-    (re.compile(
-        _NEG + r"\s+(?:currently\s+)?(?:work|works|working|работа\w*)\s+(?:at|for|в|на)\b",
+        _SUBJ_ADJ + r"\s+" + _NEG +
+        r"\s+(?:currently\s+)?(?:work|works|working|работа\w*)\s+(?:at|for|в|на)\b",
         re.IGNORECASE), "employer"),
+    # possessive + (current) city/location … is unknown → city
     (re.compile(
-        r"\b(?:current\s+)?(?:employer|company|workplace|работодател\w*|компани\w*)\b"
+        _POSS + r"\s+(?:current\s+)?"
+        r"(?:city|location|residence|town|город|местожительства)\b"
+        r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "city"),
+    # possessive + (current) employer/company … is unknown → employer
+    (re.compile(
+        _POSS + r"\s+(?:current\s+)?"
+        r"(?:employer|company|workplace|работодател\w*|компани\w*)\b"
         r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "employer"),
-    # "(current) country … is unknown" → country
+    # possessive + (current) country … is unknown → country
     (re.compile(
-        r"\b(?:current\s+)?(?:country|nation|страна)\b[^.;!?]*\b" + _UNK + r"\b",
-        re.IGNORECASE), "country"),
+        _POSS + r"\s+(?:current\s+)?(?:country|nation|страна)\b"
+        r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "country"),
 ]
+
+# Fallback for the two-clause corpus form where the negation clause has no
+# recognised verb but a sibling clause says "current <attr> is unknown" — only
+# fires when a user-adjacent negation is present in the SAME sentence, so a
+# bare "current city is unknown" with no subject stays None.
+_SUBJ_NEG_RE = re.compile(_SUBJ_ADJ + r"\s+" + _NEG, re.IGNORECASE)
+_BARE_UNK_RE: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\b(?:current\s+)?(?:city|location|residence|town|город)\b"
+                r"[^.;!?]*\b" + _UNK, re.IGNORECASE), "city"),
+    (re.compile(r"\b(?:current\s+)?(?:employer|company|workplace|работодател\w*)\b"
+                r"[^.;!?]*\b" + _UNK, re.IGNORECASE), "employer"),
+    (re.compile(r"\b(?:current\s+)?(?:country|nation|страна)\b"
+                r"[^.;!?]*\b" + _UNK, re.IGNORECASE), "country"),
+]
+
+# Broad "could this be about the user at all" prefilter (first-person / user
+# mention ANYWHERE). Used to gate the offline keyed-suggestion LLM (#A2) so
+# third-party facts never reach it. Broad on purpose — it's a cheap prefilter;
+# the precise gate is the LLM answer's `subject` field. NOT used by
+# detect_negated_state (which needs adjacency, above).
+_USER_CUE_RE = re.compile(
+    r"\b(?:i|i'?m|i've|my|me|mine|user|user'?s|я|мне|меня|мной|мо[йяё]|"
+    r"пользовател\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def has_user_subject_cue(content: str) -> bool:
+    """True if CONTENT mentions the user / first person anywhere. Cheap, broad
+    prefilter for the offline keyed-suggestion LLM — keeps "Alice relocated to
+    Berlin" from ever being proposed as the user's city."""
+    return bool(content and _USER_CUE_RE.search(content))
 
 
 # ── future-intent ("plan") detection ──────────────────────────────────────
@@ -283,18 +341,26 @@ def looks_like_future_intent(content: str) -> bool:
 
 
 def detect_negated_state(content: str) -> Optional[str]:
-    """If CONTENT is a negation/"unknown" statement about a CURRENT personal
-    attribute ("the user no longer lives in Warsaw; current city is unknown"),
-    return the canonical attribute (e.g. "city"); else None.
+    """If CONTENT is a negation/"unknown" statement about the USER's CURRENT
+    personal attribute ("the user no longer lives in Warsaw; current city is
+    unknown"), return the canonical attribute (e.g. "city"); else None.
 
-    Conservative: requires a subject cue (I/my/user) and the negation adjacent
-    to the attribute verb, so it never fires on a third party or on an
-    unrelated "doesn't …" clause."""
+    Conservative and per-sentence: the user subject must sit immediately before
+    the negated verb, so "I learned that Alice no longer lives in Paris" and
+    "my sister doesn't work at Google" return None — they are about other
+    people and must never archive the user's own facts."""
     if not content or len(content) > 400:
         return None
-    if not _SUBJECT_RE.search(content):
-        return None
-    for pat, attr in _NEGATED_STATE_PATTERNS:
-        if pat.search(content):
-            return attr
+    for sentence in re.split(r"[.!?\n]+", content):
+        if not sentence.strip():
+            continue
+        for pat, attr in _NEGATED_STATE_PATTERNS:
+            if pat.search(sentence):
+                return attr
+        # two-clause form: a user-adjacent negation AND a bare "current <attr>
+        # is unknown" in the same sentence (e.g. the Warsaw corpus case).
+        if _SUBJ_NEG_RE.search(sentence):
+            for rx, attr in _BARE_UNK_RE:
+                if rx.search(sentence):
+                    return attr
     return None

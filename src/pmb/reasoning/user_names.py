@@ -73,6 +73,16 @@ def detect_user_names(events: list[str]) -> set[str]:
     return out
 
 
+def looks_like_name_statement(content: str) -> bool:
+    """True if CONTENT declares a user name ("My name is X", "Меня зовут X").
+    Cheap regex check used by the write path to mark the user-name cache dirty
+    so a freshly-recorded name takes effect on the very NEXT recall instead of
+    waiting for the periodic refresh."""
+    if not content:
+        return False
+    return any(p.search(content) for p in _NAME_PATTERNS)
+
+
 def mine_user_names_from_db(db_path: Path, limit: int = 1000) -> set[str]:
     """Scan recent active fact events for user-name declarations.
     Cheap (~10ms / 1000 events). Called from Engine on warmup / refresh."""
