@@ -78,9 +78,13 @@ _ALIAS_GROUPS: dict[str, set[str]] = {
     },
 }
 
-# Per-deployment extension: reference.yaml `alias_groups` adds aliases without
-# editing this file (extend-only — code defaults are never removed).
+# Per-deployment extension: reference.yaml `alias_groups`, then active language
+# packs `attribute_aliases` (e.g. German stadt/wohnort under `city`). Both
+# extend-only and no-ops without the respective files.
 _ALIAS_GROUPS = _extend_alias_groups(_ALIAS_GROUPS)
+from pmb import lang as _lang  # noqa: E402
+_ALIAS_GROUPS = _lang.merged_groups("attribute_aliases", _ALIAS_GROUPS)
+# merged_groups returns sets; alias values must stay sets for the reverse map.
 
 # reverse lookup alias → canonical, built once
 _ALIAS_TO_CANON: dict[str, str] = {}

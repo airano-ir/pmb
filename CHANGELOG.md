@@ -4,6 +4,20 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+### Added (language packs — Phase C2/C3)
+
+- **Adding a language is now one YAML file.** PMB's lexical fast-paths
+  (stopwords, function-words, verb synonyms, attribute aliases, first-person
+  markers) shipped covering EN/RU/UK only. A **language pack**
+  (`$PMB_HOME/lang/<code>.yaml`) extends them to any language with no code
+  changes. The EN/RU/UK lists stay in code as the floor and packs are
+  extend-only, so a workspace with no pack files behaves byte-for-byte as
+  before (pinned by a parity test). Built-in German and Spanish templates ship;
+  `pmb lang list / enable / disable / detect` manage them. `detect` samples the
+  corpus and SUGGESTS packs but never enables one silently — auto-activation by
+  script would pollute (German and English share the Latin alphabet), so
+  enabling is an explicit opt-in. See `docs/adding-a-language.md`.
+
 ### Fixed (Unicode-correct tokenization — Phase C1)
 
 - **Tokenizers no longer silently drop non-EN/RU letters.** The keyed-fact label

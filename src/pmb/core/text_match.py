@@ -47,8 +47,11 @@ STOPWORDS: frozenset[str] = frozenset({
     "folder", "directory", "drive",
 })
 
-# Per-deployment extension: reference.yaml `stopwords` (extend-only).
+# Per-deployment extension: reference.yaml `stopwords`, then active language
+# packs (extend-only — both no-ops without the respective files).
 STOPWORDS = _extend_set("stopwords", STOPWORDS)
+from pmb import lang as _lang  # noqa: E402
+STOPWORDS = _lang.merged_set("stopwords", STOPWORDS)
 
 # A "distinctive" token: a word char start (incl. unicode), then word chars /
 # - . — so identifiers like record_batch / qwen2.5 / paraphrase-multilingual
