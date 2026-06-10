@@ -1,8 +1,33 @@
 from __future__ import annotations
 
+import atexit as _atexit
+import threading as _threading_mod
+
 from pmb.core.engine.types import (
     _cap_batch_content,
 )
+
+# Interpreter-shutdown coordination for the outbox drainer threads. A daemon
+# thread caught inside a SQLite/LanceDB C call while the interpreter finalizes
+# can hard-crash the process (a native fault, not a Python exception). At exit
+# we set the stop flag AND wake every drainer so they leave their loop BEFORE
+# finalization instead of being killed mid-call.
+_OUTBOX_STOP = _threading_mod.Event()
+_OUTBOX_WAKES: list = []
+_OUTBOX_WAKES_LOCK = _threading_mod.Lock()
+
+
+def _outbox_shutdown() -> None:
+    _OUTBOX_STOP.set()
+    with _OUTBOX_WAKES_LOCK:
+        for w in list(_OUTBOX_WAKES):
+            try:
+                w.set()
+            except Exception:
+                pass
+
+
+_atexit.register(_outbox_shutdown)
 
 
 class BatchMixin:
@@ -174,6 +199,12 @@ class BatchMixin:
     def _ensure_outbox_drainer(self) -> None:
         """Start the single per-engine drainer thread if it isn't running."""
         import threading
+        if _OUTBOX_STOP.is_set():
+            return  # interpreter is shutting down — don't spawn new threads
+        # Register this engine's wake so the atexit handler can interrupt it.
+        with _OUTBOX_WAKES_LOCK:
+            if self._outbox_wake not in _OUTBOX_WAKES:
+                _OUTBOX_WAKES.append(self._outbox_wake)
         with self._outbox_lock:
             t = self._outbox_thread
             if t is not None and t.is_alive():
@@ -237,6 +268,8 @@ class BatchMixin:
         import sqlite3 as _sql
         import time as _t
         while True:
+            if _OUTBOX_STOP.is_set():
+                return  # interpreter shutting down — leave before finalization
             try:
                 if not _os.path.exists(str(self.workspace.db_path)):
                     return
