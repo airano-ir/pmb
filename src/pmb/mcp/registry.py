@@ -104,16 +104,22 @@ def register_server(
     path: Optional[str] = None,
     workspace: Optional[str] = None,
     pid: Optional[int] = None,
+    kind: str = "mcp",
 ) -> dict:
     """Record THIS process as a running PMB MCP server. Prunes dead entries
-    first. Returns the entry (includes the resolved pid)."""
+    first. Returns the entry (includes the resolved pid).
+
+    `kind` distinguishes a plain MCP server ("mcp") from the persistent memory
+    daemon ("daemon") so hooks can find the daemon specifically."""
     entry = {
         "pid": int(pid if pid is not None else os.getpid()),
         "transport": transport,
+        "kind": kind,
         "host": host,
         "port": port,
         "path": path,
         "workspace": workspace,
+        "pmb_home": str(_pmb_home()),
         "started_at": time.time(),
     }
     entries = _prune(_load())
@@ -160,3 +166,18 @@ def find_live_http(host: str, port: int) -> Optional[dict]:
         ):
             return e
     return None
+
+
+def find_live_daemon(pmb_home: Optional[str] = None) -> Optional[dict]:
+    """Return the live persistent-memory daemon entry for this PMB_HOME, if any.
+
+    Hooks call this to decide whether to route prepare-context to a warm daemon
+    instead of paying a cold per-process Engine. Matches on kind=='daemon' and
+    (when given) the same pmb_home, newest first."""
+    want_home = str(pmb_home or _pmb_home())
+    live = [e for e in list_servers(prune=True)
+            if e.get("kind") == "daemon" and e.get("alive")
+            and e.get("port")]
+    live = [e for e in live if str(e.get("pmb_home") or want_home) == want_home]
+    live.sort(key=lambda e: e.get("started_at") or 0, reverse=True)
+    return live[0] if live else None

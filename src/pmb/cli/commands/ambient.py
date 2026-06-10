@@ -74,6 +74,82 @@ def _extract_hook_prompt(raw: str) -> str:
     return raw
 
 
+def _try_daemon_prepare(msg: str, max_chars: int,
+                        timeout: float = 0.6) -> Optional[str]:
+    """One cheap localhost attempt against a live memory daemon. Returns the
+    rendered context string (possibly "" when there's nothing to inject), or
+    None on ANY failure — the cold path below is the contract; the daemon is
+    only an accelerator. A version mismatch is treated as 'absent'."""
+    try:
+        import json as _json
+        import urllib.request as _url
+
+        import pmb
+        from pmb.mcp.daemon import read_daemon_token
+        from pmb.mcp.registry import find_live_daemon
+
+        info = find_live_daemon()
+        if not info or not info.get("port"):
+            return None
+        host = info.get("host") or "127.0.0.1"
+        tok = read_daemon_token() or ""
+        payload = _json.dumps({"message": msg, "max_chars": max_chars}).encode("utf-8")
+        req = _url.Request(
+            f"http://{host}:{int(info['port'])}/internal/hook/prepare-context",
+            data=payload,
+            headers={"Authorization": f"Bearer {tok}",
+                     "Content-Type": "application/json"},
+        )
+        with _url.urlopen(req, timeout=timeout) as r:
+            if getattr(r, "status", 200) not in (200, None):
+                return None
+            body = _json.loads(r.read().decode("utf-8"))
+        if body.get("version") != pmb.__version__:
+            return None  # different code version → don't trust it; go cold
+        return body.get("context") or ""
+    except Exception:
+        return None
+
+
+def _maybe_autostart_daemon(eng) -> None:
+    """When the cold path runs and autostart is on, spawn a daemon DETACHED so
+    the NEXT message hits it warm. Rate-limited via a stamp file so a burst of
+    cold hooks doesn't spawn repeatedly. The current message still answers cold."""
+    try:
+        if not bool(eng.config.get("daemon.autostart")):
+            return
+        from pmb.mcp.registry import find_live_daemon
+        if find_live_daemon():
+            return
+        import time as _t
+        home = Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb"))
+        stamp = home / "daemon.autostart_stamp"
+        now = _t.time()
+        try:
+            if stamp.exists() and (now - stamp.stat().st_mtime) < 600:
+                return  # attempted within the last 10 min — don't spam
+        except Exception:
+            pass
+        try:
+            home.mkdir(parents=True, exist_ok=True)
+            stamp.write_text(str(now), encoding="utf-8")
+        except Exception:
+            pass
+        import subprocess as _sp
+        import sys as _sys2
+        kwargs: dict = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = 0x00000008 | 0x00000200  # DETACHED|NEW_GROUP
+        else:
+            kwargs["start_new_session"] = True
+        _sp.Popen(
+            [_sys2.executable, "-m", "pmb.cli", "daemon", "run"],
+            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, stdin=_sp.DEVNULL, **kwargs,
+        )
+    except Exception:
+        pass
+
+
 @app.command("prepare-context")
 def prepare_context_cmd(
     message: Optional[str] = typer.Argument(
@@ -134,6 +210,20 @@ def prepare_context_cmd(
         _sys.stdout.write("[pmb hook] no user message; nothing to prepare\n")
         return
 
+    # B3: ask the warm daemon FIRST — it holds a hot Engine + model, so it does
+    # the REAL semantic recall the per-process cold path has to skip. Returns
+    # "" when it ran but had nothing to inject; None when unreachable (then we
+    # fall through to the cold in-process path, the unchanged contract).
+    if not legacy:
+        served = _try_daemon_prepare(msg, max_chars)
+        if served is not None:
+            if served.strip():
+                tail = served if served.endswith("\n") else served + "\n"
+                _sys.stdout.write(tail)
+            elif not quiet:
+                _sys.stdout.write("[pmb hook] no context to inject (daemon).\n")
+            return
+
     try:
         from pmb.core.engine import Engine
         eng = Engine()
@@ -147,46 +237,23 @@ def prepare_context_cmd(
     use_auto = not legacy and bool(eng.config.get("auto_recall.enabled"))
 
     if use_auto:
-        from pmb.hooks import format_context, run_auto_context
+        from pmb.hooks import compute_prepare_context_text
         try:
-            res = run_auto_context(
-                eng, msg,
-                min_chars=int(eng.config.get("auto_recall.min_message_chars") or 5),
-                recall_top_k=int(eng.config.get("auto_recall.recall_top_k") or 5),
-                recall_min_score=float(
-                    eng.config.get("auto_recall.recall_min_score") or 0.30
-                ),
-                surface_decisions=bool(
-                    eng.config.get("auto_recall.surface_decisions")
-                ),
-            )
+            text = compute_prepare_context_text(eng, msg, max_chars)
         except Exception as e:
             if quiet:
                 return
             _sys.stdout.write(f"[pmb hook] auto-recall failed: {e}\n")
             return
 
-        if res.skipped or res.is_empty():
-            if quiet:
-                return
-            _sys.stdout.write(
-                f"[pmb hook] no context to inject "
-                f"(intents={','.join(res.intents)}, "
-                f"reason={res.skip_reason or 'no-match'}).\n"
-            )
-            return
+        # Cold path ran (no daemon). Warm one DETACHED so the next message is
+        # fast. The current message already answered above.
+        _maybe_autostart_daemon(eng)
 
-        # Allow either CLI flag or config to bound output size; smaller wins.
-        cap = min(
-            max_chars,
-            int(eng.config.get("auto_recall.budget_chars") or 4000),
-        )
-        include_trace = bool(eng.config.get("auto_recall.include_trace"))
-        text = format_context(res, max_chars=cap, include_trace=include_trace)
         if not text:
             if quiet:
                 return
-            _sys.stdout.write("[pmb hook] auto-recall produced empty output.\n")
+            _sys.stdout.write("[pmb hook] no context to inject.\n")
             return
         _sys.stdout.write(text + "\n")
         return

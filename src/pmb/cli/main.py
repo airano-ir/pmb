@@ -55,6 +55,9 @@ from pmb.cli.commands.hooks import hooks_app, mcp_app
 
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(mcp_app, name="mcp")
+from pmb.cli.commands.daemon import daemon_app
+
+app.add_typer(daemon_app, name="daemon")
 
 
 @app.callback(invoke_without_command=True)

@@ -14,6 +14,7 @@ from pmb.hooks.auto_recall import (
     detect_intents,
     run_auto_context,
     format_context,
+    compute_prepare_context_text,
     is_trivial,
 )
 from pmb.hooks.session_restore import build_session_restore
@@ -36,6 +37,7 @@ __all__ = [
     "detect_intents",
     "run_auto_context",
     "format_context",
+    "compute_prepare_context_text",
     "is_trivial",
     "build_session_restore",
     "run_followcheck",

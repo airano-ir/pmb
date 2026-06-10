@@ -465,6 +465,13 @@ def build_server(
         except Exception:
             pass  # filter best-effort; if FastMCP API changes, all tools stay
 
+    # Expose the engine on the server so the daemon can mount internal hook
+    # routes against the SAME warm engine (additive; stdio/http ignore it).
+    try:
+        mcp._pmb_engine = engine
+    except Exception:
+        pass
+
     return mcp
 
 

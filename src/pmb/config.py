@@ -420,6 +420,28 @@ SCHEMA: dict[str, _Setting] = {
         "importance is capped at 0.2, and it is excluded from keyed-fact "
         "promotion. `pmb declutter` then treats it as a first-class candidate.",
     ),
+    "daemon.idle_exit_min": _Setting(
+        float, 120.0,
+        "Persistent memory daemon: exit after this many minutes with no "
+        "request, so a forgotten daemon doesn't hold ~400MB forever. 0 = never "
+        "exit. The hook autostarts a new one on the next message.",
+        min=0.0, max=10080.0,
+    ),
+    "daemon.autostart": _Setting(
+        bool, True,
+        "When the cold hook path runs and no daemon is live, spawn one in the "
+        "background (rate-limited) so the NEXT message hits a warm daemon with "
+        "real semantic recall. The current message still answers cold. Set "
+        "false to require an explicit `pmb daemon start`.",
+    ),
+    "write.outbox": _Setting(
+        bool, True,
+        "Durable write outbox for record_batch_async. When ON (default), an "
+        "async batch is persisted to the write_outbox table synchronously "
+        "before returning, then replayed by a background drainer — so a crash "
+        "between accept and write loses nothing. OFF restores the old "
+        "fire-and-forget daemon-thread path (only for bisecting).",
+    ),
     "llm.offline_max_calls": _Setting(
         int, 40,
         "Hard cap on the number of LLM calls a SINGLE offline pass (keyed "
