@@ -38,6 +38,7 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
+from pmb import lang as _lang
 from pmb.reference_data import extend_set as _extend_set
 
 
@@ -50,6 +51,9 @@ _STOP = {
     "all", "more", "than", "but", "not", "now", "before", "previously",
     "going", "use", "using",
 }
+# Active language packs ($PMB_HOME/lang/*.yaml) EXTEND the stopword set — no-op
+# unless the user enabled one (`pmb lang enable de`).
+_STOP = _lang.merged_set("stopwords", _STOP)
 
 
 # Domain-specific vocabulary bridges. Map query terms to content synonyms.
@@ -113,6 +117,9 @@ VERB_SYNS: dict[str, set[str]] = {
     "name":    {"name", "called", "зовут", "зовусь", "называют",
                 "звати", "звуть", "ім'я"},
 }
+# Active language packs EXTEND the verb-synonym groups (e.g. German wohne/lebt
+# under `live`). No-op unless a pack is enabled.
+VERB_SYNS = _lang.merged_groups("verb_synonyms", VERB_SYNS)
 
 
 # Named entities recognised at query time. Empty by default: real entities
@@ -154,8 +161,10 @@ _NOT_PROPER = {
     "ill", "iam", "youre", "weve", "they", "their",
 }
 
-# Per-deployment extension: reference.yaml `not_proper` (extend-only).
+# Per-deployment extension: reference.yaml `not_proper`, then active language
+# packs (extend-only — both no-ops without the respective files).
 _NOT_PROPER = _extend_set("not_proper", _NOT_PROPER)
+_NOT_PROPER = _lang.merged_set("not_proper", _NOT_PROPER)
 
 
 def _extract_proper_nouns(query: str) -> set[str]:
@@ -401,8 +410,17 @@ def prepare_query_features(
 
 
 # First-person markers - used by self-reference rescue
+# Base EN/RU/UK first-person markers; active language packs add their own
+# (e.g. German ich/mein) via the `first_person` category. Rebuilt into one
+# alternation, longest-first so multi-char forms ("i'm") win over "i".
+_FIRST_PERSON = {
+    "я", "меня", "мне", "мной", "i", "i'm", "im", "i've", "my", "myself",
+    "мене", "мені", "мною",
+}
+_FIRST_PERSON = _lang.merged_set("first_person", _FIRST_PERSON)
 _FIRST_PERSON_RE = re.compile(
-    r"\b(?:я|меня|мне|мной|i|i'm|im|i've|my|myself|мене|мені|мною)\b",
+    r"\b(?:" + "|".join(re.escape(w) for w in
+                        sorted(_FIRST_PERSON, key=len, reverse=True)) + r")\b",
     re.IGNORECASE,
 )
 

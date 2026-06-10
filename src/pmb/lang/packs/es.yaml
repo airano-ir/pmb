@@ -1,0 +1,89 @@
+# Spanish language pack (template). Enable with `pmb lang enable es`, which
+# copies this into $PMB_HOME/lang/es.yaml. Extend-only: it ADDS Spanish terms to
+# PMB's EN/RU/UK defaults, it never removes them.
+code: es
+name: Spanish
+
+stopwords:
+  - el
+  - la
+  - los
+  - las
+  - un
+  - una
+  - unos
+  - unas
+  - y
+  - o
+  - pero
+  - es
+  - son
+  - era
+  - eran
+  - soy
+  - estoy
+  - tengo
+  - tiene
+  - yo
+  - tú
+  - él
+  - ella
+  - nosotros
+  - mi
+  - mis
+  - en
+  - de
+  - del
+  - con
+  - por
+  - para
+  - no
+  - ahora
+  - hoy
+  - qué
+  - quién
+  - dónde
+  - cuándo
+  - cómo
+  - por_qué
+
+not_proper:
+  - qué
+  - quién
+  - dónde
+  - cuándo
+  - cómo
+  - hoy
+  - ayer
+  - mañana
+  - ahora
+  - yo
+  - mi
+
+first_person:
+  - yo
+  - mi
+  - mis
+  - me
+  - mí
+
+verb_synonyms:
+  live: [vivo, vive, viven, vivimos, resido, reside, mudé, mudó]
+  work: [trabajo, trabaja, trabajan, trabajamos, empleado]
+  use: [uso, usa, usan, utilizo, utiliza]
+  own: [tengo, tiene, poseo, posee]
+  decide: [decidí, decidió, decidimos, acordamos]
+  deploy: [desplegado, desplegamos]
+  migrate: [migré, migramos, cambiamos]
+  fix: [arreglé, arreglado, reparé, solucioné]
+  name: [llamo, llama, nombre]
+
+attribute_aliases:
+  city: [ciudad, localidad]
+  country: [país, pais]
+  employer: [empleador, empresa, compañía, compania]
+  job_title: [puesto, cargo, profesión, profesion, rol]
+  email: [correo, correo_electrónico, email]
+  phone: [teléfono, telefono, móvil, movil, celular]
+  hometown: [ciudad_natal, lugar_de_nacimiento]
+  relationship_status: [estado_civil]

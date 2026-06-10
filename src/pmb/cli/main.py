@@ -58,6 +58,9 @@ app.add_typer(mcp_app, name="mcp")
 from pmb.cli.commands.daemon import daemon_app
 
 app.add_typer(daemon_app, name="daemon")
+from pmb.cli.commands.lang import lang_app
+
+app.add_typer(lang_app, name="lang")
 
 
 @app.callback(invoke_without_command=True)

@@ -1,0 +1,99 @@
+# German language pack (template). Enable with `pmb lang enable de`, which
+# copies this into $PMB_HOME/lang/de.yaml. Extend-only: it ADDS German terms to
+# PMB's EN/RU/UK defaults, it never removes them.
+code: de
+name: German
+
+# Common function words to drop from lexical matching / not treat as proper
+# nouns when they open a sentence.
+stopwords:
+  - der
+  - die
+  - das
+  - den
+  - dem
+  - des
+  - ein
+  - eine
+  - einen
+  - einem
+  - und
+  - oder
+  - aber
+  - ist
+  - sind
+  - war
+  - waren
+  - bin
+  - habe
+  - hat
+  - hatte
+  - ich
+  - du
+  - er
+  - sie
+  - es
+  - wir
+  - ihr
+  - mein
+  - meine
+  - in
+  - im
+  - an
+  - auf
+  - mit
+  - von
+  - zu
+  - für
+  - nicht
+  - jetzt
+  - heute
+  - was
+  - wer
+  - wo
+  - wann
+  - wie
+  - warum
+
+not_proper:
+  - wann
+  - warum
+  - wo
+  - wer
+  - was
+  - wie
+  - heute
+  - gestern
+  - morgen
+  - jetzt
+  - ich
+  - mein
+
+first_person:
+  - ich
+  - mein
+  - meine
+  - meinen
+  - mir
+  - mich
+
+verb_synonyms:
+  live: [wohne, wohnt, wohnen, lebe, lebt, leben, umgezogen, zog]
+  work: [arbeite, arbeitet, arbeiten, beschäftigt]
+  use: [nutze, nutzt, benutze, benutzt, verwende, verwendet]
+  own: [besitze, besitzt, besitzen, habe]
+  decide: [entschied, entschieden, beschlossen]
+  deploy: [bereitgestellt, ausgerollt]
+  migrate: [migriert, gewechselt, umgestiegen]
+  fix: [behoben, gefixt, repariert]
+  name: [heiße, heißt, name]
+
+attribute_aliases:
+  city: [stadt, wohnort, wohnstadt]
+  country: [land]
+  employer: [arbeitgeber, firma, unternehmen]
+  job_title: [berufsbezeichnung, position, beruf, rolle]
+  email: [email, e_mail, mail]
+  phone: [telefon, telefonnummer, handy]
+  hometown: [heimatstadt, geburtsort]
+  relationship_status: [familienstand, beziehungsstatus]
