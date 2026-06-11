@@ -1,19 +1,13 @@
 """Tests for multi-algorithm fuzzy matcher (Improvement L)."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.reasoning.typo_fix import (
-    correct_query, find_best_match,
-    substring_score, trigram_jaccard, soundex,
-    levenshtein,
+    correct_query,
+    find_best_match,
+    soundex,
+    substring_score,
+    trigram_jaccard,
 )
-
 
 # ----------------------------------------------------------------------
 # Individual algorithms

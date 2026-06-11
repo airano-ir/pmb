@@ -13,7 +13,7 @@ Pure read, no embeddings, no LLM — runs in a few ms.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 def _trim(s: Any, n: int = 200) -> str:
@@ -25,7 +25,7 @@ def _trim(s: Any, n: int = 200) -> str:
 def build_session_restore(
     engine,
     *,
-    minutes: Optional[float] = None,
+    minutes: float | None = None,
     include_project: bool = True,
     max_chars: int = 4000,
 ) -> str:
@@ -72,6 +72,15 @@ def build_session_restore(
         buf.append("\nLessons learned this session (RULES — keep following):")
         for L in lessons[:6]:
             buf.append(f"  ! {_trim(L.get('content',''), 180)}")
+        # R1: log the surfaces session-restore actually SHOWS (previously this
+        # path rendered lessons but logged nothing, so the adherence loop never
+        # saw them). Dedup in _log_lesson_surfaces keeps it from double-counting.
+        try:
+            engine._log_lesson_surfaces(
+                [L for L in lessons[:6] if L.get("ulid")],
+                query="session-restore", source="session_restore")
+        except Exception:
+            pass
     if failures:
         buf.append("\nFailures (don't repeat):")
         for f in failures[:5]:
@@ -136,6 +145,13 @@ def build_session_restore(
                         buf.append("Project lessons (RULES):")
                         for L in pls[:4]:
                             buf.append(f"  ! {_trim(L.get('content',''), 170)}")
+                        try:
+                            engine._log_lesson_surfaces(
+                                [L for L in pls[:4] if L.get("ulid")],
+                                query=project_name or "session-restore",
+                                source="session_restore")
+                        except Exception:
+                            pass
             except Exception:
                 pass
 

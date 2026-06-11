@@ -1,7 +1,29 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
+
+
+def _display_trim(text: str, cap: int = 600) -> str:
+    """R2: lessons are SCORED on full content, but DISPLAYED trimmed — at a
+    sentence boundary near `cap` so the actionable rule (often at the END of a
+    long lesson) survives, instead of the old hard 300-char cut that both hid
+    the rule AND ran token-overlap scoring on the truncated text."""
+    t = text or ""
+    if len(t) <= cap:
+        return t
+    cut = t[:cap]
+    for sep in (". ", "! ", "? ", "\n"):
+        i = cut.rfind(sep)
+        if i >= cap * 0.6:
+            return cut[: i + 1].rstrip()
+    i = cut.rfind(" ")
+    return (cut[:i] if i >= cap * 0.6 else cut).rstrip() + "…"
+
+
+def _trim_item(it: dict) -> dict:
+    """Display-trim a lesson/decision item's content in place (after scoring)."""
+    it["content"] = _display_trim(it.get("content") or "")
+    return it
 
 
 class LessonsMixin:
@@ -10,7 +32,7 @@ class LessonsMixin:
         lessons: list[dict],
         query: str,
         source: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> list[dict]:
         """Log that these lessons were shown to the agent. Mutates the
         lesson dicts in place, adding a `surface_id` so the agent can later
@@ -20,12 +42,29 @@ class LessonsMixin:
         import sqlite3
         import time as _t
         now = _t.time()
+        hour_start = (now // 3600.0) * 3600.0
         ws = self.workspace.id
         try:
             with sqlite3.connect(self.workspace.db_path) as conn:
                 for L in lessons:
                     ulid = L.get("ulid")
                     if not ulid:
+                        continue
+                    # R1: dedup one surface per (lesson, session, hour). A single
+                    # prepare()/recall() logs the SAME lesson on two paths
+                    # (project_overview + find_lessons), and the same rule
+                    # re-surfaces minutes later — both used to mint a NEW
+                    # surface_id and inflate the adherence denominator. Reuse the
+                    # existing id instead so the dashboard counts shows, not rows.
+                    row = conn.execute(
+                        "SELECT id FROM lesson_surfaces WHERE workspace_id=? "
+                        "AND lesson_ulid=? "
+                        "AND COALESCE(session_id,'')=COALESCE(?,'') "
+                        "AND surfaced_at >= ? ORDER BY id LIMIT 1",
+                        (ws, ulid, session_id, hour_start),
+                    ).fetchone()
+                    if row:
+                        L["surface_id"] = row[0]
                         continue
                     cur = conn.execute(
                         """
@@ -50,7 +89,7 @@ class LessonsMixin:
         self,
         surface_id: int,
         followed: bool = True,
-        note: Optional[str] = None,
+        note: str | None = None,
     ) -> dict:
         """Agent confirms whether a surfaced lesson actually changed its
         behaviour on the current task. Powers the dashboard "follow rate"
@@ -74,7 +113,7 @@ class LessonsMixin:
     def mark_lesson_not_applicable(
         self,
         surface_id: int,
-        note: Optional[str] = None,
+        note: str | None = None,
     ) -> dict:
         """Mark a surfaced lesson as NOT APPLICABLE to the turn it surfaced in.
 
@@ -138,8 +177,11 @@ class LessonsMixin:
             "read_write_ratio": 0.0,
             "lesson_surfaces": 0,
             "lesson_followed": 0,
+            "lesson_ignored": 0,
             "lesson_not_applicable": 0,
             "lesson_applicable": 0,
+            "lesson_decided": 0,
+            "lesson_unknown": 0,
             "lesson_followthrough": 0.0,
         }
         read_tools = (
@@ -209,24 +251,48 @@ class LessonsMixin:
                     "SELECT COUNT(*) FROM lesson_surfaces WHERE workspace_id=? AND surfaced_at >= ? AND followed=-1",
                     (ws, cutoff),
                 ).fetchone()[0]
+                ign = conn.execute(
+                    "SELECT COUNT(*) FROM lesson_surfaces WHERE workspace_id=? AND surfaced_at >= ? AND followed=0",
+                    (ws, cutoff),
+                ).fetchone()[0]
                 out["lesson_surfaces"] = surf
                 out["lesson_followed"] = flw
+                out["lesson_ignored"] = ign
                 out["lesson_not_applicable"] = na
-                applicable = max(0, surf - na)
-                out["lesson_applicable"] = applicable
-                if applicable > 0:
-                    out["lesson_followthrough"] = flw / applicable
+                # R10: a surfaced lesson with NO verdict yet (followed IS NULL)
+                # is UNKNOWN — it must NOT sit in the follow-through denominator
+                # forever, or a frequently-surfaced-but-unmarked rule drags the
+                # rate toward 0 even though nobody ever ignored it. The rate is
+                # over DECIDED surfaces (followed + ignored); unknown is reported
+                # separately so the dashboard can show "12 followed / 3 ignored
+                # (40 awaiting a verdict)".
+                decided = flw + ign
+                unknown = max(0, surf - na - decided)
+                out["lesson_decided"] = decided
+                out["lesson_unknown"] = unknown
+                out["lesson_applicable"] = max(0, surf - na)  # kept for back-compat
+                if decided > 0:
+                    out["lesson_followthrough"] = flw / decided
             except Exception:
                 pass
         return out
 
-    def _adherence_nudge(self) -> Optional[str]:
+    def _adherence_nudge(self) -> str | None:
         """One-line consequence-framed reminder when adherence is poor.
 
-        Used by record_batch_async to inject a `_nudge` field in its
-        response when the agent has been writing without reading.
-        Returns None if adherence is fine — no need to nag.
-        """
+        S9: cached 60 s. The uncached form runs 4 aggregate queries via
+        adherence_stats and sits on the SYNCHRONOUS record_batch response path,
+        so back-to-back writes used to pay it every time. Adherence moves slowly
+        over a 7-day window, so a 60 s cache is invisible to the signal."""
+        import time as _t9
+        cached = getattr(self, "_adh_nudge_cache", None)
+        if cached is not None and (_t9.time() - cached[0]) < 60.0:
+            return cached[1]
+        nudge = self._adherence_nudge_uncached()
+        self._adh_nudge_cache = (_t9.time(), nudge)
+        return nudge
+
+    def _adherence_nudge_uncached(self) -> str | None:
         try:
             s = self.adherence_stats(days=7.0)
         except Exception:
@@ -366,14 +432,21 @@ class LessonsMixin:
                 FROM events
                 WHERE workspace_id = ?
                   AND archived_at IS NULL
-                  AND (event_type = 'lesson'
-                       OR (metadata_json LIKE '%"kind":"lesson"%'
-                           OR metadata_json LIKE '%"kind": "lesson"%'))
-                ORDER BY timestamp DESC
-                LIMIT 500
+                  AND COALESCE(json_extract(metadata_json, '$.kind'),
+                               json_extract(metadata_json, '$.activity_kind'))
+                      = 'lesson'
                 """,
                 (ws,),
             ).fetchall()
+            # S7: served by idx_meta_kind (workspace_id, COALESCE(kind,
+            # activity_kind)) instead of a full-table LIKE scan. We deliberately
+            # OMIT `ORDER BY timestamp DESC LIMIT 500` from SQL: that clause lets
+            # the planner pick the timestamp index for a free sort and skip the
+            # selective kind index (stat1 has no per-value histogram to know
+            # lessons are rare). Lessons are few, so we sort + cap in Python and
+            # keep the indexed lookup. Behavior is identical (most-recent 500).
+            # The COALESCE expression MUST stay identical to the index definition.
+            rows = sorted(rows, key=lambda r: r["timestamp"], reverse=True)[:500]
         items: list[dict] = []
         for r in rows:
             try:
@@ -382,13 +455,13 @@ class LessonsMixin:
                 md = {}
             items.append({
                 "ulid": r["ulid"],
-                "content": (r["content"] or "")[:300],
+                "content": (r["content"] or ""),   # R2: FULL content for scoring
                 "timestamp": r["timestamp"],
                 "importance": r["importance"],
                 "metadata": md,
             })
         if not query.strip():
-            return items[:limit]
+            return [_trim_item(it) for it in items[:limit]]
         # Relevance gate, using the SAME tokenizer + stopwords as followcheck
         # (pmb.core.text_match). The big precision win is the STOPWORD SET, not
         # a high count threshold: the old code split on \W+ with NO stopwords,
@@ -402,7 +475,7 @@ class LessonsMixin:
         from pmb.core.text_match import distinctive_tokens, is_strong
         q_tokens = distinctive_tokens(query)
         if not q_tokens:
-            return items[:limit]
+            return [_trim_item(it) for it in items[:limit]]
         try:
             min_ov = int(self.config.get("recall.lesson_min_overlap") or 1)
         except Exception:
@@ -418,8 +491,9 @@ class LessonsMixin:
         # Optional SEMANTIC tier (opt-in: recall.lesson_semantic). Reuses the
         # embeddings recall already computes to catch paraphrase / synonym /
         # cross-lingual matches the lexical gate structurally cannot — e.g. a
-        # "каким пакетным менеджером собирать" query vs a "use pnpm not npm"
-        # lesson shares ZERO tokens but is the same topic. NOT an LLM call (just
+        # "which package manager to build with" query (in another language) vs a
+        # "use pnpm not npm" lesson shares ZERO tokens but is the same topic.
+        # NOT an LLM call (just
         # a vector cosine), so it doesn't break the no-LLM-on-read rule. OFF by
         # default so the per-turn hook stays model-free + instant; when on,
         # scoring a few hundred lesson vectors is cheap once the model is warm.
@@ -452,13 +526,43 @@ class LessonsMixin:
 
         kept = [it for it in items
                 if it["_ov"] >= min_ov or it["_sim"] >= sem_min]
-        # Rank: strong lexical first, then semantic similarity, then raw overlap.
-        kept.sort(key=lambda it: (it["_strong"], round(it["_sim"], 4), it["_ov"]),
-                  reverse=True)
+        if self.config.get("lessons.rank_v2"):
+            # R9: blend the signals the system ALREADY has into the rank, not
+            # just lexical overlap — importance (a 0.97 rule should beat a stale
+            # trivial one sharing a token) and the follow-history (a rule that
+            # surfaces 10× and is NEVER followed fades). Recency breaks ties.
+            import sqlite3 as _sql
+            import time as _t9
+            fol: dict[str, tuple[int, int]] = {}
+            try:
+                with _sql.connect(self.workspace.db_path) as _c9:
+                    for u, surf, flw in _c9.execute(
+                        "SELECT lesson_ulid, COUNT(*), "
+                        "SUM(CASE WHEN followed=1 THEN 1 ELSE 0 END) "
+                        "FROM lesson_surfaces WHERE workspace_id=? "
+                        "GROUP BY lesson_ulid", (self.workspace.id,)):
+                        fol[u] = (int(surf or 0), int(flw or 0))
+            except Exception:
+                pass
+            _now9 = _t9.time()
+
+            def _rank(it: dict):
+                lex = it["_strong"] * 2.0 + it["_ov"] + it["_sim"]
+                imp = float(it.get("importance") or 0.5)
+                surf, flw = fol.get(it["ulid"], (0, 0))
+                damp = 0.6 if (surf >= 10 and flw == 0) else 1.0
+                age_d = max(0.0, _now9 - float(it.get("timestamp") or _now9)) / 86400.0
+                rec = 1.0 / (1.0 + age_d / 30.0)
+                return (lex * (0.5 + 0.5 * imp) * damp, rec)
+            kept.sort(key=_rank, reverse=True)
+        else:
+            # legacy: strong lexical first, then semantic similarity, then overlap
+            kept.sort(key=lambda it: (it["_strong"], round(it["_sim"], 4), it["_ov"]),
+                      reverse=True)
         for it in kept:  # strip scratch fields before returning
             for k in ("_ov", "_strong", "_sim"):
                 it.pop(k, None)
-        return kept[:limit]
+        return [_trim_item(it) for it in kept[:limit]]
 
     def find_decisions(self, query: str = "", limit: int = 5) -> list[dict]:
         """Return past DECISIONS (the "why we did X" rationale) relevant to a
@@ -485,15 +589,19 @@ class LessonsMixin:
                 FROM events
                 WHERE workspace_id = ?
                   AND archived_at IS NULL
-                  AND (metadata_json LIKE '%"kind":"decision"%'
-                       OR metadata_json LIKE '%"kind": "decision"%'
-                       OR metadata_json LIKE '%"activity_kind":"decision"%'
-                       OR metadata_json LIKE '%"activity_kind": "decision"%')
-                ORDER BY timestamp DESC
-                LIMIT 500
+                  AND COALESCE(json_extract(metadata_json, '$.kind'),
+                               json_extract(metadata_json, '$.activity_kind'))
+                      = 'decision'
                 """,
                 (ws,),
             ).fetchall()
+            # S7: indexed via idx_meta_kind (COALESCE of kind/activity_kind),
+            # replacing the 4-variant LIKE scan. COALESCE prefers metadata.kind
+            # (record_batch decisions) and falls back to activity_kind
+            # (record_activity decisions) — both routes covered, whitespace-safe.
+            # ORDER BY/LIMIT done in Python (see find_lessons) so the planner
+            # keeps the selective kind index instead of the timestamp index.
+            rows = sorted(rows, key=lambda r: r["timestamp"], reverse=True)[:500]
         items: list[dict] = []
         seen_content: set[str] = set()
         for r in rows:
@@ -501,7 +609,7 @@ class LessonsMixin:
                 md = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
             except Exception:
                 md = {}
-            content = (r["content"] or "")[:300]
+            content = (r["content"] or "")   # R2: FULL content for scoring
             # Dedup near-identical decisions (the same call recorded across
             # sessions) by a normalized content key — surfacing the same
             # rationale 3× is noise.
@@ -517,17 +625,20 @@ class LessonsMixin:
                 "metadata": md,
             })
         if not query.strip():
-            return items[:limit]
-        import re as _re
-        q_tokens = set(t for t in _re.split(r"\W+", query.lower()) if len(t) >= 3)
+            return [_trim_item(it) for it in items[:limit]]
+        # R12: use the SAME distinctive-token scorer as find_lessons — the old
+        # bare `\W+` split with no stopwords let generic words (code/test/file/
+        # the) count as relevance, so decisions surfaced noisily and
+        # inconsistently with lessons.
+        from pmb.core.text_match import distinctive_tokens
+        q_tokens = distinctive_tokens(query)
         if not q_tokens:
-            return items[:limit]
+            return [_trim_item(it) for it in items[:limit]]
+
         def _score(item: dict) -> float:
-            content = (item["content"] or "").lower()
-            c_tokens = set(t for t in _re.split(r"\W+", content) if len(t) >= 3)
-            return len(q_tokens & c_tokens)
+            return len(q_tokens & distinctive_tokens(item.get("content") or ""))
         items.sort(key=_score, reverse=True)
-        return [it for it in items if _score(it) >= 1][:limit]
+        return [_trim_item(it) for it in items if _score(it) >= 1][:limit]
 
     def recent_unconfirmed_surfaces(
         self, minutes: float = 30.0, limit: int = 50,

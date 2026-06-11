@@ -7,14 +7,18 @@ Built on textual (terminal UI framework).
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import (
-    DataTable, Footer, Header, Input, Label, ListItem, ListView, Static,
+    DataTable,
+    Header,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    Static,
 )
 
 from pmb.config import SCHEMA, Config
@@ -149,7 +153,7 @@ class PMBTuneApp(App):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
-        self.current_category: Optional[str] = None
+        self.current_category: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)

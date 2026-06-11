@@ -40,8 +40,6 @@ import os
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
 
 _MAGIC = b"PMBENC"        # 6 bytes
 _VERSION = 1              # 1 byte
@@ -65,9 +63,10 @@ class EncryptionUnavailable(RuntimeError):
 
 def _require_crypto():
     try:
+        import base64  # noqa: F401
+
         from cryptography.fernet import Fernet  # noqa: F401
         from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: F401
-        import base64  # noqa: F401
     except Exception as e:  # noqa: BLE001
         raise EncryptionUnavailable(
             "Workspace encryption needs the `cryptography` package. "
@@ -77,6 +76,7 @@ def _require_crypto():
 
 def _derive_key_passphrase(passphrase: str, salt: bytes) -> bytes:
     import base64
+
     from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
     kdf = Scrypt(salt=salt, length=32, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P)
     raw = kdf.derive(passphrase.encode("utf-8"))
@@ -95,7 +95,7 @@ class CryptoResult:
     ok: bool
     action: str
     detail: str = ""
-    extra: Optional[dict] = None
+    extra: dict | None = None
 
     def as_dict(self) -> dict:
         d = {"ok": self.ok, "action": self.action, "detail": self.detail}
@@ -138,8 +138,8 @@ def export_workspace(
     storage_dir: Path,
     out_path: Path,
     *,
-    passphrase: Optional[str] = None,
-    key_file: Optional[Path] = None,
+    passphrase: str | None = None,
+    key_file: Path | None = None,
 ) -> CryptoResult:
     """Encrypt a workspace into a single bundle file."""
     _require_crypto()
@@ -176,8 +176,8 @@ def import_workspace(
     bundle_path: Path,
     dest_dir: Path,
     *,
-    passphrase: Optional[str] = None,
-    key_file: Optional[Path] = None,
+    passphrase: str | None = None,
+    key_file: Path | None = None,
 ) -> CryptoResult:
     """Decrypt a bundle into a workspace storage directory."""
     _require_crypto()

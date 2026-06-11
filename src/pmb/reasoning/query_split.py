@@ -1,88 +1,87 @@
 """
 Pattern-based query splitting for compound recall.
 
-Compound queries like "когда я в последний раз был в спортзале и почему я там
-не был всю неделю" lose recall when treated as a single bag-of-tokens — the
-two sub-questions ("когда был" vs "почему не был") get averaged into a
-diffuse query vector that matches neither sub-fact well.
+Compound queries like "when was the last time I went to the gym and why
+haven't I gone all week" lose recall when treated as a single bag-of-tokens —
+the two sub-questions ("when did I go" vs "why didn't I go") get averaged into
+a diffuse query vector that matches neither sub-fact well.
 
 Solution: split on natural join markers, run each sub-query through the
 normal recall pipeline, and fuse the candidate lists via Reciprocal Rank
-Fusion (RRF). No LLM needed — patterns cover ~80% of compound queries on
-both English and Russian.
+Fusion (RRF). No LLM needed — patterns cover ~80% of compound queries.
 
 When to fire:
   - Query length >= 8 tokens (single-clause queries are short)
   - At least one strong split marker present
   - Each resulting sub-query has >= 2 content tokens
 
-Patterns (English):
+Patterns (English, inline):
   "X and why Y" / "X and how Y" / "X and when Y"
   "X because Y"
   "X, also Y"
   "X. Y." (sentence boundary in a single query)
 
-Patterns (Russian):
-  "X и почему Y" / "X и как Y" / "X и когда Y"
-  "X потому что Y"
-  "X а также Y"
+The RU/UK equivalents are supplied by the built-in ru.yaml / uk.yaml packs
+(L1) and merge into the patterns above.
 """
 
 from __future__ import annotations
 
 import re
 
+from pmb import lang as _lang
 
 # Split markers: ordered most-specific first so we don't fragment subordinate
 # clauses incorrectly. Each pattern matches a *separator*; the text BEFORE
-# and AFTER becomes two sub-queries.
+# and AFTER becomes two sub-queries. Each entry: (compiled_regex, "label").
 #
-# Each entry: (compiled_regex, "label" for debugging)
+# English is inline. The RU/UK conjunction, WH-words, the causal/additive
+# markers and Cyrillic-capital sentence boundaries live in the built-in
+# ru.yaml / uk.yaml packs (L1). The WH-conjunction pattern is ASSEMBLED from
+# the EN + pack token lists, so mixed-language splits keep working.
+_SPLIT_CONJ = ["and"] + sorted(_lang.merged_set("query_split_conj", set()))
+_SPLIT_WH = ["why", "how", "when", "where", "who", "what"] + sorted(
+    _lang.merged_set("query_split_wh", set()))
 _SPLIT_PATTERNS: list[tuple[re.Pattern, str]] = [
-    # Strong WH-conjunction (clearly two questions)
-    (re.compile(r"\s+(?:и|and)\s+(?=(?:почему|why|как|how|когда|when|где|where|кто|who|что|what)\b)", re.IGNORECASE),
+    # Strong WH-conjunction (clearly two questions) — assembled EN + pack
+    (re.compile(
+        r"\s+(?:" + "|".join(_SPLIT_CONJ) + r")\s+(?=(?:"
+        + "|".join(_SPLIT_WH) + r")\b)", re.IGNORECASE),
      "and-wh"),
-    # Russian "потому что" — causal split
-    (re.compile(r"\s+потому\s+что\s+", re.IGNORECASE), "potomu-chto"),
     # English "because"
     (re.compile(r"\s+because\s+", re.IGNORECASE), "because"),
-    # Russian "а также"
-    (re.compile(r"\s*,?\s+а\s+также\s+", re.IGNORECASE), "a-takzhe"),
     # English ", also"
     (re.compile(r"\s*,\s*also\s+", re.IGNORECASE), "comma-also"),
-    # Russian "а кроме того"
-    (re.compile(r"\s*,?\s+а\s+кроме\s+того\s+", re.IGNORECASE), "krome-togo"),
-    # Sentence boundary inside a single utterance (?. or !.)
-    (re.compile(r"\?\s+(?=[A-ZА-Я])"), "sentence-q"),
-    (re.compile(r"\.\s+(?=[A-ZА-Я][a-zа-я])"), "sentence-period"),
-]
+    # Sentence boundary inside a single utterance (Latin capital)
+    (re.compile(r"\?\s+(?=[A-Z])"), "sentence-q"),
+    (re.compile(r"\.\s+(?=[A-Z][a-z])"), "sentence-period"),
+] + _lang.compile_patterns_labeled("query_split_patterns")
 
 
 # Minimal token count for a sub-query to be considered a real question (not
-# noise like "и почему?")
+# a fragment like a bare conjunction + WH-word)
 _MIN_SUB_TOKENS = 2
 
 # Skip splitting on very short queries — they are by definition single-clause
 _MIN_LEN_FOR_SPLIT = 6
 
 
+# EN inline; the RU/UK function words live in the built-in ru.yaml / uk.yaml
+# packs under `query_split_stop` (L1) and merge in here.
 _STOP = {
     "a", "an", "the", "is", "are", "was", "were", "of", "in", "on", "to",
     "for", "and", "or", "with", "we", "i", "you", "do", "does", "did",
     "what", "who", "where", "when", "why", "how", "by", "at", "from", "as",
     "be", "have", "has", "had", "this", "that", "these", "those", "it",
     "our", "my", "your", "their", "his", "her", "about", "any", "some",
-    "и", "а", "но", "или", "не", "ни", "же", "ли", "бы", "что", "как",
-    "по", "от", "до", "из", "над", "под", "за", "у", "к", "о", "об",
-    "the", "is", "of", "in", "on",
-}
+} | _lang.merged_set("query_split_stop", set())
 
 
 def _count_content_tokens(s: str) -> int:
     if not s:
         return 0
     n = 0
-    for m in re.finditer(r"[a-zA-Zа-яА-Я0-9]+", s):
+    for m in re.finditer(r"[^\W_]+", s):  # Unicode word chars (Latin+Cyrillic+…)
         t = m.group(0).lower()
         if len(t) > 2 and t not in _STOP:
             n += 1
@@ -118,7 +117,7 @@ def split_query(query: str, max_parts: int = 3) -> list[str]:
             # Quality gate: every piece must have at least 1 content token,
             # AND at least one piece must have >= MIN_SUB_TOKENS. This
             # accepts splits like "who's on the team" + "what is their role"
-            # while still rejecting noise like "и?" / "?" splits.
+            # while still rejecting noise like a bare "?" split.
             counts = [_count_content_tokens(p) for p in pieces]
             # Quality gate: split is real only when both halves carry a
             # content token (kills splits like "and?" or ".?"). For very

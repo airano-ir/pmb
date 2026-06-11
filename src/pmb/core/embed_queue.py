@@ -37,10 +37,9 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Optional
-
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS embed_queue_pending (
@@ -213,7 +212,7 @@ class PersistentEmbedQueue:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def retry_dead_letter(self, ulid: Optional[str] = None) -> int:
+    def retry_dead_letter(self, ulid: str | None = None) -> int:
         """Move dead-letter rows back to pending (optionally just one)."""
         with self._conn() as conn:
             if ulid:

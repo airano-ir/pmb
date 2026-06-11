@@ -1,16 +1,14 @@
 """Tests for auto-installed agent instruction rules (Improvement O)."""
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.cli.connect import (
-    install_agent_rules, instruction_paths_for_agent, connect,
-    PMB_AGENT_RULES_START, PMB_AGENT_RULES_END,
+    PMB_AGENT_RULES_END,
+    PMB_AGENT_RULES_START,
+    connect,
+    install_agent_rules,
+    instruction_paths_for_agent,
 )
 
 
@@ -22,7 +20,7 @@ def test_create_new_instructions_file(tmp_path):
     assert PMB_AGENT_RULES_START in body
     assert PMB_AGENT_RULES_END in body
     assert "record_batch" in body
-    assert "запомни" in body  # RU trigger example present
+    assert "remember" in body  # trigger example present (English core, L2)
 
 
 def test_append_to_existing_instructions(tmp_path):

@@ -23,8 +23,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Iterable
-
+from typing import Any
 
 # Order matters: more specific patterns first so they consume before the
 # generic Bearer / KEY=value patterns catch them.
@@ -87,7 +86,7 @@ class RedactionStats:
     def total(self) -> int:
         return sum(self.counts.values())
 
-    def merge(self, other: "RedactionStats") -> None:
+    def merge(self, other: RedactionStats) -> None:
         for k, v in other.counts.items():
             self.add(k, v)
 

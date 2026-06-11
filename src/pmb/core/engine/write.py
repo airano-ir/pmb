@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Optional
 
 from pmb.core.events import (
     Event,
@@ -63,11 +62,11 @@ class WriteMixin:
         self,
         query: str,
         response: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         importance: float = 0.5,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> str:
-        """Сохранить Q/A пару. Возвращает ulid."""
+        """Save a Q/A pair. Returns the ulid."""
         # Auto-bind to current session if not provided
         if session_id is None:
             session_id = self.session_tracker.touch().id
@@ -87,14 +86,14 @@ class WriteMixin:
             tier=default_tier_for_event_type("qa"),
         )
         ev = self.events.append(ev)
-        # Index в hybrid search. Synchronous: the Python API contract is
+        # Index into hybrid search. Synchronous: the Python API contract is
         # "write returns when data is searchable". Use `_embed_or_defer`
         # only when we're inside `record_batch` (it sets _batch_defer).
         if getattr(self, "_batch_defer", False):
             self._embed_or_defer(ev.ulid, ev.to_text())
         else:
             self.search.add(ev.ulid, ev.to_text())
-        # Index в graph (deferred to a worker for LLM backends)
+        # Index into graph (deferred to a worker for LLM backends)
         self._index_graph_or_defer(ev, full_text=f"{clean_query}\n{clean_response}")
         try:
             from pmb.reasoning.causation import add_temporal_next_edge
@@ -115,8 +114,8 @@ class WriteMixin:
         self,
         fact: str,
         importance: float = 0.7,
-        metadata: Optional[dict] = None,
-        session_id: Optional[str] = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
     ) -> str:
         clean_fact, _ = redact(fact)
         clean_metadata, _ = redact_metadata(metadata or {})
@@ -144,12 +143,14 @@ class WriteMixin:
         # If we detect a duplicate, return the existing ULID instead of
         # writing a new event. The existing event gets its access_count
         # bumped so it surfaces faster on next recall.
+        self._last_write_deduped = False
         dup_hit, borderline = self._dedup_pre_write(
             content=clean_fact,
             event_type="fact",
         )
         if dup_hit is not None:
             self._bump_for_dup(dup_hit.canonical_ulid)
+            self._last_write_deduped = True
             return dup_hit.canonical_ulid
 
         # Write-time quality gate (#8, default OFF): FLAG (never reject)
@@ -171,6 +172,37 @@ class WriteMixin:
                     importance = min(float(importance), 0.2)
             except Exception:
                 pass
+
+        # R13: importance-spam containment. Agents habitually stamp 0.95 on
+        # routine facts (the global CLAUDE.md even says importance=0.95 for
+        # "remember"), and importance_factor = 0.5+0.5·imp gives a ~2× ranking
+        # edge — so spam pollutes ranking. Cap how many >0.9 fact writes land
+        # per rolling day; past the budget, clamp to a normal level and leave a
+        # breadcrumb. Keyed/lesson facts are exempt; PINNED facts are exempt
+        # automatically because pin() resets importance to 1.0 afterwards.
+        try:
+            budget = int(self.config.get("write.high_importance_daily_budget") or 0)
+            _mq = clean_metadata if isinstance(clean_metadata, dict) else {}
+            if (budget > 0 and float(importance) > 0.9
+                    and not _mq.get("keyed_fact_key")
+                    and _mq.get("kind") != "lesson"
+                    and _mq.get("source") != "lesson"):
+                import sqlite3 as _sql
+                import time as _t
+                cutoff = _t.time() - 86400.0
+                with _sql.connect(str(self.workspace.db_path)) as _c:
+                    n_hi = _c.execute(
+                        "SELECT COUNT(*) FROM events WHERE workspace_id=? "
+                        "AND event_type='fact' AND archived_at IS NULL "
+                        "AND importance > 0.9 AND timestamp >= ?",
+                        (self.workspace.id, cutoff),
+                    ).fetchone()[0]
+                if n_hi >= budget:
+                    clean_metadata = dict(_mq)
+                    clean_metadata["importance_budget_clamped"] = float(importance)
+                    importance = min(float(importance), 0.7)
+        except Exception:
+            pass
 
         # Plan detector (#9): flag forward-looking "next we'll do X" facts so
         # the dashboard / `pmb goals` can suggest promoting them to a goal.
@@ -351,7 +383,7 @@ class WriteMixin:
         attribute: str,
         value: str,
         importance: float = 0.8,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> dict:
         """Upsert a personal-attribute fact, archiving any prior fact with
         the same (subject, attribute) key.
@@ -377,8 +409,9 @@ class WriteMixin:
         if not subject or not attribute or not value:
             raise ValueError("subject, attribute, value all required")
         # Canonical key: synonymous attribute labels (city / current_city /
-        # current_city_2026 / lives_in / город) collapse to ONE key, so a new
-        # value supersedes the old instead of creating a competing key.
+        # current_city_2026 / lives_in / and their localized aliases) collapse
+        # to ONE key, so a new value supersedes the old instead of creating a
+        # competing key.
         key = keyed_fact_key(subject, attribute)
 
         # 1. Find any prior facts with the same key (active only)
@@ -619,7 +652,7 @@ class WriteMixin:
 
     def keyed_fact_as_of(
         self, subject: str, attribute: str, at_time: float,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """As-of temporal query (Zep-style): what was the value of
         (subject, attribute) at `at_time` (UTC epoch seconds)?
 
@@ -678,10 +711,10 @@ class WriteMixin:
         self,
         preference: str,
         importance: float = 0.7,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> str:
         """User preference. Event_type='preference', tier='semantic'.
-        Examples: "I prefer dark mode", "Я люблю спокойные игры".
+        Examples: "I prefer dark mode", "I like calm games".
         """
         meta = dict(metadata or {})
         meta["memory_type"] = "preference"
@@ -696,7 +729,7 @@ class WriteMixin:
         self,
         summary: str,
         importance: float = 0.5,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> str:
         """Conversation summary / digest. Event_type='summary', tier='episodic'.
         Marked so retrieval can prefer original facts over rephrased summaries.
@@ -938,8 +971,8 @@ class WriteMixin:
         self,
         dry_run: bool = True,
         limit: int = 40,
-        backend: Optional[str] = None,
-        model: Optional[str] = None,
+        backend: str | None = None,
+        model: str | None = None,
     ) -> dict:
         """Offline LLM tier (#11): for recent plain facts the regex fast-path
         MISSED, ask a bounded LLM to extract a current-state
@@ -1126,7 +1159,7 @@ class WriteMixin:
     def migrate_workspace_into(
         self,
         source: str,
-        project: Optional[str] = None,
+        project: str | None = None,
         dry_run: bool = True,
     ) -> dict:
         """Merge a per-project workspace's memory INTO this one (issue #7).
@@ -1237,10 +1270,10 @@ class WriteMixin:
     def record_fact_tree(
         self,
         main: str,
-        subfacts: Optional[list[str]] = None,
+        subfacts: list[str] | None = None,
         importance: float = 0.7,
-        metadata: Optional[dict] = None,
-        session_id: Optional[str] = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
     ) -> dict:
         """Improvement P: store a main fact + multiple atomic subfacts.
 
@@ -1348,7 +1381,7 @@ class WriteMixin:
                 )
         return out
 
-    def get_parent_fact(self, subfact_ulid: str) -> Optional[dict]:
+    def get_parent_fact(self, subfact_ulid: str) -> dict | None:
         """If this event is a subfact, return its parent event."""
         ev = self.events.get_by_ulid(subfact_ulid)
         if not ev or not ev.metadata:
@@ -1373,8 +1406,8 @@ class WriteMixin:
         event_type: str,
         content: str,
         importance: float = 0.5,
-        metadata: Optional[dict] = None,
-        session_id: Optional[str] = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
     ) -> str:
         """Generic event record (git, file, test, ...)."""
         clean_content, _ = redact(content)
@@ -1418,8 +1451,8 @@ class WriteMixin:
         path: str,
         description: str = "",
         importance: float = 0.5,
-        metadata: Optional[dict] = None,
-        session_id: Optional[str] = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
         encode_clip: bool = False,
     ) -> str:
         """Improvement J: record an image with optional CLIP embedding.

@@ -24,9 +24,8 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Optional
-
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ class Correction:
     original: str
     corrected: str
     edits: int                  # Levenshtein distance for backward compat
-    entity_kind: Optional[str]  # which entity kind matched
+    entity_kind: str | None  # which entity kind matched
     method: str = "lev"         # which algorithm produced the match
 
     def __str__(self) -> str:
@@ -207,7 +206,7 @@ def find_best_match(
     candidates: list[tuple[str, str]],  # (name_lower, kind)
     levenshtein_budget: int = 2,
     trigram_threshold: float = 0.55,
-) -> Optional[FuzzyMatch]:
+) -> FuzzyMatch | None:
     """Run 5-layer cascade and return the single best match (if any).
 
     Layer priority (lower number = stronger signal):
@@ -221,7 +220,7 @@ def find_best_match(
     if not q:
         return None
 
-    best: Optional[FuzzyMatch] = None
+    best: FuzzyMatch | None = None
 
     def _maybe_update(name: str, kind: str, conf: float, method: str, edits: int = 0):
         nonlocal best

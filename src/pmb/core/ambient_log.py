@@ -14,8 +14,6 @@ from __future__ import annotations
 import re
 import sqlite3
 import time
-from typing import Optional
-
 
 # ── significance filter ──────────────────────────────────────────────────
 
@@ -101,7 +99,7 @@ def _active_surface_ids(
     workspace_id: str,
     now: float,
     *,
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     window_seconds: float = 1800.0,
     limit: int = 25,
 ) -> str:
@@ -136,8 +134,8 @@ def insert_agent_action(
     target: str = "",
     status: str = "",
     command: str = "",
-    session_id: Optional[str] = None,
-) -> Optional[int]:
+    session_id: str | None = None,
+) -> int | None:
     """Append one observed action. Returns row id or None on failure.
 
     The hot path: one small SQLite transaction, no engine, no model.

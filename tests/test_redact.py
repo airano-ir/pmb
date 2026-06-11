@@ -1,11 +1,6 @@
 """Tests for secret redaction."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.security.redact import redact, redact_metadata
 
 

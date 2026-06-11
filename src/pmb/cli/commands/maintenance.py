@@ -5,7 +5,6 @@ cli/main.py imports this module so these @app.command registrations run."""
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 import typer
 from rich.markup import escape as esc
@@ -108,11 +107,11 @@ def repair_keyed(
 def migrate_workspaces(
     source: str = typer.Argument(
         ..., help="Source workspace id or name to merge memory FROM."),
-    project: Optional[str] = typer.Option(
+    project: str | None = typer.Option(
         None, "--project",
         help="Project tag applied to migrated events (default: source name). "
              "Filter later with recall(project=...)."),
-    into: Optional[str] = typer.Option(
+    into: str | None = typer.Option(
         None, "--into",
         help="Target workspace id (default: the current workspace)."),
     apply: bool = typer.Option(
@@ -159,7 +158,7 @@ def migrate_workspaces(
 
 @app.command()
 def sync(
-    days: Optional[int] = typer.Option(None, "--days",
+    days: int | None = typer.Option(None, "--days",
                                        help="Sync commits from last N days (default: since last sync)"),
 ):
     """Capture git commits into memory."""
@@ -186,7 +185,7 @@ def sync(
 @app.command()
 def session(
     action: str = typer.Argument(..., help="start | end | current | brief"),
-    name: Optional[str] = typer.Argument(None, help="Session name (for start)"),
+    name: str | None = typer.Argument(None, help="Session name (for start)"),
 ):
     """Manage sessions. `brief` = digest of what was decided/done this
     session (re-orient after a long session / context loss)."""
@@ -290,7 +289,7 @@ def dedupe(
         0.92, "--threshold", "-t",
         help="Cosine threshold for cluster merge. Higher = more conservative.",
     ),
-    types: Optional[str] = typer.Option(
+    types: str | None = typer.Option(
         None, "--types",
         help="Comma-separated event_types to include (default: all).",
     ),
@@ -487,7 +486,7 @@ def reflect(
                                         help="Only consider events newer than this"),
     backend: str = typer.Option("auto", "--backend",
                                 help="LLM backend: auto / claude / anthropic / ollama"),
-    source: Optional[str] = typer.Option(None, "--source",
+    source: str | None = typer.Option(None, "--source",
                                           help="Reflect on a single event by ULID"),
 ):
     """PMB v2 - Reflective Memory.
@@ -535,7 +534,7 @@ def reflect(
 @app.command()
 def arcs(
     action: str = typer.Argument("list", help="list / cluster / show"),
-    arc_id: Optional[int] = typer.Argument(None, help="arc id when action=show"),
+    arc_id: int | None = typer.Argument(None, help="arc id when action=show"),
     limit: int = typer.Option(20, "-n", "--limit"),
     backend: str = typer.Option("auto", "--backend"),
     status: str = typer.Option("active", "--status", help="active / closed / all"),
@@ -595,7 +594,7 @@ def arcs(
 
 @app.command()
 def decay(
-    days: Optional[float] = typer.Option(
+    days: float | None = typer.Option(
         None, "--days",
         help="Forgetting curve: days since last decay (default 1). "
              "With --archive-cold: minimum age in days (default 90)."),
@@ -603,7 +602,7 @@ def decay(
         False, "--archive-cold",
         help="Archive cold, low-value, old facts/activities (time-based "
              "forgetting) instead of running the decay curve."),
-    max_importance: Optional[float] = typer.Option(
+    max_importance: float | None = typer.Option(
         None, "--max-importance",
         help="[--archive-cold] Only archive at/below this importance (default 0.25)."),
     apply: bool = typer.Option(
@@ -764,9 +763,9 @@ def history(file_path: str = typer.Argument(...)):
 def feedback(
     ulid: str = typer.Argument(..., help="ULID of the recall hit to judge"),
     verdict: str = typer.Argument(..., help="useful | wrong | irrelevant"),
-    query: Optional[str] = typer.Option(None, "-q", "--query",
+    query: str | None = typer.Option(None, "-q", "--query",
                                         help="The query you were running"),
-    expected_ulid: Optional[str] = typer.Option(None, "-e", "--expected",
+    expected_ulid: str | None = typer.Option(None, "-e", "--expected",
                                                 help="ULID that should have been returned"),
 ):
     """Record real recall feedback. This drives adaptive importance over time."""
@@ -802,7 +801,7 @@ def consolidate(
     ),
     backend: str = typer.Option("auto", "--backend",
                                 help="auto | claude | anthropic | ollama. Auto prefers `claude` CLI if installed (no key needed), then Anthropic API, then Ollama."),
-    model: Optional[str] = typer.Option(None, "--model",
+    model: str | None = typer.Option(None, "--model",
                                         help="Override default model (e.g. 'haiku' for claude/anthropic, 'llama3.1:8b' for ollama)"),
     since_days: float = typer.Option(14.0, "--since-days"),
     threshold: float = typer.Option(0.5, "--threshold",
@@ -945,7 +944,7 @@ def schedule():
 
 @app.command()
 def doctor(
-    remote: Optional[str] = typer.Option(
+    remote: str | None = typer.Option(
         None, "--remote",
         help="Print an SSH-tunneled MCP config for a remote PMB. "
              "Format: user@host:/abs/path/to/repo",

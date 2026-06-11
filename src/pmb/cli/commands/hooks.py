@@ -4,8 +4,6 @@ Extracted from cli/main.py (no behavior change)."""
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -50,11 +48,11 @@ def mcp_serve_cmd(
         "/mcp", "--path",
         help="Mount path for the streamable-http transport.",
     ),
-    workspace: Optional[str] = typer.Option(
+    workspace: str | None = typer.Option(
         None, "--workspace", "-w",
         help="Force a specific workspace id (default: cwd-based detection).",
     ),
-    bearer_token: Optional[str] = typer.Option(
+    bearer_token: str | None = typer.Option(
         None, "--bearer-token", "--token",
         envvar="PMB_MCP_BEARER_TOKEN",
         help="Shared secret required in `Authorization: Bearer <token>`. "
@@ -116,7 +114,7 @@ def mcp_serve_cmd(
             return
         url = f"http://{host}:{port}{path}"
         auth = (
-            f"[green]bearer-token enabled[/]"
+            "[green]bearer-token enabled[/]"
             if bearer_token
             else "[yellow]UNAUTHENTICATED — bind to 127.0.0.1 or set --bearer-token[/]"
         )
@@ -128,8 +126,8 @@ def mcp_serve_cmd(
             f"  workspace: {os.environ.get('PMB_WORKSPACE', '(cwd-detected)')}\n\n"
             f"Wire an agent to it:\n"
             f"  [cyan]pmb connect claude-code --remote {url}"
-            + (f" --bearer-token <secret>" if bearer_token else "") + "[/]\n\n"
-            f"Stop with Ctrl-C.",
+            + (" --bearer-token <secret>" if bearer_token else "") + "[/]\n\n"
+            "Stop with Ctrl-C.",
             title="PMB · mcp serve",
         ))
     else:

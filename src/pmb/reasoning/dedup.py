@@ -45,12 +45,11 @@ import logging
 import re
 import sqlite3
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
 
 import numpy as np
-
 
 log = logging.getLogger(__name__)
 
@@ -146,7 +145,7 @@ def find_exact_duplicate(
     event_type: str,
     content: str,
     lookback_days: float = LOOKBACK_DAYS,
-) -> Optional[DedupHit]:
+) -> DedupHit | None:
     """L1: scan recent same-type active events for an identical normalized
     content string. Returns the canonical event's ULID if found.
 
@@ -193,7 +192,7 @@ def find_semantic_duplicate(
     candidates: list[tuple[str, float]],    # [(ulid, cosine_sim), ...] from nearest-neighbor index
     threshold_high: float = COSINE_HIGH,
     threshold_mid: float = COSINE_MID,
-) -> tuple[Optional[DedupHit], Optional[tuple[str, float]]]:
+) -> tuple[DedupHit | None, tuple[str, float] | None]:
     """L2: given pre-computed cosine similarities, decide if any is a dup.
 
     `candidates` should come from PMB's vector index (LanceDB) — engine
@@ -220,7 +219,7 @@ def find_semantic_duplicate(
             (workspace_id, *ulids),
         ).fetchall()
 
-    best: Optional[tuple[str, float, str]] = None
+    best: tuple[str, float, str] | None = None
     for r in rows:
         if r["event_type"] != event_type:
             continue
@@ -312,7 +311,7 @@ def sweep_workspace(
     workspace_id: str,
     embeddings_provider,             # callable() -> list[(ulid, event_type, importance, access_count, timestamp, np.ndarray)]
     threshold: float = COSINE_HIGH,
-    event_types: Optional[Iterable[str]] = None,
+    event_types: Iterable[str] | None = None,
     archive_fn=None,
 ) -> dict:
     """One-shot dedup pass over all active events.
@@ -381,7 +380,7 @@ def sweep_workspace(
             clusters.setdefault(cid, []).append(idx)
 
         for cid, idxs in clusters.items():
-            def score(idx):
+            def score(idx, group=group):
                 _, _, imp, acc, ts, _ = group[idx]
                 age_days = (time.time() - ts) / 86400.0
                 recency = max(0.0, 1.0 - age_days / 30.0)
@@ -482,11 +481,12 @@ Answer with exactly ONE word, no explanation:
 """
 
 
-def _call_ollama(prompt: str, model: str = "llama3.2") -> Optional[str]:
+def _call_ollama(prompt: str, model: str = "llama3.2") -> str | None:
     """Call a local Ollama instance. Returns None on any failure (caller
     treats as 'cannot decide → keep_both')."""
     try:
-        import urllib.request, urllib.error
+        import urllib.error
+        import urllib.request
         body = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode()
         req = urllib.request.Request(
             "http://localhost:11434/api/generate",
@@ -501,7 +501,7 @@ def _call_ollama(prompt: str, model: str = "llama3.2") -> Optional[str]:
         return None
 
 
-def _call_anthropic(prompt: str, model: str = "claude-haiku-4-5") -> Optional[str]:
+def _call_anthropic(prompt: str, model: str = "claude-haiku-4-5") -> str | None:
     """Call Anthropic via the local `claude` CLI if available, else SDK."""
     try:
         from anthropic import Anthropic
@@ -535,7 +535,7 @@ def run_pending(
         return {"n_processed": 0, "n_merged": 0, "n_kept": 0, "n_skipped": 0}
 
     # Choose backend
-    def call_llm(prompt: str) -> Optional[str]:
+    def call_llm(prompt: str) -> str | None:
         if backend in ("auto", "ollama"):
             r = _call_ollama(prompt)
             if r is not None:

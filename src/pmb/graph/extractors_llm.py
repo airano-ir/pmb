@@ -30,12 +30,17 @@ import os
 import re
 import shutil
 import subprocess
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from pmb.graph.entities import (
-    EntityExtractor, ExtractedEntities,
-    extract_file_paths, extract_techs, _normalize_path, _STOPWORDS,
-    _WINPATH_RE, _POSIXPATH_RE,
+    _POSIXPATH_RE,
+    _STOPWORDS,
+    _WINPATH_RE,
+    EntityExtractor,
+    ExtractedEntities,
+    _normalize_path,
+    extract_file_paths,
+    extract_techs,
 )
 
 log = logging.getLogger(__name__)
@@ -142,9 +147,9 @@ def _run_claude_cli(prompt: str, timeout: float, model: str = "") -> str:
         argv += ["--model", model]
     argv.append(prompt)
     # Force ASCII cwd: on Windows, Claude CLI walks the cwd looking for
-    # config/session files. If the path has non-ASCII chars (e.g. Cyrillic
-    # "Рабочий стол") it fails with "Системе не удается найти указанный
-    # путь". TEMP is guaranteed ASCII and writable.
+    # config/session files. If the path has non-ASCII chars (e.g. a Cyrillic
+    # "Desktop" folder) it fails with a "path not found" OS error. TEMP is
+    # guaranteed ASCII and writable.
     safe_cwd = os.environ.get("TEMP") or os.environ.get("TMP") or os.getcwd()
     r = subprocess.run(
         argv, capture_output=True, text=True, timeout=timeout,
@@ -202,7 +207,7 @@ class LLMExtractor(EntityExtractor):
         max_concepts: int = 5,
         timeout_s: float = 30.0,
         model: str = "",
-        ollama_model: Optional[str] = None,
+        ollama_model: str | None = None,
     ):
         super().__init__(max_concepts=max_concepts)
         self.provider = provider.lower().strip()

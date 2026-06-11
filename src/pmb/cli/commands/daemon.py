@@ -12,7 +12,6 @@ import subprocess
 import sys
 import time
 import urllib.request
-from typing import Optional
 
 import typer
 
@@ -25,7 +24,7 @@ def _health_url(host: str, port: int) -> str:
     return f"http://{host}:{port}/internal/health"
 
 
-def _probe(host: str, port: int, timeout: float = 0.5) -> Optional[dict]:
+def _probe(host: str, port: int, timeout: float = 0.5) -> dict | None:
     try:
         with urllib.request.urlopen(_health_url(host, port), timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8"))
@@ -83,7 +82,7 @@ def start(
 def run(
     port: int = typer.Option(8765, "--port"),
     host: str = typer.Option("127.0.0.1", "--host"),
-    idle_exit_min: Optional[float] = typer.Option(
+    idle_exit_min: float | None = typer.Option(
         None, "--idle-exit-min",
         help="Exit after N idle minutes (default from config; 0 = never)."),
 ):

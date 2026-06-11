@@ -25,11 +25,10 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
-
 
 SCHEMA_VERSION = 2
 
@@ -74,7 +73,7 @@ _DDL_V2 = [
 
 @dataclass
 class Entity:
-    id: Optional[int]
+    id: int | None
     workspace_id: str
     kind: str
     name: str
@@ -300,7 +299,7 @@ class GraphStore:
         return {"n_entities": n_entities, "n_edges": n_edges, "by_kind": by_kind}
 
     def top_entities(
-        self, workspace_id: str, kind: Optional[str] = None, limit: int = 20
+        self, workspace_id: str, kind: str | None = None, limit: int = 20
     ) -> list[Entity]:
         with self._conn() as conn:
             if kind:

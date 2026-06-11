@@ -24,10 +24,9 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 
-def _run_git(repo: Path, *args: str, timeout: float = 10.0) -> Optional[str]:
+def _run_git(repo: Path, *args: str, timeout: float = 10.0) -> str | None:
     try:
         r = subprocess.run(
             ["git", "-C", str(repo), *args],

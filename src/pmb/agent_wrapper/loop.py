@@ -20,15 +20,15 @@ missing.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
-from pmb.core.engine import Engine
 from pmb.agent_wrapper.budget import TokenBudget
 from pmb.agent_wrapper.policy import (
-    CompressionPolicy, DropOldestNarrative, SelectivePolicy,
+    CompressionPolicy,
+    DropOldestNarrative,
+    SelectivePolicy,
 )
-
+from pmb.core.engine import Engine
 
 SYSTEM_BASE = """\
 You are a coding assistant with persistent project memory.
@@ -50,7 +50,7 @@ class AgentConfig:
     consolidate_on_exit: bool = False
     transport: str = "auto"  # auto | claude | anthropic | ollama
     selective_compression: bool = True
-    ollama_url: Optional[str] = None  # honours PMB_OLLAMA_URL / OLLAMA_HOST
+    ollama_url: str | None = None  # honours PMB_OLLAMA_URL / OLLAMA_HOST
 
 
 @dataclass
@@ -63,9 +63,9 @@ class ChatTurn:
 class AgentLoop:
     def __init__(
         self,
-        engine: Optional[Engine] = None,
-        config: Optional[AgentConfig] = None,
-        policy: Optional[CompressionPolicy] = None,
+        engine: Engine | None = None,
+        config: AgentConfig | None = None,
+        policy: CompressionPolicy | None = None,
     ):
         self.engine = engine or Engine()
         self.config = config or AgentConfig()
@@ -89,7 +89,8 @@ class AgentLoop:
     def _resolve_transport(self) -> str:
         """Pick how we actually call the model. Mirrors consolidate's logic
         but cached once per session."""
-        import os, shutil
+        import os
+        import shutil
         t = (self.config.transport or "auto").lower()
         if t == "auto":
             if shutil.which("claude"):

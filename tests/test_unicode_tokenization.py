@@ -10,12 +10,8 @@ are allowed to change.
 from __future__ import annotations
 
 import re
-import sys
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import pmb.reasoning.pamvr as pamvr
 from pmb.reasoning.attributes import normalize_label

@@ -13,8 +13,6 @@ Strategy, in order of preference:
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 def _heuristic_tokens(text: str) -> int:
     # Conservative: assume 3.5 chars/token (gives a slight overestimate)
@@ -37,7 +35,7 @@ class TokenBudget:
     def threshold(self) -> int:
         return int(self.window * self.target_max)
 
-    def count_messages(self, messages: list[dict], system: Optional[str] = None) -> int:
+    def count_messages(self, messages: list[dict], system: str | None = None) -> int:
         """Total approximate tokens for a system + messages list."""
         total = 0
         if system:
@@ -58,5 +56,5 @@ class TokenBudget:
             total += 4
         return total
 
-    def should_compact(self, messages: list[dict], system: Optional[str] = None) -> bool:
+    def should_compact(self, messages: list[dict], system: str | None = None) -> bool:
         return self.count_messages(messages, system) >= self.threshold

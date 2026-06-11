@@ -26,8 +26,7 @@ can be A/B compared and stacked (CE -> LLM is a valid order).
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
-
+from typing import Any
 
 # Recommended models for this task (good cost/quality):
 #   - qwen2.5:0.5b      (~400MB)
@@ -67,7 +66,7 @@ def llm_rerank_top_k(
     llm_client,                       # any obj with .complete(prompt) -> str
     max_candidates: int = 10,
     max_candidate_chars: int = 200,
-) -> Optional[int]:
+) -> int | None:
     """Ask the LLM to pick the best candidate. Returns the index of the
     new top-1 (within `candidates`), or None if the LLM didn't return a
     usable answer. Callers should treat None as "keep current order".

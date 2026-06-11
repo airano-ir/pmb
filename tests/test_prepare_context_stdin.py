@@ -11,7 +11,7 @@ from __future__ import annotations
 import io
 import json
 
-from pmb.cli.commands.ambient import _read_stdin_utf8, _extract_hook_prompt
+from pmb.cli.commands.ambient import _extract_hook_prompt, _read_stdin_utf8
 
 
 class _FakeStdin:

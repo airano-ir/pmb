@@ -6,11 +6,7 @@ explanation would disagree - so we assert they're numerically identical.
 """
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.reasoning.pamvr import apply_pamvr, explain_pamvr
 

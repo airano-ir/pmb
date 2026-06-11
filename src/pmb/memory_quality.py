@@ -13,7 +13,7 @@ Pure functions, no I/O - trivially testable.
 
 from __future__ import annotations
 
-from typing import Optional
+from pmb import lang as _lang
 
 # A fact older than this (days) and not recently re-confirmed is flagged stale.
 STALE_DAYS = 180.0
@@ -48,7 +48,7 @@ def is_stale(timestamp: float, now: float, *, access_count: int = 0,
     return access_count < 3
 
 
-def freshness_label(timestamp: float, now: float, *, access_count: int = 0) -> Optional[str]:
+def freshness_label(timestamp: float, now: float, *, access_count: int = 0) -> str | None:
     """Human staleness note, or None if the fact is fresh enough to not warn."""
     if not is_stale(timestamp, now, access_count=access_count):
         return None
@@ -62,7 +62,7 @@ def freshness_label(timestamp: float, now: float, *, access_count: int = 0) -> O
     return f"may be stale, {age} old"
 
 
-def confidence_from(metadata: Optional[dict]) -> float:
+def confidence_from(metadata: dict | None) -> float:
     """Source-derived reliability in [0,1]. Defaults to 0.6 (unknown source)."""
     meta = metadata or {}
     # explicit override wins
@@ -90,15 +90,15 @@ def confidence_label(c: float) -> str:
 # Lesson-intent: does this query look like "how should I work here / what's
 # the convention / what to avoid"? Used to gently boost lesson/failure
 # memories on coding-style queries. Pure + cheap.
+# EN floor inline; the RU/UK markers ("how to configure" / "what rules" / …)
+# live in the lang packs under `lesson_intent_markers` (L1).
 _LESSON_INTENT_MARKERS = (
     "how do", "how to", "how should", "should i", "should we",
     "what's the right", "what is the right", "best way", "right way",
     "convention", "conventions", "do we use", "which tool", "setup",
     "configure", "config", "avoid", "gotcha", "lesson", "lessons",
     "remember to", "rule", "rules", "workflow", "policy",
-    # RU/UK
-    "как делать", "как настроить", "как мне", "какое правило", "какие правила",
-    "что использовать", "как правильно", "избегать", "соглашени",
+    *(_lang.merged_list("lesson_intent_markers")),
 )
 
 

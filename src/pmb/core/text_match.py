@@ -18,7 +18,6 @@ import re
 
 from pmb.reference_data import extend_set as _extend_set
 
-
 # Tokens too common to be evidence of anything. Multilingual stop-ish set +
 # PMB-generic words + high-frequency English fillers + filesystem-path noise
 # (users / appdata / local / …) that otherwise reads as a "strong" identifier
@@ -34,10 +33,9 @@ STOPWORDS: frozenset[str] = frozenset({
     "any", "all", "more", "most", "less", "only", "just", "also", "still",
     "here", "there", "where", "while", "until", "they", "them", "their",
     "make", "made", "need", "want", "like", "such", "very", "much", "many",
-    # Russian/Ukrainian stop-ish
-    "пмб", "это", "как", "что", "для", "при", "над", "под", "без", "все",
-    "так", "там", "тут", "нет", "его", "она", "они", "этот",
-    "может", "была", "были", "быть", "если", "чтобы", "когда", "потом",
+    # (Russian/Ukrainian stop-ish words — incl. "pmb" spelled in Cyrillic —
+    # live in the packs under text_match_stopwords and merge in below, keeping
+    # this module Cyrillic-free.)
     # PMB-generic — appear in almost every lesson, no discriminating power
     "pmb", "lesson", "rule", "agent", "code", "file", "test", "run", "tests",
     "thing", "things", "stuff", "case", "cases", "time", "times", "work",
@@ -51,12 +49,21 @@ STOPWORDS: frozenset[str] = frozenset({
 # packs (extend-only — both no-ops without the respective files).
 STOPWORDS = _extend_set("stopwords", STOPWORDS)
 from pmb import lang as _lang  # noqa: E402
+
 STOPWORDS = _lang.merged_set("stopwords", STOPWORDS)
+# RU/UK lesson-keyword stopwords relocated out of the inline set (L1) — a
+# DEDICATED category so they never bleed into pamvr's `stopwords` consumer.
+STOPWORDS = _lang.merged_set("text_match_stopwords", STOPWORDS)
 
 # A "distinctive" token: a word char start (incl. unicode), then word chars /
 # - . — so identifiers like record_batch / qwen2.5 / paraphrase-multilingual
 # survive intact. Length and stopword filtering happen in distinctive_tokens.
-_TOKEN = re.compile(r"[A-Za-z0-9_À-ɏЀ-ӿ][\w\-.]{2,}", re.UNICODE)
+# The Cyrillic-block range lives in the ru pack (cyrillic_script_range) so this
+# module is Cyrillic-free; with an active ru pack it reproduces the U+0400-04FF
+# range the inline class used to spell out.
+_TOKEN = re.compile(
+    r"[A-Za-z0-9_À-ɏ" + "".join(str(x) for x in _lang.merged_list("cyrillic_script_range"))
+    + r"][\w\-.]{2,}", re.UNICODE)
 
 
 def is_strong(tok: str) -> bool:

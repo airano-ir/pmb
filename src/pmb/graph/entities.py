@@ -25,11 +25,11 @@ keep their case to stay matchable against real file paths.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
+from pmb import lang as _lang
 from pmb.reference_data import extend_tech_map as _extend_tech_map
-
 
 # Known technologies — closed set, lowercase canonical name → display alias list.
 # Match against any alias on word boundaries.
@@ -119,8 +119,8 @@ _FILE_RE = re.compile(
 # token containing 2+ backslashes / forward slashes. The concept extractor
 # strips these wholesale before tokenizing so AppData/Roaming/Users etc.
 # don't pollute the concept set. The Unicode `\w` char-class catches Cyrillic
-# / Greek / accented folder names too — without it `C:\Users\…\Рабочий стол\`
-# would leak "Рабочий" and "стол" into the concept set.
+# / Greek / accented folder names too — without it a localized Desktop folder
+# would leak its words into the concept set.
 _WINPATH_RE = re.compile(
     r"(?:[A-Za-z]:[\\/]|\\\\)[\w\-.\\/ :]+",
     re.IGNORECASE | re.UNICODE,
@@ -136,8 +136,7 @@ _POSIXPATH_RE = re.compile(
 _STOPWORDS = {
     # Articles, demonstratives, pronouns
     "the", "a", "an", "this", "that", "these", "those", "it", "we", "you",
-    "they", "them", "their", "his", "her", "hers", "him", "she", "him",
-    "your", "yours", "mine", "ours", "us", "our",
+    "they", "them", "their", "his", "her", "hers", "him", "she", "your", "yours", "mine", "ours", "us", "our",
     # Auxiliary / modal verbs
     "is", "are", "was", "were", "be", "been", "being", "have", "has",
     "had", "do", "does", "did", "will", "would", "should", "could", "may",
@@ -164,8 +163,7 @@ _STOPWORDS = {
     "type", "object", "instance", "default", "config", "setting",
     "settings", "param", "params", "arg", "args",
     # Action / connector words
-    "using", "used", "use", "uses", "based", "set", "sets", "setting",
-    "got", "gets", "done", "doing",
+    "using", "used", "use", "uses", "based", "set", "sets", "done", "doing",
     # Time-related fragments
     "today", "yesterday", "tomorrow", "now", "later", "soon", "ago",
     "week", "weeks", "month", "months", "year", "years", "day", "days",
@@ -177,8 +175,7 @@ _STOPWORDS = {
     "ask", "asked", "talk", "talked", "speak", "spoke",
     # Common verbs (past tense often pollutes)
     "decided", "decides", "deciding", "switched", "switches", "switching",
-    "broke", "breaks", "broken", "made", "makes", "making",
-    "ran", "runs", "running", "went", "goes", "going",
+    "broke", "breaks", "broken", "ran", "runs", "running", "went", "goes", "going",
     "came", "comes", "coming", "lived", "lives", "living",
     "added", "adds", "adding", "removed", "removes", "removing",
     "flew", "flies", "flying", "moved", "moves", "moving",
@@ -197,9 +194,9 @@ _STOPWORDS = {
     "appdata", "roaming", "programfiles", "programdata", "users",
     "desktop", "documents", "downloads", "system32", "windows", "apps",
     "onedrive", "dropbox", "icloud", "googledrive",
-    # Russian / Ukrainian folder names that leak from `C:\Users\...\Рабочий стол\`
-    # paths even after the Windows-path stripper has done its pass.
-    "рабочий", "стол", "документы", "загрузки", "рабочий стол",
+    # (Russian/Ukrainian localized folder names that leak from a Windows
+    # Desktop path live in the packs' entities_folder_stopwords and merge in
+    # below, so this module stays Cyrillic-free.)
     # Acronym fragments that aren't useful as nodes
     "lgbtq", "lgbt", "covid",
     # Generic English nouns / qualifiers that clog the concept set.
@@ -216,11 +213,9 @@ _STOPWORDS = {
     "free", "paid", "private", "public", "local", "remote", "global",
     "specific", "general", "common", "rare", "weird", "strange",
     # Past-tense verbs commonly picked up by the noun-shaped regex
-    "built", "created", "installed", "uninstalled", "opened", "closed",
-    "deleted", "finished", "started", "completed", "fixed", "broke",
-    "broken", "removed", "added", "called", "sent", "received",
-    "received", "loaded", "saved", "exported", "imported", "renamed",
-    "moved", "copied", "pulled", "pushed", "merged", "rebased", "reverted",
+    "built", "created", "installed", "uninstalled", "opened", "deleted", "finished", "started", "completed", "fixed", "called", "sent", "received",
+    "loaded", "saved", "exported", "imported", "renamed",
+    "copied", "pulled", "pushed", "merged", "rebased", "reverted",
     "logged", "configured", "updated", "upgraded", "downgraded",
     "deployed", "shipped", "released", "tested", "verified",
     "checked", "skipped", "tracked", "pinned", "archived",
@@ -231,6 +226,9 @@ _STOPWORDS = {
     "explained", "described", "mentioned", "noted", "shared", "showed",
     "claimed", "argued", "proposed", "suggested", "agreed", "disagreed",
 }
+# RU/UK localized folder-name stopwords (the words for "Desktop"/"Documents"
+# /…) merge in from the packs so Windows path leftovers never become concepts.
+_STOPWORDS = _lang.merged_set("entities_folder_stopwords", _STOPWORDS)
 
 
 # Hardening (H5): Unicode-aware concept matcher. The previous `[a-z]…`
@@ -328,7 +326,7 @@ def extract_concepts(text: str, max_n: int = 8) -> list[str]:
     file_blob = " ".join(extract_file_paths(text)).lower()
 
     # Strip Windows AND posix-style paths BEFORE tokenizing so AppData/Roaming/
-    # Users / Рабочий-стол / home / opt don't leak into the concept set.
+    # Users / Desktop / home / opt folder names don't leak into the concept set.
     scrubbed = _WINPATH_RE.sub(" ", text)
     scrubbed = _POSIXPATH_RE.sub(" ", scrubbed)
 
@@ -431,7 +429,7 @@ class EntityExtractor:
 
     def extract_batch(
         self,
-        items: "list[tuple[str, tuple]]",
+        items: list[tuple[str, tuple]],
     ) -> list[ExtractedEntities]:
         """Default batch is just per-event loop — overridden by LLMExtractor
         to send N events in one CLI call. Lets the engine always call

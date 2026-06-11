@@ -24,15 +24,18 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from typing import Optional
 
 # Single source of truth for the significance filter + writer lives in the
 # dependency-light `ambient_log` module (so the PostToolUse hot path can use
 # it without importing the engine). The mixin just delegates.
 from pmb.core.ambient_log import (
     ensure_agent_actions_table as _ensure_table,
-    is_significant_action as _is_significant,
+)
+from pmb.core.ambient_log import (
     insert_agent_action as _insert_action,
+)
+from pmb.core.ambient_log import (
+    is_significant_action as _is_significant,
 )
 
 
@@ -58,8 +61,8 @@ class AmbientMixin:
         target: str = "",
         status: str = "",
         command: str = "",
-        session_id: Optional[str] = None,
-    ) -> Optional[int]:
+        session_id: str | None = None,
+    ) -> int | None:
         """Append one observed agent action to the raw log. Returns row id."""
         return _insert_action(
             self.workspace.db_path, self.workspace.id,
@@ -132,7 +135,7 @@ class AmbientMixin:
     # ──────────────────────────────────────────────────────────────────
     # control — user owns every byte
     # ──────────────────────────────────────────────────────────────────
-    def forget_auto_written(self, minutes: Optional[float] = None) -> int:
+    def forget_auto_written(self, minutes: float | None = None) -> int:
         """Archive activity events that ambient memory wrote itself
         (metadata.source == 'autowrite'). Reversible-ish: archived, not
         hard-deleted. `minutes=None` → all auto-written; else just recent.

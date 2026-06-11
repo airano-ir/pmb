@@ -3,6 +3,6 @@
 """
 
 from pmb.core.engine.base import Engine
-from pmb.core.engine.types import RecallResult, RecallPack, _looks_multihop
+from pmb.core.engine.types import RecallPack, RecallResult, _looks_multihop
 
 __all__ = ["Engine", "RecallResult", "RecallPack", "_looks_multihop"]

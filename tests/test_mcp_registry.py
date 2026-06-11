@@ -4,12 +4,8 @@ and the CLI surface directly."""
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.mcp import registry as R
 
@@ -69,6 +65,7 @@ def test_unregister(pmb_home):
 
 def test_mcp_status_empty(pmb_home):
     from typer.testing import CliRunner
+
     from pmb.cli.main import app
     r = CliRunner().invoke(app, ["mcp", "status"])
     assert r.exit_code == 0, r.output
@@ -77,6 +74,7 @@ def test_mcp_status_empty(pmb_home):
 
 def test_mcp_status_lists_registered(pmb_home):
     from typer.testing import CliRunner
+
     from pmb.cli.main import app
     R.register_server(transport="streamable-http", host="127.0.0.1",
                       port=8765, path="/mcp", workspace="personal")

@@ -31,9 +31,9 @@ Design notes
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 _MAX_CHARS = 4000
 _MIN_CHARS = 12  # drop trivial "ok", "thanks", etc.
@@ -51,7 +51,7 @@ class ImportResult:
         return len(self.items)
 
 
-def _mk_item(content: str, importance: float, meta: dict) -> Optional[dict]:
+def _mk_item(content: str, importance: float, meta: dict) -> dict | None:
     content = (content or "").strip()
     if len(content) < _MIN_CHARS:
         return None
@@ -262,7 +262,7 @@ PARSERS: dict[str, Callable[[Path, set[str]], ImportResult]] = {
 }
 
 
-def parse_source(source: str, path: Path, roles: Optional[set[str]] = None) -> ImportResult:
+def parse_source(source: str, path: Path, roles: set[str] | None = None) -> ImportResult:
     """Dispatch to the right parser. `roles` filters chat sources
     (default: {'user'} - your own words carry the most signal)."""
     source = source.lower().strip()

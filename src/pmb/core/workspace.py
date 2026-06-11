@@ -1,11 +1,11 @@
 """
-Workspace — изолированное хранилище памяти per-project.
+Workspace — isolated per-project memory storage.
 
 Detection priority:
 1. PMB_WORKSPACE env variable (explicit override)
-2. .pmb/workspace.yaml в проекте
-3. git remote (хеш) если есть .git
-4. cwd path (хеш)
+2. .pmb/workspace.yaml in the project
+3. git remote (hash) if there's a .git
+4. cwd path (hash)
 5. "default"
 
 Storage: ~/.pmb/workspaces/{workspace_id}/
@@ -17,9 +17,8 @@ import hashlib
 import os
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -30,8 +29,8 @@ def _hash_short(s: str, length: int = 12) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()[:length]
 
 
-def _git_remote(path: Path) -> Optional[str]:
-    """Получить URL git remote origin, если репо."""
+def _git_remote(path: Path) -> str | None:
+    """Get the git remote origin URL, if this is a repo."""
     try:
         result = subprocess.run(
             ["git", "-C", str(path), "config", "--get", "remote.origin.url"],
@@ -44,8 +43,8 @@ def _git_remote(path: Path) -> Optional[str]:
     return None
 
 
-def _git_root(path: Path) -> Optional[Path]:
-    """Найти корень git репо."""
+def _git_root(path: Path) -> Path | None:
+    """Find the git repo root."""
     try:
         result = subprocess.run(
             ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
@@ -60,14 +59,14 @@ def _git_root(path: Path) -> Optional[Path]:
 
 @dataclass
 class Workspace:
-    """Изолированный workspace для одного проекта."""
+    """Isolated workspace for a single project."""
 
     id: str
     name: str
     root: Path
     pmb_home: Path = field(default_factory=lambda: DEFAULT_PMB_HOME)
     created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     )
     source: str = "auto"  # "env" | "config" | "git" | "cwd" | "explicit"
 
@@ -92,19 +91,29 @@ class Workspace:
 
     def save_meta(self):
         self.ensure_dirs()
+        payload = yaml.safe_dump({
+            "id": self.id,
+            "name": self.name,
+            "root": str(self.root),
+            "created_at": self.created_at,
+            "source": self.source,
+        }, allow_unicode=True)
+        # S8: Engine.__init__ calls save_meta on every start, but the metadata
+        # only changes on create/rename. Skip the disk write (and OneDrive/AV
+        # churn it triggers) when the serialized content is byte-identical.
+        try:
+            if self.meta_path.exists() and \
+                    self.meta_path.read_text(encoding="utf-8") == payload:
+                return
+        except Exception:
+            pass
         with open(self.meta_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump({
-                "id": self.id,
-                "name": self.name,
-                "root": str(self.root),
-                "created_at": self.created_at,
-                "source": self.source,
-            }, f, allow_unicode=True)
+            f.write(payload)
 
     @classmethod
-    def load_meta(cls, storage_dir: Path, pmb_home: Path) -> "Workspace":
+    def load_meta(cls, storage_dir: Path, pmb_home: Path) -> Workspace:
         meta_file = storage_dir / "meta.yaml"
-        with open(meta_file, "r", encoding="utf-8") as f:
+        with open(meta_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls(
             id=data["id"],
@@ -122,7 +131,7 @@ def _default_workspace_file(pmb_home: Path) -> Path:
     return pmb_home / "current_workspace"
 
 
-def read_default_workspace(pmb_home: Path) -> Optional[str]:
+def read_default_workspace(pmb_home: Path) -> str | None:
     """Return the persisted default workspace id, or None if unset/unreadable."""
     try:
         f = _default_workspace_file(pmb_home)
@@ -134,7 +143,7 @@ def read_default_workspace(pmb_home: Path) -> Optional[str]:
     return None
 
 
-def set_default_workspace(pmb_home: Path, ws_id: Optional[str]) -> None:
+def set_default_workspace(pmb_home: Path, ws_id: str | None) -> None:
     """Persist (ws_id) or clear (None) the default workspace selection."""
     f = _default_workspace_file(pmb_home)
     if ws_id is None:
@@ -148,17 +157,17 @@ def set_default_workspace(pmb_home: Path, ws_id: Optional[str]) -> None:
 
 
 def detect_workspace(
-    cwd: Optional[Path] = None,
-    pmb_home: Optional[Path] = None,
-    explicit_id: Optional[str] = None,
+    cwd: Path | None = None,
+    pmb_home: Path | None = None,
+    explicit_id: str | None = None,
 ) -> Workspace:
     """
-    Определить или создать workspace для текущей директории.
+    Detect or create the workspace for the current directory.
 
     Detection priority:
-    1. explicit_id (если передан)
+    1. explicit_id (if passed)
     2. env var PMB_WORKSPACE
-    3. .pmb/workspace.yaml в cwd или родителях
+    3. .pmb/workspace.yaml in cwd or its parents
     4. git remote URL
     5. git root path
     6. cwd path
@@ -180,7 +189,7 @@ def detect_workspace(
     for _ in range(10):
         config = p / ".pmb" / "workspace.yaml"
         if config.exists():
-            with open(config, "r", encoding="utf-8") as f:
+            with open(config, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             return _build_workspace(
                 data["id"],
@@ -235,8 +244,8 @@ def _build_workspace(ws_id: str, name: str, root: Path, pmb_home: Path, source: 
     return ws
 
 
-def list_workspaces(pmb_home: Optional[Path] = None) -> list[Workspace]:
-    """Список всех существующих workspaces."""
+def list_workspaces(pmb_home: Path | None = None) -> list[Workspace]:
+    """List all existing workspaces."""
     pmb_home = pmb_home or DEFAULT_PMB_HOME
     ws_dir = pmb_home / "workspaces"
     if not ws_dir.exists():

@@ -26,7 +26,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import yaml
 
@@ -41,16 +41,16 @@ class TriggerState:
     n_runs: int = 0
 
 
-def _state_path(engine: "Engine") -> Path:
+def _state_path(engine: Engine) -> Path:
     return engine.workspace.storage_dir / "consolidation_state.yaml"
 
 
-def load_state(engine: "Engine") -> TriggerState:
+def load_state(engine: Engine) -> TriggerState:
     p = _state_path(engine)
     if not p.exists():
         return TriggerState()
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return TriggerState(
             last_consolidation_at=float(data.get("last_consolidation_at", 0.0)),
@@ -61,7 +61,7 @@ def load_state(engine: "Engine") -> TriggerState:
         return TriggerState()
 
 
-def save_state(engine: "Engine", state: TriggerState) -> None:
+def save_state(engine: Engine, state: TriggerState) -> None:
     p = _state_path(engine)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w", encoding="utf-8") as f:
@@ -72,7 +72,7 @@ def save_state(engine: "Engine", state: TriggerState) -> None:
         }, f)
 
 
-def should_trigger(engine: "Engine") -> dict:
+def should_trigger(engine: Engine) -> dict:
     """Inspect state vs thresholds, return decision dict.
 
     Returns:
@@ -117,7 +117,7 @@ def should_trigger(engine: "Engine") -> dict:
     }
 
 
-def mark_consolidation_done(engine: "Engine") -> None:
+def mark_consolidation_done(engine: Engine) -> None:
     """Reset the trigger state — call after a consolidation run completes."""
     state = load_state(engine)
     state.last_consolidation_at = time.time()

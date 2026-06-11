@@ -26,9 +26,7 @@ import logging
 import mimetypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urlparse, parse_qs
-
+from urllib.parse import parse_qs, urlparse
 
 log = logging.getLogger(__name__)
 
@@ -255,7 +253,8 @@ def make_handler(engine):
                 return {"error": str(e)}
             # Add a per-day series so the dashboard can draw the chart.
             try:
-                import sqlite3, time as _t
+                import sqlite3
+                import time as _t
                 cutoff = _t.time() - days * 86400.0
                 read_tools = (
                     "recall","prepare","project_overview","find_lessons",
@@ -338,7 +337,7 @@ def make_handler(engine):
                 "events": events,
             }
 
-        def _handle_entities(self, limit: int, kind: Optional[str]) -> list[dict]:
+        def _handle_entities(self, limit: int, kind: str | None) -> list[dict]:
             ents = engine.graph.top_entities(
                 engine.workspace.id, kind=kind, limit=limit,
             )
@@ -373,7 +372,6 @@ def make_handler(engine):
 
         def _handle_dedup_merge(self, payload: dict) -> dict:
             """User clicked 'merge'. Archive `new_ulid`, point at `canonical`."""
-            import sqlite3, time as _t, json as _j
             new_ulid = payload.get("new_ulid")
             canonical = payload.get("canonical_ulid")
             pending_id = payload.get("pending_id")

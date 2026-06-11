@@ -38,13 +38,12 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
 if TYPE_CHECKING:
     from pmb.core.engine import Engine
-    from pmb.core.events import Event
 
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
@@ -108,7 +107,7 @@ class AnthropicHaikuClient:
 
     DEFAULT_MODEL = "claude-haiku-4-5"
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, model: str | None = None):
         from anthropic import Anthropic
         self.client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
         self.model = model or self.DEFAULT_MODEL
@@ -164,10 +163,10 @@ class ClaudeCLIClient:
 
     def __init__(
         self,
-        command: Optional[str] = None,
-        model: Optional[str] = None,
+        command: str | None = None,
+        model: str | None = None,
         timeout: float = 120.0,
-        extra_args: Optional[list[str]] = None,
+        extra_args: list[str] | None = None,
     ):
         self.command = command or os.environ.get("PMB_CLAUDE_CMD") or "claude"
         self.model = model or os.environ.get("PMB_CLAUDE_MODEL") or DEFAULT_CLAUDE_MODEL
@@ -175,11 +174,12 @@ class ClaudeCLIClient:
         self.extra_args = extra_args or []
 
     @staticmethod
-    def available(command: Optional[str] = None) -> bool:
+    def available(command: str | None = None) -> bool:
         """Quick check used by auto-detection. Honors PMB_CLAUDE_CMD env
         var (which may be an absolute path), then falls back to looking
         for 'claude' on PATH."""
-        import shutil, os as _os
+        import os as _os
+        import shutil
         cmd = command or _os.environ.get("PMB_CLAUDE_CMD") or "claude"
         # Absolute path: just check the file exists and is executable
         if _os.path.isabs(cmd) or "/" in cmd or "\\" in cmd:
@@ -281,8 +281,8 @@ class OllamaClient:
 
     def __init__(
         self,
-        model: Optional[str] = None,
-        base_url: Optional[str] = None,
+        model: str | None = None,
+        base_url: str | None = None,
         timeout: float = 60.0,
     ):
         self.model = model or os.environ.get("PMB_OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL
@@ -372,7 +372,7 @@ class OllamaClient:
 
 def resolve_llm_client(
     backend: str = "auto",
-    model: Optional[str] = None,
+    model: str | None = None,
 ) -> LLMClient:
     """
     Pick a backend.
@@ -485,7 +485,7 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def cluster_events(
-    engine: "Engine",
+    engine: Engine,
     since_days: float = 14.0,
     similarity_threshold: float = 0.5,
     min_cluster_size: int = 3,
@@ -577,7 +577,7 @@ class ConsolidationResult:
     summary: str = ""
     confidence: float = 0.0
     reasoning: str = ""
-    new_ulid: Optional[str] = None
+    new_ulid: str | None = None
     archived_source_ulids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -647,10 +647,10 @@ def _summary_looks_like_copy(summary: str, source_texts: list[str],
 
 
 def run_consolidation(
-    engine: "Engine",
-    llm: Optional[LLMClient] = None,
+    engine: Engine,
+    llm: LLMClient | None = None,
     backend: str = "auto",
-    model: Optional[str] = None,
+    model: str | None = None,
     since_days: float = 14.0,
     similarity_threshold: float = 0.5,
     min_cluster_size: int = 3,

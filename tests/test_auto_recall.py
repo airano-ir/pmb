@@ -20,7 +20,6 @@ from pmb.hooks.auto_recall import (
     run_auto_context,
 )
 
-
 # ─── Trivial-input detection ────────────────────────────────────────────
 
 

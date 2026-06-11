@@ -3,8 +3,9 @@ current-state statements.
 
 A keyed fact is stored under a `subject::attribute` key (e.g. ``user::city``).
 Without canonicalization, synonymous attribute labels — ``city`` /
-``current_city`` / ``current_city_2026`` / ``lives_in`` / ``город`` — produce
-INDEPENDENT keys that then compete in recall instead of one superseding the
+``current_city`` / ``current_city_2026`` / ``lives_in`` and their localized
+aliases — produce INDEPENDENT keys that then compete in recall instead of one
+superseding the
 next. That is exactly how a stale ``user::city = Warsaw`` kept out-ranking a
 live ``user lives in Tampa`` fact.
 
@@ -24,57 +25,50 @@ no alias group yet. Add groups freely — that's the only step needed.
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 from pmb.reference_data import extend_alias_groups as _extend_alias_groups
 
 # ── canonical attribute → set of synonym labels ───────────────────────────
 # Labels are matched after normalize_label() (lowercased, non-alnum collapsed
 # to '_'), so write both 'current city' and 'current_city' as you like.
+# EN alias labels only; the RU/UK aliases live in the built-in ru.yaml /
+# uk.yaml packs and merge in below (L1).
 _ALIAS_GROUPS: dict[str, set[str]] = {
     "city": {
         "city", "current_city", "city_now", "current_city_2026", "town",
         "lives_in", "live_in", "living_in", "residence", "resides_in",
         "location", "current_location", "based_in",
-        "город", "город_проживания", "живет", "живёт", "проживает",
-        "место_жительства", "местожительства", "проживание",
     },
     # Hometown is immutable ORIGIN, NOT current residence — it must never share
     # the `city` key, or "I'm from Kyiv" would overwrite "I live in Tampa".
     "hometown": {
         "hometown", "home_city", "home_town", "birthplace", "born_in",
-        "родной_город", "откуда_родом", "родом_из",
     },
     "country": {
-        "country", "current_country", "nation", "страна",
+        "country", "current_country", "nation",
     },
     "employer": {
         "employer", "company", "current_employer", "current_company",
         "works_at", "work_at", "workplace", "works_for", "employed_at",
-        "работодатель", "компания", "место_работы",
     },
     "job_title": {
         "job_title", "title", "role", "position", "occupation", "profession",
         "current_role", "current_title", "current_position",
-        "должность", "профессия", "роль",
     },
     "email": {
-        "email", "email_address", "e_mail", "mail", "contact_email", "почта",
-        "электронная_почта",
+        "email", "email_address", "e_mail", "mail", "contact_email",
     },
     "phone": {
         "phone", "phone_number", "mobile", "cell", "telephone", "tel",
-        "телефон", "номер_телефона",
     },
     "current_project": {
         "current_project", "active_project", "working_on", "current_focus",
-        "текущий_проект",
     },
     "timezone": {
-        "timezone", "time_zone", "tz", "часовой_пояс",
+        "timezone", "time_zone", "tz",
     },
     "relationship_status": {
-        "relationship_status", "marital_status", "семейное_положение",
+        "relationship_status", "marital_status",
     },
 }
 
@@ -83,6 +77,7 @@ _ALIAS_GROUPS: dict[str, set[str]] = {
 # extend-only and no-ops without the respective files.
 _ALIAS_GROUPS = _extend_alias_groups(_ALIAS_GROUPS)
 from pmb import lang as _lang  # noqa: E402
+
 _ALIAS_GROUPS = _lang.merged_groups("attribute_aliases", _ALIAS_GROUPS)
 # merged_groups returns sets; alias values must stay sets for the reverse map.
 
@@ -100,7 +95,7 @@ def normalize_label(label: str) -> str:
 
     Uses Unicode word chars + casefold so accented-Latin / Turkish / German
     attribute labels keep their letters instead of being silently dropped
-    (the old ``[^0-9a-zа-яё]`` class deleted ä/ñ/ç/ş). Provably identical to
+    (the old ASCII-plus-Cyrillic-only class deleted ä/ñ/ç/ş). Provably identical to
     the old behaviour on ASCII + Cyrillic + digits, so existing keyed-fact
     keys are unaffected; only previously-mangled scripts change."""
     s = (label or "").strip().casefold()
@@ -137,7 +132,8 @@ _END = (
 )
 
 # Every verb-based pattern requires an EXPLICIT present-state marker
-# (now / currently / сейчас / теперь / moved-to), so a generic biography fact
+# (now / currently / their localized equivalents / moved-to), so a generic
+# biography fact
 # like "I live in Paris" is NOT auto-promoted — only deliberate "this is my
 # CURRENT X" statements are. "my current X is …" / "moved to …" are inherently
 # present-state and need no extra marker.
@@ -165,31 +161,33 @@ _CURRENT_STATE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(
         r"\b(?:my|user'?s)\s+(?:current\s+)?(?:job\s*title|role|position)\s+(?:is|:)\s*"
         + _VALUE_TAIL + _END, re.IGNORECASE), "job_title"),
-    # Russian — location
-    (re.compile(
-        r"(?:сейчас|теперь)\s+жив[уёе]\w*\s+в\s+" + _VALUE_TAIL + _END,
-        re.IGNORECASE), "city"),
-    (re.compile(
-        r"\b(?:переехал|переехала|переехали)\s+в\s+" + _VALUE_TAIL + _END,
-        re.IGNORECASE), "city"),
-    # Russian — work
-    (re.compile(
-        r"(?:сейчас|теперь)\s+работа\w+\s+в\s+" + _VALUE_TAIL + _END,
-        re.IGNORECASE), "employer"),
 ]
+# RU/UK current-state pattern PREFIXES (the localized "now I live in …" /
+# "moved to …" / "now I work at …" forms) live in the built-in packs under
+# `current_state_prefixes` ([{prefix, attr}]); each gets the shared value-tail
+# + end appended here (L1).
+for _csp in _lang.merged_list("current_state_prefixes"):
+    if isinstance(_csp, dict) and _csp.get("prefix") and _csp.get("attr"):
+        _CURRENT_STATE_PATTERNS.append((
+            re.compile(_csp["prefix"] + _VALUE_TAIL + _END, re.IGNORECASE),
+            _csp["attr"]))
 
 # Stop-words that, if they're the whole captured value, mean we didn't really
-# capture a value (avoid keying garbage).
-_BAD_VALUES = {"", "the", "a", "an", "here", "there", "now", "это", "тут", "там"}
+# capture a value (avoid keying garbage). RU/UK bad values come from the packs.
+_BAD_VALUES = {"", "the", "a", "an", "here", "there", "now"} | _lang.merged_set(
+    "attr_bad_values", set())
 
 # Negation / meta-instruction guard. A statement like "Do NOT state that the
 # user currently lives in Warsaw" or "treat ... as stale" must NEVER be read as
-# a current-state assertion (it would re-promote the exact wrong value). Found
-# by a live run against the real corpus — synthetic tests missed it.
+# a current-state assertion (it would re-promote the exact wrong value). The
+# RU/UK negation fragments come from the packs.
+_NEG_FRAGS = _lang.merged_list("attr_negation_fragments")
 _NEGATION_RE = re.compile(
     r"\b(?:do not|don'?t|does not|doesn'?t|did not|didn'?t|never|no longer|"
     r"not currently|isn'?t|aren'?t|wasn'?t|stop (?:saying|stating)|"
-    r"treat\b[^.]*\bstale|не\s+жив|больше не|уже не)\b",
+    r"treat\b[^.]*\bstale"
+    + (("|" + "|".join(_NEG_FRAGS)) if _NEG_FRAGS else "")
+    + r")\b",
     re.IGNORECASE,
 )
 
@@ -203,7 +201,7 @@ def _clean_value(raw: str) -> str:
     return v.strip(" .,:;!?").strip()
 
 
-def detect_current_state(content: str) -> Optional[tuple[str, str]]:
+def detect_current_state(content: str) -> tuple[str, str] | None:
     """If CONTENT plainly states a current, mutable personal attribute,
     return (canonical_attribute, value); else None.
 
@@ -243,61 +241,77 @@ def detect_current_state(content: str) -> Optional[tuple[str, str]]:
 # third-party negation in another.
 
 # Subject cue that must be ADJACENT to the negation: "I no longer live",
-# "the user does not currently live", "я больше не живу". Longest alternatives
+# "the user does not currently live" (and localized equivalents). Longest alternatives
 # first so "I've"/"I'm" win over bare "i". NOTE: deliberately excludes "my" —
 # possessive belongs to the "<poss> X is unknown" form (`_POSS`), not here.
+def _alt(en: list, cat: str) -> str:
+    """EN regex fragments + the RU/UK fragments an active pack adds for `cat`,
+    joined into an alternation body (L1 — keeps the woven Cyrillic out of this
+    module while EN+RU+UK matching stays byte-identical; gated by
+    tests/test_regex_parity.py)."""
+    return "|".join(list(en) + _lang.merged_list(cat))
+
+
 _SUBJ_ADJ = (
-    r"\b(?:i've|i'?m|i|the\s+user|user|я|пользовател\w*)\b"
-    r"(?:\s+(?:still|also|really|currently|всё\s+ещё|уже|сейчас))?"
+    r"\b(?:" + _alt([r"i've", r"i'?m", r"i", r"the\s+user", r"user"],
+                    "attr_subject_cues") + r")\b"
+    r"(?:\s+(?:" + _alt([r"still", r"also", r"really", r"currently"],
+                        "attr_subject_adverbs") + r"))?"
 )
 # Possessive user cue for the "<poss> (current) <attr> … is unknown" form. The
 # attribute noun must follow CLOSELY (optional "current" only) so a third-party
 # possessive chain ("my sister's employer is unknown") can't match.
-_POSS = r"\b(?:my|the\s+user'?s|user'?s|мо[йяё]|пользовател\w*)\b"
-_NEG = (
-    r"(?:does\s+not|doesn'?t|do\s+not|don'?t|did\s+not|didn'?t|"
-    r"no\s+longer|not\s+currently|больше\s+не|уже\s+не|не)"
-)
-_UNK = r"(?:unknown|not known|unclear|неизвест\w*)"
+_POSS = r"\b(?:" + _alt([r"my", r"the\s+user'?s", r"user'?s"],
+                        "attr_poss_cues") + r")\b"
+_NEG = r"(?:" + _alt(
+    [r"does\s+not", r"doesn'?t", r"do\s+not", r"don'?t", r"did\s+not",
+     r"didn'?t", r"no\s+longer", r"not\s+currently"], "attr_neg_markers") + r")"
+_UNK = r"(?:" + _alt([r"unknown", r"not known", r"unclear"], "attr_unknown") + r")"
+
+# Verb / noun alternations whose RU/UK members live in the packs.
+_LIVE = _alt([r"live", r"lives", r"living", r"reside", r"resides"], "attr_live_verbs")
+_WORKV = _alt([r"work", r"works", r"working"], "attr_work_verbs")
+_WORKP = _alt([r"at", r"for"], "attr_work_preps")
+_CITYN = _alt([r"city", r"location", r"residence", r"town"], "attr_city_nouns")
+_EMPN = _alt([r"employer", r"company", r"workplace"], "attr_employer_nouns")
+_CTRYN = _alt([r"country", r"nation"], "attr_country_nouns")
 
 _NEGATED_STATE_PATTERNS: list[tuple[re.Pattern, str]] = [
     # user-adjacent negation + live verb → city
-    (re.compile(
-        _SUBJ_ADJ + r"\s+" + _NEG +
-        r"\s+(?:currently\s+)?(?:live|lives|living|reside|resides|жив\w*)\b",
-        re.IGNORECASE), "city"),
+    (re.compile(_SUBJ_ADJ + r"\s+" + _NEG +
+                r"\s+(?:currently\s+)?(?:" + _LIVE + r")\b", re.IGNORECASE), "city"),
     # user-adjacent negation + work verb → employer
-    (re.compile(
-        _SUBJ_ADJ + r"\s+" + _NEG +
-        r"\s+(?:currently\s+)?(?:work|works|working|работа\w*)\s+(?:at|for|в|на)\b",
-        re.IGNORECASE), "employer"),
+    (re.compile(_SUBJ_ADJ + r"\s+" + _NEG +
+                r"\s+(?:currently\s+)?(?:" + _WORKV + r")\s+(?:" + _WORKP + r")\b",
+                re.IGNORECASE), "employer"),
     # possessive + (current) city/location … is unknown → city
-    (re.compile(
-        _POSS + r"\s+(?:current\s+)?"
-        r"(?:city|location|residence|town|город|местожительства)\b"
-        r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "city"),
+    (re.compile(_POSS + r"\s+(?:current\s+)?(?:" + _CITYN + r")\b"
+                r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "city"),
     # possessive + (current) employer/company … is unknown → employer
-    (re.compile(
-        _POSS + r"\s+(?:current\s+)?"
-        r"(?:employer|company|workplace|работодател\w*|компани\w*)\b"
-        r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "employer"),
+    (re.compile(_POSS + r"\s+(?:current\s+)?(?:" + _EMPN + r")\b"
+                r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "employer"),
     # possessive + (current) country … is unknown → country
-    (re.compile(
-        _POSS + r"\s+(?:current\s+)?(?:country|nation|страна)\b"
-        r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "country"),
+    (re.compile(_POSS + r"\s+(?:current\s+)?(?:" + _CTRYN + r")\b"
+                r"[^.;!?]*\b" + _UNK + r"\b", re.IGNORECASE), "country"),
 ]
 
 # Fallback for the two-clause corpus form where the negation clause has no
 # recognised verb but a sibling clause says "current <attr> is unknown" — only
 # fires when a user-adjacent negation is present in the SAME sentence, so a
-# bare "current city is unknown" with no subject stays None.
+# bare "current city is unknown" with no subject stays None. NOTE: these use
+# SUBSETS of the noun sets above (the bare forms drop two localized synonyms),
+# so they get their own pack categories to preserve that exactly.
 _SUBJ_NEG_RE = re.compile(_SUBJ_ADJ + r"\s+" + _NEG, re.IGNORECASE)
+_BARE_CITYN = _alt([r"city", r"location", r"residence", r"town"],
+                   "attr_bare_city_nouns")
+_BARE_EMPN = _alt([r"employer", r"company", r"workplace"],
+                  "attr_bare_employer_nouns")
 _BARE_UNK_RE: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"\b(?:current\s+)?(?:city|location|residence|town|город)\b"
+    (re.compile(r"\b(?:current\s+)?(?:" + _BARE_CITYN + r")\b"
                 r"[^.;!?]*\b" + _UNK, re.IGNORECASE), "city"),
-    (re.compile(r"\b(?:current\s+)?(?:employer|company|workplace|работодател\w*)\b"
+    (re.compile(r"\b(?:current\s+)?(?:" + _BARE_EMPN + r")\b"
                 r"[^.;!?]*\b" + _UNK, re.IGNORECASE), "employer"),
-    (re.compile(r"\b(?:current\s+)?(?:country|nation|страна)\b"
+    (re.compile(r"\b(?:current\s+)?(?:" + _CTRYN + r")\b"
                 r"[^.;!?]*\b" + _UNK, re.IGNORECASE), "country"),
 ]
 
@@ -307,8 +321,9 @@ _BARE_UNK_RE: list[tuple[re.Pattern, str]] = [
 # the precise gate is the LLM answer's `subject` field. NOT used by
 # detect_negated_state (which needs adjacency, above).
 _USER_CUE_RE = re.compile(
-    r"\b(?:i|i'?m|i've|my|me|mine|user|user'?s|я|мне|меня|мной|мо[йяё]|"
-    r"пользовател\w*)\b",
+    r"\b(?:" + _alt(
+        [r"i", r"i'?m", r"i've", r"my", r"me", r"mine", r"user", r"user'?s"],
+        "attr_user_cue") + r")\b",
     re.IGNORECASE,
 )
 
@@ -345,19 +360,19 @@ def has_user_subject_cue(content: str) -> bool:
 
 # ── future-intent ("plan") detection ──────────────────────────────────────
 #
-# A plain fact that's really a PLAN ("next we'll do X", "запомни, что будем
-# делать дальше") belongs in a goal, not a fact. We DON'T auto-convert (too
+# A plain fact that's really a PLAN ("next we'll do X" and localized
+# equivalents) belongs in a goal, not a fact. We DON'T auto-convert (too
 # many false positives, e.g. a durable preference "we will always use pnpm"),
 # we only FLAG it so the dashboard / `pmb goals` can suggest promotion.
+_FI_EN = [
+    r"next\s+steps?\b", r"next\s+we\b", r"next[:,]", r"plan[:,]", r"to-?do\b",
+    r"we\s*(?:'ll|\s+will|\s+are\s+going\s+to|\s+should|\s+need\s+to)\b",
+    r"i\s*(?:'ll|\s+will|\s+am\s+going\s+to|\s+need\s+to)\b",
+    r"let'?s\b", r"going\s+to\b",
+]
+# RU/UK future-intent markers come from the packs.
 _FUTURE_INTENT_RE = re.compile(
-    r"^\s*(?:"
-    r"next\s+steps?\b|next\s+we\b|next[:,]|plan[:,]|to-?do\b|"
-    r"we\s*(?:'ll|\s+will|\s+are\s+going\s+to|\s+should|\s+need\s+to)\b|"
-    r"i\s*(?:'ll|\s+will|\s+am\s+going\s+to|\s+need\s+to)\b|"
-    r"let'?s\b|going\s+to\b|"
-    r"будем\b|план[:,]|планиру|надо\s+будет|нужно\s+будет|"
-    r"дальше\s+(?:будем|сделаем|надо|нужно)|следующ"
-    r")",
+    r"^\s*(?:" + _alt(_FI_EN, "future_intent_markers") + r")",
     re.IGNORECASE,
 )
 
@@ -372,7 +387,7 @@ def looks_like_future_intent(content: str) -> bool:
     return bool(_FUTURE_INTENT_RE.match(content[:60]))
 
 
-def detect_negated_state(content: str) -> Optional[str]:
+def detect_negated_state(content: str) -> str | None:
     """If CONTENT is a negation/"unknown" statement about the USER's CURRENT
     personal attribute ("the user no longer lives in Warsaw; current city is
     unknown"), return the canonical attribute (e.g. "city"); else None.

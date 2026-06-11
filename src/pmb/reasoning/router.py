@@ -35,8 +35,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Optional
-
 
 # ----------------------------------------------------------------------
 # Intent detection patterns
@@ -119,7 +117,7 @@ _IDENTITY_RE = re.compile(
 
 
 @lru_cache(maxsize=128)
-def _identity_re_for_names(names_key: tuple[str, ...]) -> Optional[re.Pattern]:
+def _identity_re_for_names(names_key: tuple[str, ...]) -> re.Pattern | None:
     """Build (cached) an identity regex for the user's OWN names, mirroring
     the static patterns that used to hardcode a single name. `names_key` is
     a sorted tuple of lowercased names (hashable, for the lru_cache)."""
@@ -248,7 +246,7 @@ class QueryRouter:
     """
 
     def classify(
-        self, query: str, user_names: Optional[set[str]] = None
+        self, query: str, user_names: set[str] | None = None
     ) -> QueryIntent:
         if not query or not query.strip():
             return QueryIntent(query=query, types=["direct"], rationale="empty")

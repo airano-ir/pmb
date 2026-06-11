@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
 
 _PROMPT = """\
 You are extracting DURABLE LESSONS from a coding/work session, to help an AI
@@ -72,7 +71,7 @@ def _parse_items(text: str, max_lessons: int) -> list[dict]:
     return out
 
 
-def _session_events_text(engine, session_id: Optional[str], limit: int) -> tuple[str, int]:
+def _session_events_text(engine, session_id: str | None, limit: int) -> tuple[str, int]:
     """Collect a session's events (or recent events) as a transcript-like text."""
     events = engine.events.list_active(engine.workspace.id, limit=max(limit, 200))
     if session_id:
@@ -89,9 +88,9 @@ def _session_events_text(engine, session_id: Optional[str], limit: int) -> tuple
 def distill_lessons(
     engine,
     *,
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     backend: str = "auto",
-    model: Optional[str] = None,
+    model: str | None = None,
     max_lessons: int = 8,
     limit: int = 60,
     dry_run: bool = False,

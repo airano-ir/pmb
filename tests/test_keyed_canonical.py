@@ -10,15 +10,9 @@ out-ranked the live "lives in Tampa". These tests lock in:
 """
 from __future__ import annotations
 
-import os
-import sys
-import tempfile
 import time
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.core.engine import Engine
 from pmb.core.events import Event
@@ -27,7 +21,6 @@ from pmb.reasoning.attributes import (
     detect_current_state,
     keyed_fact_key,
 )
-
 
 # ── pure-function tests (no engine, fast) ──────────────────────────────────
 
@@ -88,34 +81,8 @@ def test_detect_current_state_negative(text):
 
 # ── engine tests ───────────────────────────────────────────────────────────
 
-@pytest.fixture
-def tmp_pmb_home():
-    import gc
-    import shutil
-    import time as _t
-    tmp = tempfile.mkdtemp()
-    home = Path(tmp) / "pmb_home"
-    os.environ["PMB_HOME"] = str(home)
-    try:
-        yield home
-    finally:
-        os.environ.pop("PMB_HOME", None)
-        gc.collect()
-        for _ in range(3):
-            try:
-                shutil.rmtree(tmp, ignore_errors=False)
-                break
-            except (OSError, PermissionError):
-                _t.sleep(0.2)
-                gc.collect()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
 
 
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
 
 
 def _engine(ws, home, **over):

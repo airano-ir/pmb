@@ -1,18 +1,15 @@
 """Tests for Codex CLI support in pmb connect."""
 from __future__ import annotations
 
-import os
-import sys
-import tempfile
 from pathlib import Path
 
-import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.cli.connect import (
-    codex_paths, merge_codex_entry, _load_toml, _save_toml, connect,
+    _load_toml,
+    _save_toml,
+    codex_paths,
+    connect,
     make_local_entry,
+    merge_codex_entry,
 )
 
 

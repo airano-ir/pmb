@@ -1,45 +1,45 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from pmb.config import Config
 from pmb.core.events import (
     EventStore,
 )
 from pmb.core.sqlite_helper import patch_global_sqlite3
+
 # Patch sqlite3.connect once at engine import — every subsequent
 # sqlite3.connect() in PMB code automatically gets busy_timeout +
 # WAL pragmas. Without this, concurrent writes from MCP + dashboard +
 # seed scripts on the same DB fail with 'database is locked'.
 patch_global_sqlite3()
+from pmb.core.engine.ambient import AmbientMixin
+from pmb.core.engine.batch import BatchMixin
+from pmb.core.engine.dedup import DedupMixin
+from pmb.core.engine.embed import EmbedMixin
+from pmb.core.engine.goals import GoalsMixin
+from pmb.core.engine.graph import GraphMixin
+from pmb.core.engine.health import HealthMixin
+from pmb.core.engine.lessons import LessonsMixin
+from pmb.core.engine.overview import OverviewMixin
+from pmb.core.engine.reasoning import ReasoningMixin
+from pmb.core.engine.recall import RecallMixin
+from pmb.core.engine.write import WriteMixin
 from pmb.core.recall_cache import RecallCache
 from pmb.core.search import HybridSearch
 from pmb.core.workspace import Workspace, detect_workspace
-from pmb.graph.entities import EntityExtractor, make_extractor
+from pmb.graph.entities import make_extractor
 from pmb.graph.store import GraphStore
-from pmb.signals.session import SessionTracker
 from pmb.reasoning.pamvr import (
     VOCAB_BRIDGES as _PAMVR_DEFAULT_BRIDGES,
 )
 from pmb.reasoning.vocab_miner import (
-    mine_workspace as _mine_workspace_bridges,
     merge_bridges as _merge_vocab_bridges,
 )
-
-
-from pmb.core.engine.write import WriteMixin
-from pmb.core.engine.lessons import LessonsMixin
-from pmb.core.engine.overview import OverviewMixin
-from pmb.core.engine.batch import BatchMixin
-from pmb.core.engine.goals import GoalsMixin
-from pmb.core.engine.dedup import DedupMixin
-from pmb.core.engine.embed import EmbedMixin
-from pmb.core.engine.graph import GraphMixin
-from pmb.core.engine.recall import RecallMixin
-from pmb.core.engine.reasoning import ReasoningMixin
-from pmb.core.engine.health import HealthMixin
-from pmb.core.engine.ambient import AmbientMixin
+from pmb.reasoning.vocab_miner import (
+    mine_workspace as _mine_workspace_bridges,
+)
+from pmb.signals.session import SessionTracker
 
 
 class Engine(
@@ -57,21 +57,21 @@ class Engine(
     AmbientMixin,
 ):
     """
-    Главный orchestrator. Держит workspace + storage + search index.
+    Main orchestrator. Holds the workspace + storage + search index.
 
-    Создаётся per-workspace. При создании авто-detect workspace и инициализирует
-    storage если впервые.
+    Created per-workspace. On creation it auto-detects the workspace and
+    initializes storage if it's the first time.
     """
 
     def __init__(
         self,
-        workspace: Optional[Workspace] = None,
-        cwd: Optional[Path] = None,
-        pmb_home: Optional[Path] = None,
-        embedding_model: Optional[str] = None,
-        bm25_weight: Optional[float] = None,
-        rerank_model: Optional[str] = None,
-        config_overrides: Optional[dict] = None,
+        workspace: Workspace | None = None,
+        cwd: Path | None = None,
+        pmb_home: Path | None = None,
+        embedding_model: str | None = None,
+        bm25_weight: float | None = None,
+        rerank_model: str | None = None,
+        config_overrides: dict | None = None,
     ):
         self.workspace = workspace or detect_workspace(cwd=cwd, pmb_home=pmb_home)
         self.workspace.ensure_dirs()
@@ -215,6 +215,7 @@ class Engine(
         # On engine.close() we drain the buffer.
         self._touch_buffer: dict[str, float] = {}  # ulid -> last_accessed
         self._touch_imp_buffer: dict[str, float] = {}  # ulid -> latest importance
+        self._touch_tier_buffer: dict[str, str] = {}   # S9: ulid -> new tier
         self._touch_lock = _threading.Lock()
         self._touch_flusher_started = False
 
@@ -222,6 +223,10 @@ class Engine(
         # at init time so the recall hot-path doesn't pay for a config
         # lookup per candidate.
         self._pamvr_enabled = bool(self.config.get("recall.pamvr_enabled"))
+        # X2: per-workspace base-score channel weights (default identity →
+        # byte-identical recall). Cached once so the hot path pays no parse.
+        from pmb.reasoning import scoring as _scoring
+        self._channel_weights = _scoring.channel_weights(self.config)
 
         # Auto VOCAB_BRIDGES (Improvement TT). Mine the user's own lexicon
         # from workspace events via PMI co-occurrence so PAMVR adapts to
@@ -304,16 +309,16 @@ class Engine(
             "current_session": sess.to_dict() if sess else None,
         }
 
-    def sync_git(self, since_timestamp: Optional[float] = None) -> dict:
-        """Захватить git commits в memory. Импортируется лениво."""
+    def sync_git(self, since_timestamp: float | None = None) -> dict:
+        """Capture git commits into memory. Imported lazily."""
         from pmb.signals.git import GitSync
 
         return GitSync(self).sync(since_timestamp=since_timestamp)
 
-    def session_start(self, name: Optional[str] = None) -> dict:
+    def session_start(self, name: str | None = None) -> dict:
         return self.session_tracker.start(name).to_dict()
 
-    def session_end(self) -> Optional[dict]:
+    def session_end(self) -> dict | None:
         sess = self.session_tracker.end()
         out = sess.to_dict() if sess else None
         # Zero-command auto-distill: if enabled, distill durable lessons from
@@ -326,12 +331,12 @@ class Engine(
                 pass
         return out
 
-    def session_current(self) -> Optional[dict]:
+    def session_current(self) -> dict | None:
         sess = self.session_tracker.current(auto_create=False)
         return sess.to_dict() if sess else None
 
     def close(self):
-        """Закрыть открытые ресурсы (LanceDB, native handles).
+        """Close open resources (LanceDB, native handles).
 
         Drain the three async side-channels first, in dependency order, so a
         process that exits right after close() doesn't silently drop in-flight

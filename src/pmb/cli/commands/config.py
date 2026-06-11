@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 import typer
 from rich.panel import Panel
@@ -85,7 +84,7 @@ def config_get(key: str):
     cfg, _ = _open_config()
     if key not in SCHEMA:
         console.print(f"[red]Unknown key:[/] {key}")
-        console.print(f"[dim]Try: pmb config list[/]")
+        console.print("[dim]Try: pmb config list[/]")
         raise typer.Exit(code=2)
     console.print(
         f"[cyan]{key}[/] = {cfg.get(key)!r}  "
@@ -119,7 +118,7 @@ def config_set(
 
 @config_app.command("reset")
 def config_reset(
-    key: Optional[str] = typer.Argument(None, help="Key to reset (omit to reset ALL workspace overrides)"),
+    key: str | None = typer.Argument(None, help="Key to reset (omit to reset ALL workspace overrides)"),
 ):
     """Remove a key from the workspace YAML, returning it to global/default."""
     cfg, _ = _open_config()

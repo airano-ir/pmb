@@ -8,13 +8,10 @@ No subprocesses - pure config-file merging.
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.cli.connect import (
     JSON_AGENT_SPECS,

@@ -8,14 +8,10 @@ dashboard (instead of dumping --help).
 from __future__ import annotations
 
 import re
-import sys
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from typer.testing import CliRunner
+
 from pmb.cli.main import app
 
 _CYRILLIC = re.compile(r"[Ѐ-ӿ]")

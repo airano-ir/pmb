@@ -11,11 +11,8 @@ import asyncio
 import os
 import sys
 import tempfile
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
 def _profile_desc_chars(profile: str) -> tuple[int, int]:

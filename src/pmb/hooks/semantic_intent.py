@@ -15,8 +15,6 @@ shows >= lexical accuracy on EN/RU.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from pmb.hooks.auto_recall import Intent
 
 # A handful of canonical exemplars per recall-worthy intent. Embedded once and
@@ -60,7 +58,7 @@ def _centroids(engine):
 
 
 def classify_semantic_intent(engine, message: str,
-                             threshold: float = 0.45) -> Optional[str]:
+                             threshold: float = 0.45) -> str | None:
     """Best-matching intent for `message` by embedding cosine, or None if no
     centroid clears `threshold`. Best-effort: returns None on any failure (so
     the caller just falls back to the lexical/SKIP result)."""

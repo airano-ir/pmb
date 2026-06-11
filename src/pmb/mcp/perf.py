@@ -12,10 +12,50 @@ import functools
 import json
 import os
 import sqlite3
+import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
+# S9: buffer perf rows and flush them in batches instead of one
+# connect+INSERT+commit per MCP tool call (which contended with the events DB
+# write lock on the hot path). Telemetry is best-effort, so at most
+# `_PERF_FLUSH_EVERY-1` rows can be lost on a hard crash — acceptable for perf
+# stats. Same DB target as before, so readers (dashboard / `pmb stats`) are
+# unchanged; only the write cadence moves off the per-call path.
+_PERF_BUF: dict[str, list[tuple]] = {}
+_PERF_BUF_LOCK = threading.Lock()
+_PERF_FLUSH_EVERY = 25
+
+
+def _flush_perf_rows(db_path_str: str, rows: list[tuple]) -> None:
+    if not rows:
+        return
+    try:
+        _ensure_schema(Path(db_path_str))
+        with sqlite3.connect(db_path_str, timeout=2.0) as conn:
+            conn.executemany(
+                "INSERT INTO mcp_calls "
+                "(workspace_id, tool_name, timestamp, duration_ms, success, "
+                "error, args_size, stages_json, backend, cache_hit, "
+                "client_timeout, outcome) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+            cutoff = time.time() - 7 * 86400
+            conn.execute("DELETE FROM mcp_calls WHERE timestamp < ?", (cutoff,))
+            conn.commit()
+    except Exception:
+        pass  # perf tracking must never break MCP
+
+
+def flush_perf() -> None:
+    """Drain all buffered perf rows now (call on shutdown / in tests)."""
+    with _PERF_BUF_LOCK:
+        pending = {k: v for k, v in _PERF_BUF.items() if v}
+        _PERF_BUF.clear()
+    for db_path_str, rows in pending.items():
+        _flush_perf_rows(db_path_str, rows)
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS mcp_calls (
@@ -67,45 +107,40 @@ def _ensure_schema(db_path: Path) -> None:
 
 def record_call(
     db_path: Path,
-    workspace_id: Optional[str],
+    workspace_id: str | None,
     tool_name: str,
     duration_ms: float,
     success: bool = True,
-    error: Optional[str] = None,
+    error: str | None = None,
     args_size: int = 0,
-    stages_json: Optional[str] = None,
-    backend: Optional[str] = None,
-    cache_hit: Optional[bool] = None,
-    client_timeout: Optional[bool] = None,
-    outcome: Optional[str] = None,
+    stages_json: str | None = None,
+    backend: str | None = None,
+    cache_hit: bool | None = None,
+    client_timeout: bool | None = None,
+    outcome: str | None = None,
 ) -> None:
-    """Insert one MCP-call row. Silent on failure (perf tracking must never
-    break MCP itself)."""
+    """Buffer one MCP-call row; flush in batches (S9). Silent on failure (perf
+    tracking must never break MCP itself)."""
     try:
-        _ensure_schema(db_path)
-        with sqlite3.connect(db_path, timeout=2.0) as conn:
-            conn.execute(
-                "INSERT INTO mcp_calls "
-                "(workspace_id, tool_name, timestamp, duration_ms, success, "
-                "error, args_size, stages_json, backend, cache_hit, "
-                "client_timeout, outcome) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (workspace_id, tool_name, time.time(), duration_ms,
-                 1 if success else 0, error, args_size, stages_json, backend,
-                 (None if cache_hit is None else (1 if cache_hit else 0)),
-                 (None if client_timeout is None else (1 if client_timeout else 0)),
-                 outcome),
-            )
-            # Auto-cleanup rows older than 7 days every ~100 calls
-            if int(time.time() * 1000) % 100 == 0:
-                cutoff = time.time() - 7 * 86400
-                conn.execute("DELETE FROM mcp_calls WHERE timestamp < ?", (cutoff,))
-            conn.commit()
+        row = (workspace_id, tool_name, time.time(), duration_ms,
+               1 if success else 0, error, args_size, stages_json, backend,
+               (None if cache_hit is None else (1 if cache_hit else 0)),
+               (None if client_timeout is None else (1 if client_timeout else 0)),
+               outcome)
+        flush: tuple[str, list[tuple]] | None = None
+        with _PERF_BUF_LOCK:
+            buf = _PERF_BUF.setdefault(str(db_path), [])
+            buf.append(row)
+            if len(buf) >= _PERF_FLUSH_EVERY:
+                flush = (str(db_path), buf[:])
+                buf.clear()
+        if flush is not None:
+            _flush_perf_rows(*flush)
     except Exception:
         pass  # never break MCP
 
 
-def make_timing_wrapper(db_path: Path, workspace_id: Optional[str]):
+def make_timing_wrapper(db_path: Path, workspace_id: str | None):
     """Return a decorator that times the wrapped tool function and logs the
     call. Use to wrap each MCP tool body:
 
@@ -129,10 +164,12 @@ def make_timing_wrapper(db_path: Path, workspace_id: Optional[str]):
         def wrapper(*args, **kwargs):
             t0 = time.perf_counter()
             success = True
-            err_msg: Optional[str] = None
+            err_msg: str | None = None
             result = None
             try:
-                args_size = len(json.dumps(kwargs, default=str)) if kwargs else 0
+                # S9: cheap size estimate — `len(str(kwargs))` instead of a full
+                # json.dumps re-serialization of (possibly large) tool args.
+                args_size = len(str(kwargs)) if kwargs else 0
             except Exception:
                 args_size = 0
             try:
@@ -179,7 +216,7 @@ def make_timing_wrapper(db_path: Path, workspace_id: Optional[str]):
     return decorator
 
 
-def get_perf_stats(db_path: Path, workspace_id: Optional[str] = None,
+def get_perf_stats(db_path: Path, workspace_id: str | None = None,
                    hours: float = 24.0) -> dict:
     """Aggregate MCP call stats for the dashboard.
 
@@ -193,6 +230,7 @@ def get_perf_stats(db_path: Path, workspace_id: Optional[str] = None,
         "timeline_buckets": [{bucket_start, count, avg_ms}, ...]  (last 24 1h buckets)
       }
     """
+    flush_perf()  # S9: drain buffered rows so the reader sees current data
     _ensure_schema(db_path)
     cutoff = time.time() - hours * 3600
     with sqlite3.connect(db_path) as conn:
@@ -343,7 +381,7 @@ def _cluster_into_turns(rows: list, gap_seconds: float = 30.0) -> list[dict]:
 
 
 def _enrich_turns_with_context(
-    db_path: Path, workspace_id: Optional[str], turns: list[dict],
+    db_path: Path, workspace_id: str | None, turns: list[dict],
 ) -> list[dict]:
     """For each turn, look up events in the same time-window from the
     events table — gives us the actual question/content the user wrote.

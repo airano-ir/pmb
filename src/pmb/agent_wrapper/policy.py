@@ -45,7 +45,7 @@ Doing this well is the open research problem.
 from __future__ import annotations
 
 import re
-from typing import Optional, Protocol
+from typing import Protocol
 
 
 class CompressionPolicy(Protocol):

@@ -6,8 +6,6 @@ mcp.tool with timing, then calls register_all(mcp, engine)."""
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pmb.mcp._toolspec import _maybe_tool  # noqa: F401
 
 
@@ -163,7 +161,7 @@ def register_all(mcp, engine):
           • open_goals — in-flight goals so you know what user is pursuing.
 
         WHEN to call:
-          • User starts a task with a project name ("работаю над LoadGuard")
+          • User starts a task with a project name ("working on LoadGuard")
           • User says "fix bug in X / add feature to Y / refactor Z"
           • Any non-trivial coding/design task that touches stored memory
           • You feel uncertain about project conventions
@@ -247,9 +245,9 @@ def register_all(mcp, engine):
         change later — use this instead of record_fact.
 
         Examples that fit:
-          • "I live in Warsaw" / "переехал в Варшаву"
+          • "I live in Warsaw" / "moved to Warsaw"
             → record_keyed_fact("user", "city", "Warsaw")
-          • "I work at Anthropic" / "теперь работаю в Anthropic"
+          • "I work at Anthropic" / "now working at Anthropic"
             → record_keyed_fact("user", "employer", "Anthropic")
           • "my dog is now Pixel" (renamed)
             → record_keyed_fact("user_dog", "name", "Pixel")
@@ -306,7 +304,7 @@ def register_all(mcp, engine):
 
         Use when the user says:
           • "read this PDF and remember it"
-          • "запомни этот документ"
+          • "remember this document"
           • "index <some file>.pdf"
           • "summarise this paper" (call index_pdf first, then recall)
 
@@ -334,7 +332,7 @@ def register_all(mcp, engine):
         Respects .gitignore. Idempotent per file (SHA1). Safe to re-run.
 
         Use when the user says:
-          • "запомни структуру проекта"
+          • "remember the project structure"
           • "index this repo"
           • "scan the project"
           • "remember how the code is organised"
@@ -376,7 +374,7 @@ def register_all(mcp, engine):
     def mark_lesson_followed(
         surface_id: int,
         followed: bool = True,
-        note: Optional[str] = None,
+        note: str | None = None,
     ) -> dict:
         """Confirm whether a previously surfaced lesson actually changed
         your behaviour on the current task. Call this AFTER acting on a
@@ -393,7 +391,7 @@ def register_all(mcp, engine):
         )
 
     @mcp.tool()
-    def session_brief(minutes: Optional[int] = None) -> dict:
+    def session_brief(minutes: int | None = None) -> dict:
         """Re-orient in a long session: a digest of what was decided / done /
         learned so far THIS session.
 
@@ -407,7 +405,7 @@ def register_all(mcp, engine):
 
     @mcp.tool()
     def remember(query: str, response: str, importance: float = 0.5,
-                 session_id: Optional[str] = None) -> dict:
+                 session_id: str | None = None) -> dict:
         """Store a Q/A interaction in memory.
 
         Args:
@@ -423,7 +421,7 @@ def register_all(mcp, engine):
         return {"ulid": ulid, "stored": True}
 
     @mcp.tool()
-    def dedupe_sweep(threshold: float = 0.92, types: Optional[list[str]] = None) -> dict:
+    def dedupe_sweep(threshold: float = 0.92, types: list[str] | None = None) -> dict:
         """Improvement U: one-shot dedup over all active events.
 
         Clusters by cosine ≥ threshold within each event_type, archives
@@ -476,8 +474,8 @@ def register_all(mcp, engine):
                                  "parent_goal_ulid": null}
           {"type": "plan",      "title": "next we'll wire X", "status": "pending"}
                                  # alias for a goal (kind=plan). Use for FUTURE
-                                 # intent — "what we'll do next", "запомни, что
-                                 # будем делать дальше". NEVER store a plan as a
+                                 # intent — "what we'll do next", "remember what
+                                 # we'll do next". NEVER store a plan as a
                                  # fact; facts are settled state, plans resurface
                                  # via prepare()/open-goals.
           {"type": "activity",  "content": "...", "kind": "edit",
@@ -487,8 +485,8 @@ def register_all(mcp, engine):
                                  "state": {"count": 11},
                                  "triggered_by_ulid": null}
 
-        Example: user says "Сегодня пофиксил баг, к июню выкатить v1, завтра
-        встреча с Максом из Grammarly, аллергия на арахис обострилась":
+        Example: user says "Fixed a bug today, ship v1 by June, tomorrow a
+        meeting with Max from Grammarly, peanut allergy flared up":
 
           record_batch(items=[
             {"type": "activity", "content": "Fixed JWT 24h validation bug, 3h",
@@ -524,8 +522,8 @@ def register_all(mcp, engine):
         """STORE a fact for long-term recall. CALL THIS PROACTIVELY whenever
         the user mentions:
 
-        - Personal events ("I broke my arm", "вчера ел пиццу")
-        - Health/medical ("у меня аллергия", "doctor said X")
+        - Personal events ("I broke my arm", "ate pizza yesterday")
+        - Health/medical ("I have an allergy", "doctor said X")
         - Decisions ("we chose Postgres", "switched to Vite")
         - Preferences ("I prefer dark mode")
         - People ("my wife is Anna", "met Caroline at conf")
@@ -535,8 +533,8 @@ def register_all(mcp, engine):
         Rules:
         - One atomic fact per call (separate calls for separate facts)
         - FUTURE INTENT → goal, NOT fact. If the user states what will be done
-          NEXT ("remember we'll do X next", "next steps are …", "план такой",
-          "запомни, что будем делать дальше"), record a GOAL via record_goal
+          NEXT ("remember we'll do X next", "next steps are …", "the plan is",
+          "remember what we'll do next"), record a GOAL via record_goal
           (or record_batch {"type": "goal"/"plan", "status": "pending"}) —
           never a fact. Facts are settled state; plans belong in goals so
           prepare()/open-goals can resurface them.
@@ -573,7 +571,7 @@ def register_all(mcp, engine):
         return engine.stats()
 
     @mcp.tool()
-    def list_recent(limit: int = 20, event_type: Optional[str] = None) -> list[dict]:
+    def list_recent(limit: int = 20, event_type: str | None = None) -> list[dict]:
         """List the most recent active events in the workspace."""
         events = engine.events.list_active(
             engine.workspace.id, limit=limit, event_type=event_type,
@@ -592,7 +590,7 @@ def register_all(mcp, engine):
         ]
 
     @mcp.tool()
-    def sync_git(since_timestamp: Optional[float] = None) -> dict:
+    def sync_git(since_timestamp: float | None = None) -> dict:
         """Capture recent git commits into memory.
 
         Pulls commits since last sync (or since the given timestamp), stores
@@ -602,17 +600,17 @@ def register_all(mcp, engine):
         return engine.sync_git(since_timestamp=since_timestamp)
 
     @mcp.tool()
-    def session_start(name: Optional[str] = None) -> dict:
+    def session_start(name: str | None = None) -> dict:
         """Start a new memory session. Used to group related events."""
         return engine.session_start(name)
 
     @mcp.tool()
-    def session_end() -> Optional[dict]:
+    def session_end() -> dict | None:
         """End the current session. Returns the closed session's info."""
         return engine.session_end()
 
     @mcp.tool()
-    def session_current() -> Optional[dict]:
+    def session_current() -> dict | None:
         """Get current active session info (or None)."""
         return engine.session_current()
 
@@ -689,8 +687,8 @@ def register_all(mcp, engine):
     def record_recall_feedback(
         ulid: str,
         verdict: str,
-        query: Optional[str] = None,
-        expected_ulid: Optional[str] = None,
+        query: str | None = None,
+        expected_ulid: str | None = None,
     ) -> dict:
         """Record real recall feedback for an event.
 
@@ -716,12 +714,12 @@ def register_all(mcp, engine):
         return engine.graph_stats()
 
     @mcp.tool()
-    def graph_top_entities(kind: Optional[str] = None, limit: int = 20) -> list[dict]:
+    def graph_top_entities(kind: str | None = None, limit: int = 20) -> list[dict]:
         """Most-mentioned entities. kind = 'file' | 'tech' | 'concept' or None."""
         return engine.graph_top_entities(kind=kind, limit=limit)
 
     @mcp.tool()
-    def graph_neighbors(name: str, kind: Optional[str] = None, top_k: int = 10) -> dict:
+    def graph_neighbors(name: str, kind: str | None = None, top_k: int = 10) -> dict:
         """Co-occurrence neighbors of an entity. Useful for 'what relates to X'."""
         return engine.graph_neighbors(name=name, kind=kind, top_k=top_k)
 
@@ -826,7 +824,7 @@ def register_all(mcp, engine):
         return engine.list_arcs(status=status, limit=limit)
 
     @mcp.tool()
-    def arc_detail(arc_id: int) -> Optional[dict]:
+    def arc_detail(arc_id: int) -> dict | None:
         """Get full detail of one arc: title, summary, member events."""
         return engine.arc_detail(arc_id)
 
@@ -897,18 +895,18 @@ def register_all(mcp, engine):
     def record_goal(
         title: str,
         status: str = "pending",
-        parent_goal_ulid: Optional[str] = None,
-        due_at: Optional[float] = None,
+        parent_goal_ulid: str | None = None,
+        due_at: float | None = None,
         importance: float = 0.7,
     ) -> dict:
         """Improvement R: create a goal/intent (12-th semantic layer).
 
         Use when user states a goal, plan, or FUTURE intention — record it
         HERE, not as a fact:
-          "Хочу выучить Rust к концу года"
+          "I want to learn Rust by the end of the year"
           "Need to ship v1.0 by Q3"
           "Plan: refactor auth first, then frontend"
-          "запомни, что дальше будем делать X" / "next steps are X"
+          "remember that next we'll do X" / "next steps are X"
 
         A plan about what to do NEXT is a goal, never a fact: facts are
         settled state, goals resurface via prepare()/open-goals so the agent
@@ -928,9 +926,9 @@ def register_all(mcp, engine):
     @mcp.tool()
     def update_goal(
         goal_ulid: str,
-        status: Optional[str] = None,
-        progress: Optional[int] = None,
-        note: Optional[str] = None,
+        status: str | None = None,
+        progress: int | None = None,
+        note: str | None = None,
     ) -> dict:
         """Update goal status / progress. Creates a goal_update event so
         the full history of changes is preserved."""
@@ -940,7 +938,7 @@ def register_all(mcp, engine):
         )
 
     @mcp.tool()
-    def list_goals(status: Optional[str] = None, limit: int = 50) -> list[dict]:
+    def list_goals(status: str | None = None, limit: int = 50) -> list[dict]:
         """List goals (optionally filter by status)."""
         return engine.list_goals(status=status, limit=limit)
 
@@ -948,8 +946,8 @@ def register_all(mcp, engine):
     def record_milestone(
         chain_name: str,
         title: str,
-        state: Optional[dict] = None,
-        triggered_by_ulid: Optional[str] = None,
+        state: dict | None = None,
+        triggered_by_ulid: str | None = None,
         importance: float = 0.6,
     ) -> dict:
         """Improvement R: record a milestone in a named state-chain.
@@ -986,7 +984,7 @@ def register_all(mcp, engine):
         return engine.chain_history(chain_name=chain_name, limit=limit)
 
     @mcp.tool()
-    def chain_current(chain_name: str) -> Optional[dict]:
+    def chain_current(chain_name: str) -> dict | None:
         """Latest milestone of a chain — the 'current state'.
         Use to answer 'how many X do we have now?' / 'what's the latest?'."""
         return engine.chain_current(chain_name=chain_name)
@@ -1024,16 +1022,16 @@ def register_all(mcp, engine):
     def recent_activity(
         minutes: float = 60.0,
         limit: int = 20,
-        actor: Optional[str] = None,
-        kind: Optional[str] = None,
+        actor: str | None = None,
+        kind: str | None = None,
     ) -> list[dict]:
         """Improvement Q: working memory dump — instant, no search.
 
         Call THIS instead of recall for questions like:
-          "что мы только что сделали?"
+          "what did we just do?"
           "what did we just do?"
           "show me the last edits"
-          "что было за последний час?"
+          "what happened in the last hour?"
 
         Returns chronological list (newest first) of activity events.
         Free of BM25/vector overhead — pure SQL by timestamp.
@@ -1050,7 +1048,7 @@ def register_all(mcp, engine):
     @mcp.tool()
     def what_just_happened(n: int = 5) -> list[dict]:
         """Quick: last N events of any type from current session.
-        Use to answer 'что мы делали?' / 'recap of this session'.
+        Use to answer 'what were we doing?' / 'recap of this session'.
         Instant, no search."""
         return engine.what_just_happened(n=n)
 

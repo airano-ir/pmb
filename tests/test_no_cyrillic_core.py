@@ -1,0 +1,61 @@
+"""L5 — zero-Cyrillic ratchet gate for the core.
+
+Phase L removed all Russian/Ukrainian PROSE (comments, docstrings, agent-facing
+instructions, examples, CLI templates) from `src/pmb`. What remains is a small,
+explicit allowlist of files that still hold FUNCTIONAL RU/UK language DATA —
+verb stems, stopword sets, and regex patterns that MATCH Russian/Ukrainian user
+text. Removing those means relocating the data into the `pmb/lang` packs (the
+L1 data→pack task, which is parity-critical because it touches recall) — NOT
+translating them in place (that would break Russian recall for the user).
+
+This test:
+  * FAILS if Cyrillic appears in any `src/pmb/**.py` NOT on the allowlist —
+    so prose Cyrillic can never creep back in.
+  * Is a RATCHET: as L1 moves a file's data into the lang packs, delete that
+    file from `_DATA_ALLOWLIST`. The goal is an empty allowlist.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+_CYRILLIC = re.compile(r"[Ѐ-ӿԀ-ԯⷠ-ⷿꙀ-ꚟ]")
+_SRC = Path(__file__).resolve().parent.parent / "src" / "pmb"
+
+# L1 COMPLETE (2026-06-10): every RU/UK matching datum — verb stems, stopword
+# sets, intent/heading/relation regexes, fact-extraction templates — now lives
+# in pmb/lang/packs/{ru,uk}.yaml (active-by-default), merged back in by each
+# module from an English inline floor. src/pmb is 100% Cyrillic-free and the
+# relocations are pinned by tests/test_regex_parity.py. The allowlist is empty
+# and MUST stay empty: any new Cyrillic in src/pmb is now a hard failure.
+_DATA_ALLOWLIST: set[str] = set()
+
+
+def _cyrillic_files() -> dict[str, int]:
+    out: dict[str, int] = {}
+    for f in _SRC.rglob("*.py"):
+        rel = f.relative_to(_SRC).as_posix()
+        n = sum(1 for ln in f.read_text(encoding="utf-8").splitlines()
+                if _CYRILLIC.search(ln))
+        if n:
+            out[rel] = n
+    return out
+
+
+def test_no_cyrillic_outside_data_allowlist():
+    offenders = {k: v for k, v in _cyrillic_files().items()
+                 if k not in _DATA_ALLOWLIST}
+    assert not offenders, (
+        "Cyrillic (likely untranslated prose) found outside the data "
+        f"allowlist — translate it to English: {offenders}"
+    )
+
+
+def test_allowlist_has_no_dead_entries():
+    # keep the ratchet honest: an allowlisted file that no longer has any
+    # Cyrillic must be removed from the list (its L1 relocation is done).
+    have = _cyrillic_files()
+    dead = sorted(p for p in _DATA_ALLOWLIST if p not in have)
+    assert not dead, (
+        f"these files are clean now — remove them from _DATA_ALLOWLIST: {dead}"
+    )

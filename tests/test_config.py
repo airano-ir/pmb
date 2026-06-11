@@ -1,15 +1,12 @@
 """Tests for the console-configurable settings layer."""
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from pmb.config import Config, SCHEMA, _coerce, _flatten, _unflatten
+from pmb.config import SCHEMA, Config, _coerce, _flatten, _unflatten
 
 
 @pytest.fixture

@@ -6,13 +6,9 @@ are about the extraction wiring, not ranking.
 """
 from __future__ import annotations
 
-import sys
 import tempfile
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.health.distill_lessons import _parse_items, distill_lessons
 

@@ -32,8 +32,8 @@ if TYPE_CHECKING:
 
 
 def apply_spreading_activation(
-    engine: "Engine",
-    hit_events: list["Event"],
+    engine: Engine,
+    hit_events: list[Event],
     boost: float = 0.05,
     half_life_hours: float = 2.0,
     max_primed: int = 30,

@@ -24,8 +24,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
 
 # ----------------------------------------------------------------------
 # Agent instruction templates - written into AGENTS.md / CLAUDE.md so the
@@ -108,13 +106,13 @@ don't re-ask the user.
 
 | Trigger | What to write |
 | --- | --- |
-| "запомни / remember / это важно" | fact, importance=0.95, pin=true |
+| "remember / this is important" | fact, importance=0.95, pin=true |
 | User shares a personal fact | fact, importance=0.7 |
 | You completed substantive work | activity, kind=completed |
 | You made a project-shaping choice | activity, kind=decision |
 | User corrected you OR a non-obvious rule emerged | lesson (high-importance) |
 | User states a personal attribute that CAN CHANGE | record_keyed_fact(subject, attribute, value) |
-| FUTURE intent — "будем делать дальше X / next we'll do X / план такой" | goal (record_goal or batch {"type":"goal"/"plan", status="pending"}), NOT a fact |
+| FUTURE intent — "next we'll do X / the plan is …" | goal (record_goal or batch {"type":"goal"/"plan", status="pending"}), NOT a fact |
 
 Never call `recall` after writing to "verify". Never call `pin`
 separately. Use absolute dates ("On May 25, 2026"), not "today".
@@ -133,7 +131,7 @@ separately. Use absolute dates ("On May 25, 2026"), not "today".
 ### Style
 
 Use read results as your own knowledge — weave naturally. Never say
-"в памяти / I found in memory / согласно записям / я записал". Don't
+"I found in memory / according to the records / I recorded that". Don't
 narrate which tools you called.
 
 PMB is local-only. Apache 2.0. The user owns every byte.
@@ -175,7 +173,7 @@ _ACTIVE_DEFAULT_TOGGLES = {
 }
 
 
-def build_active_addendum(toggles: Optional[dict] = None) -> str:
+def build_active_addendum(toggles: dict | None = None) -> str:
     """Build the proactive-logging addendum from per-category toggles.
 
     Keys (all bool): log_decisions / log_completed / log_lessons /
@@ -221,7 +219,7 @@ def build_active_addendum(toggles: Optional[dict] = None) -> str:
 
 
 def _build_agent_rules_block(active: bool = False,
-                             active_toggles: Optional[dict] = None) -> str:
+                             active_toggles: dict | None = None) -> str:
     """The full rules block including markers. When `active`, append the
     proactive-logging addendum built from `active_toggles` (config-driven;
     None = all categories on)."""
@@ -230,7 +228,7 @@ def _build_agent_rules_block(active: bool = False,
 
 
 def install_agent_rules(path: Path, active: bool = False,
-                        active_toggles: Optional[dict] = None) -> str:
+                        active_toggles: dict | None = None) -> str:
     """Append (or update) the PMB rules block in the agent's markdown
     instructions file. Returns one of: 'created', 'updated', 'added'.
 
@@ -376,9 +374,9 @@ def _save_toml(path: Path, data: dict) -> None:
 
 def make_local_entry(
     workspace_cwd: Path,
-    workspace_id: Optional[str] = None,
-    pmb_home: Optional[Path] = None,
-    tool_profile: Optional[str] = None,
+    workspace_id: str | None = None,
+    pmb_home: Path | None = None,
+    tool_profile: str | None = None,
 ) -> dict:
     """The local pmb MCP server entry.
 
@@ -412,7 +410,7 @@ def make_local_entry(
     }
 
 
-def make_remote_entry(remote: str, bearer_token: Optional[str] = None) -> dict:
+def make_remote_entry(remote: str, bearer_token: str | None = None) -> dict:
     """Build an MCP entry for a remote PMB server.
 
     Two forms are supported:
@@ -450,6 +448,52 @@ def make_remote_entry(remote: str, bearer_token: Optional[str] = None) -> dict:
         "command": "ssh",
         "args": [target, remote_cmd],
     }
+
+
+def _prep_daemon_http(pmb_home: Path | None, tool_profile: str | None) -> bool:
+    """S6: decide whether the shared HTTP-daemon entry is viable, and if so make
+    it keep the MCP connection warm. Returns False (→ stdio fallback) when
+    daemon.autostart is off. When viable, pins `daemon.idle_exit_min=0` so the
+    daemon doesn't disappear mid-session (HTTP has no client-owned lifecycle the
+    way stdio does), and records the tool profile the daemon should serve."""
+    try:
+        import os
+
+        from pmb.config import Config
+        home = (Path(pmb_home) if pmb_home
+                else Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb")))
+        cfg = Config(pmb_home=home)
+        if not bool(cfg.get("daemon.autostart")):
+            return False
+        cfg.set_global("daemon.idle_exit_min", 0)
+        if tool_profile:
+            cfg.set_global("daemon.tool_profile", tool_profile)
+        return True
+    except Exception:
+        return False
+
+
+def make_daemon_entry(
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    path: str = "/mcp",
+) -> dict:
+    """S6: a streamable-HTTP MCP entry pointing at the LOCAL warm daemon, so N
+    AI clients share ONE warm process (one Engine + one ~400 MB model) instead
+    of spawning a stdio server each. The bearer token is the PERSISTENT daemon
+    token (created here if absent) — stable across daemon restarts, so the baked
+    `Authorization` header doesn't go stale when the daemon idle-exits and the
+    hook autostarts it again.
+
+    Shape matches `make_remote_entry`'s HTTP form (`type: http`), which the
+    big-three JSON hosts already accept. Codex/extended (stdio-shaped) hosts
+    keep the local stdio entry — the caller decides."""
+    from pmb.mcp.daemon import write_daemon_token
+    token = write_daemon_token()   # reuse-if-present (persistent)
+    entry: dict = {"type": "http", "url": f"http://{host}:{int(port)}{path}"}
+    if token:
+        entry["headers"] = {"Authorization": f"Bearer {token}"}
+    return entry
 
 
 def merge_entry(existing: dict, name: str, entry: dict) -> tuple[dict, str]:
@@ -515,9 +559,9 @@ class JsonAgentSpec:
     servers_key: str            # top-level key the agent reads servers from
     shape: str                  # "claude" | "vscode" | "zed" | "opencode" | "continue-yaml"
     fmt: str = "json"           # "json" | "yaml"
-    project_path: Optional[str] = None   # relative to cwd
-    global_path: Optional[str] = None     # relative to home; ".config/..." → XDG
-    instruction_file: Optional[str] = None
+    project_path: str | None = None   # relative to cwd
+    global_path: str | None = None     # relative to home; ".config/..." → XDG
+    instruction_file: str | None = None
     instruction_in_home: bool = False
     docs: str = ""              # one-liner shown in help / docs
 
@@ -586,7 +630,7 @@ def supported_agents() -> list[str]:
 
 
 def detect_installed_agents(
-    home: Optional[Path] = None, cwd: Optional[Path] = None,
+    home: Path | None = None, cwd: Path | None = None,
 ) -> list[str]:
     """Best-effort: which supported agents already have a config file on disk.
 
@@ -621,7 +665,7 @@ def _xdg_config_home() -> Path:
 
 
 def _resolve_extended_path(
-    spec: JsonAgentSpec, cwd: Path, scope: str, override: Optional[str],
+    spec: JsonAgentSpec, cwd: Path, scope: str, override: str | None,
 ) -> Path:
     """Pick the config file for an extended agent.
 
@@ -734,14 +778,14 @@ def connect_extended_agent(
     *,
     cwd: Path,
     scope: str,
-    remote: Optional[str],
-    name_override: Optional[str],
-    workspace_id: Optional[str],
-    pmb_home: Optional[Path],
-    config_path: Optional[str] = None,
+    remote: str | None,
+    name_override: str | None,
+    workspace_id: str | None,
+    pmb_home: Path | None,
+    config_path: str | None = None,
     active: bool = False,
-    active_toggles: Optional[dict] = None,
-    bearer_token: Optional[str] = None,
+    active_toggles: dict | None = None,
+    bearer_token: str | None = None,
 ) -> dict:
     """Wire one of the JSON_AGENT_SPECS agents. Returns the same dict shape
     as `connect()` so the CLI layer renders both paths identically."""
@@ -856,7 +900,7 @@ def probe_mcp(timeout_seconds: float = 6.0) -> tuple[bool, str]:
 _HOOK_HOSTS = {"claude-code", "codex"}
 
 
-def _lean_for(agent: str) -> Optional[str]:
+def _lean_for(agent: str) -> str | None:
     """MCP tool profile to set when hooks ARE installed for `agent`.
 
     Only claude-code has a per-turn auto-recall HOOK (UserPromptSubmit) that
@@ -872,15 +916,16 @@ def connect(
     *,
     cwd: Path,
     scope: str = "project",
-    remote: Optional[str] = None,
-    name_override: Optional[str] = None,
-    workspace_id: Optional[str] = None,
-    pmb_home: Optional[Path] = None,
-    config_path: Optional[str] = None,
+    remote: str | None = None,
+    name_override: str | None = None,
+    workspace_id: str | None = None,
+    pmb_home: Path | None = None,
+    config_path: str | None = None,
     active: bool = False,
-    active_toggles: Optional[dict] = None,
-    bearer_token: Optional[str] = None,
+    active_toggles: dict | None = None,
+    bearer_token: str | None = None,
     install_hooks: bool = False,
+    use_daemon: bool = False,
 ) -> dict:
     """Write the MCP entry into the right config file.
 
@@ -924,9 +969,22 @@ def connect(
     will_install_hooks = install_hooks and agent in _HOOK_HOSTS and not remote
     tool_profile = _lean_for(agent) if will_install_hooks else None
 
+    # S6: `--daemon` points the (JSON) host at the one warm local daemon over
+    # streamable-HTTP instead of its own stdio Engine+model. Only the JSON
+    # mcpServers hosts (claude-code / cursor) accept a `type: http` entry; codex
+    # (TOML, command-shaped) and remote keep stdio, so we fall through quietly.
+    daemon_http = bool(use_daemon and not remote and agent in ("claude-code", "cursor"))
+    if daemon_http:
+        # Gate on daemon.autostart + pin idle_exit_min=0 so the shared daemon
+        # actually stays reachable for the MCP connection; falls back to stdio
+        # when autostart is off.
+        daemon_http = _prep_daemon_http(pmb_home, tool_profile)
     if remote:
         entry = make_remote_entry(remote, bearer_token=bearer_token)
         name = name_override or "pmb-remote"
+    elif daemon_http:
+        entry = make_daemon_entry()
+        name = name_override or ("pmb-shared" if workspace_id else "pmb")
     else:
         entry = make_local_entry(
             cwd, workspace_id=workspace_id, pmb_home=pmb_home,
@@ -950,11 +1008,8 @@ def connect(
     rules_written: list[dict] = []
     try:
         for inst_path in instruction_paths_for_agent(agent, cwd):
-            # Only write to the GLOBAL one by default (home), or to the
-            # project one when scope='project'. Skip the other.
-            is_global = str(inst_path.parent) == str(Path.home() / f".{agent.replace('-code', '').replace('codex', 'codex')}")
-            # Simpler: just write to the first path (global) - most agents
-            # read both, global is safer (works across all projects).
+            # Write to each instruction path the agent reads; global (home)
+            # is safest because it works across all projects.
             written = install_agent_rules(inst_path, active=active,
                                           active_toggles=active_toggles)
             rules_written.append({
@@ -987,4 +1042,11 @@ def connect(
         "instruction_rules": rules_written,
         "hooks": hooks_result,
         "tool_profile": tool_profile,
+        # S6: True when this host was pointed at the shared warm daemon over
+        # HTTP. The CLI uses it to ensure the daemon is up and print RSS math.
+        "daemon_http": daemon_http,
+        # Signalled when --daemon was asked for but the host can't take an HTTP
+        # entry (codex/extended/remote) — we kept stdio; surfaced so the CLI can
+        # tell the user instead of silently ignoring the flag.
+        "daemon_http_unavailable": bool(use_daemon and not daemon_http),
     }

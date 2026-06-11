@@ -1,32 +1,30 @@
 """
 Storage Compaction.
 
-Цели:
-1. Active SQLite остаётся компактным (быстрые queries)
-2. Archived events перемещаются в холодное хранилище (cold.sqlite)
-3. SQLite VACUUM для возврата места
-4. LanceDB compact (через native compaction)
+Goals:
+1. The active SQLite stays compact (fast queries)
+2. Archived events are moved to cold storage (cold.sqlite)
+3. SQLite VACUUM to reclaim space
+4. LanceDB compact (via native compaction)
 
-Запускается:
+Triggered by:
 - pmb compact
-- Автоматически через scheduler (раз в неделю)
+- Automatically via the scheduler (once a week)
 
-Что делает:
-1. Archived events старше 30 дней → переносятся в cold.sqlite
-2. Vector embeddings таких events удаляются из LanceDB
-3. VACUUM на основной events.sqlite
-4. LanceDB compaction (если поддерживает)
+What it does:
+1. Archived events older than 30 days → moved to cold.sqlite
+2. Vector embeddings of those events are removed from LanceDB
+3. VACUUM on the main events.sqlite
+4. LanceDB compaction (if supported)
 
-Cold storage схема такая же как main, но в отдельном файле. При желании
-можно его не открывать на старте — экономия памяти.
+The cold storage schema is the same as main, but in a separate file. If
+desired it can be left unopened at startup — saving memory.
 """
 
 from __future__ import annotations
 
-import shutil
 import sqlite3
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,9 +36,9 @@ COLD_AGE_THRESHOLD_DAYS = 30
 
 
 class StorageCompactor:
-    """Перемещает старые archived events в cold storage и компактит main DB."""
+    """Moves old archived events to cold storage and compacts the main DB."""
 
-    def __init__(self, engine: "Engine"):
+    def __init__(self, engine: Engine):
         self.engine = engine
 
     def cold_db_path(self) -> Path:
@@ -71,7 +69,7 @@ class StorageCompactor:
 
     def compact(self, dry_run: bool = False, age_days: int = COLD_AGE_THRESHOLD_DAYS) -> dict:
         """
-        Перенести archived events старше age_days в cold storage.
+        Move archived events older than age_days to cold storage.
 
         Returns:
             {"moved_to_cold": N, "main_size_before": ..., "main_size_after": ..., "dry_run": bool}
@@ -111,7 +109,7 @@ class StorageCompactor:
                 "would_move_ulids": [c["ulid"] for c in candidates[:20]],
             }
 
-        # Перенести в cold
+        # Move to cold
         self._ensure_cold_schema()
         cold_db = self.cold_db_path()
 
@@ -133,7 +131,7 @@ class StorageCompactor:
                     ),
                 )
 
-        # Удалить из main + удалить из vector index
+        # Remove from main + remove from vector index
         ulids = [c["ulid"] for c in candidates]
         with sqlite3.connect(main_db) as conn:
             placeholders = ",".join("?" * len(ulids))

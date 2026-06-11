@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -75,11 +74,16 @@ def _extract_hook_prompt(raw: str) -> str:
 
 
 def _try_daemon_prepare(msg: str, max_chars: int,
-                        timeout: float = 0.6) -> Optional[str]:
+                        timeout: float = 1.2) -> str | None:
     """One cheap localhost attempt against a live memory daemon. Returns the
     rendered context string (possibly "" when there's nothing to inject), or
     None on ANY failure — the cold path below is the contract; the daemon is
-    only an accelerator. A version mismatch is treated as 'absent'."""
+    only an accelerator. A version mismatch is treated as 'absent'.
+
+    S10: timeout raised 0.6 → 1.2 s. With S2's thin client the daemon is the
+    common path, so abandoning a daemon mid-warmup and recomputing EVERYTHING
+    cold (doubling work on exactly the slow turns) is worse than waiting the
+    extra fraction of a second for the warm answer."""
     try:
         import json as _json
         import urllib.request as _url
@@ -142,9 +146,20 @@ def _maybe_autostart_daemon(eng) -> None:
             kwargs["creationflags"] = 0x00000008 | 0x00000200  # DETACHED|NEW_GROUP
         else:
             kwargs["start_new_session"] = True
+        # S6: serve the configured tool profile over HTTP (set by `pmb connect
+        # --daemon` for hook-enabled hosts) so the shared daemon trims the same
+        # tools the per-client stdio entry used to.
+        _env = dict(os.environ)
+        try:
+            _prof = str(eng.config.get("daemon.tool_profile") or "").strip()
+            if _prof:
+                _env["PMB_TOOL_PROFILE"] = _prof
+        except Exception:
+            pass
         _sp.Popen(
             [_sys2.executable, "-m", "pmb.cli", "daemon", "run"],
-            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, stdin=_sp.DEVNULL, **kwargs,
+            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, stdin=_sp.DEVNULL,
+            env=_env, **kwargs,
         )
     except Exception:
         pass
@@ -152,7 +167,7 @@ def _maybe_autostart_daemon(eng) -> None:
 
 @app.command("prepare-context")
 def prepare_context_cmd(
-    message: Optional[str] = typer.Argument(
+    message: str | None = typer.Argument(
         None,
         help="The user message to prepare context for. If omitted, read from stdin.",
     ),
@@ -431,7 +446,7 @@ def auto_context_cmd(
 
 @app.command("session-restore")
 def session_restore_cmd(
-    minutes: Optional[int] = typer.Option(
+    minutes: int | None = typer.Option(
         None, "--minutes", "-m",
         help="Window to summarise (default: config session.brief_minutes). "
              "Used when no active session is bound (e.g. fresh hook process).",
@@ -796,7 +811,7 @@ def autowrite_cmd(
 
 @app.command("forget-auto")
 def forget_auto_cmd(
-    minutes: Optional[int] = typer.Option(
+    minutes: int | None = typer.Option(
         None, "--minutes", "-m",
         help="Only auto-written entries from the last N minutes (default: all).",
     ),
@@ -818,7 +833,7 @@ def forget_auto_cmd(
 
 @app.command("ambient-watch")
 def ambient_watch_cmd(
-    path: Optional[str] = typer.Argument(
+    path: str | None = typer.Argument(
         None, help="Project root to watch (default: current directory).",
     ),
     idle: float = typer.Option(
@@ -941,7 +956,7 @@ def ambient_watch_cmd(
 
 @app.command("codex-notify")
 def codex_notify_cmd(
-    payload: Optional[str] = typer.Argument(
+    payload: str | None = typer.Argument(
         None, help="The notify JSON Codex passes (agent-turn-complete). "
                    "If omitted, read from stdin. Unused fields are ignored.",
     ),

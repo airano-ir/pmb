@@ -1,51 +1,17 @@
 """Tests for the memory tier system (working/episodic/semantic)."""
 from __future__ import annotations
 
-import os
-import sys
-import tempfile
 import time
-from pathlib import Path
-
-import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.core.engine import Engine
 from pmb.core.events import (
-    Event, EventStore, TIER_WORKING, TIER_EPISODIC, TIER_SEMANTIC,
-    default_tier_for_event_type, TIER_DECAY_FACTORS,
     PROMOTE_WORKING_TO_EPISODIC_ACCESS,
+    TIER_EPISODIC,
+    TIER_SEMANTIC,
+    TIER_WORKING,
+    default_tier_for_event_type,
 )
 from pmb.signals.decay import apply_decay
-
-
-@pytest.fixture
-def tmp_pmb_home():
-    import gc, shutil, time as _t
-    tmp = tempfile.mkdtemp()
-    home = Path(tmp) / "pmb_home"
-    os.environ["PMB_HOME"] = str(home)
-    try:
-        yield home
-    finally:
-        os.environ.pop("PMB_HOME", None)
-        gc.collect()
-        for _ in range(3):
-            try:
-                shutil.rmtree(tmp, ignore_errors=False)
-                break
-            except (OSError, PermissionError):
-                _t.sleep(0.2)
-                gc.collect()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
-
-
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
 
 
 def test_default_tier_for_fact_is_semantic():

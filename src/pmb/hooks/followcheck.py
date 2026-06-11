@@ -21,10 +21,8 @@ Pure SQL + token matching, no embeddings, runs in a few ms.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
-from typing import Any, Optional
-
+from typing import Any
 
 # Tokenizer, stopword set, and the "strong token" test live in
 # pmb.core.text_match so the SURFACE side (find_lessons — should this lesson
@@ -32,9 +30,10 @@ from typing import Any, Optional
 # yardstick — otherwise a lesson surfaces on a loose match it can never be
 # confirmed against, and just drags the adherence denominator down. Re-exported
 # under the historical underscore names this module and its tests reference.
-from pmb.core.text_match import (  # noqa: E402
-    STOPWORDS as _STOP,
+from pmb.core.text_match import (
     distinctive_tokens as _distinctive_tokens,
+)
+from pmb.core.text_match import (
     is_strong as _is_strong,
 )
 
@@ -105,7 +104,7 @@ class FollowCheckResult:
     marked_followed: int = 0
     not_applicable: int = 0
     verdicts: list[FollowVerdict] = field(default_factory=list)
-    skipped_reason: Optional[str] = None
+    skipped_reason: str | None = None
 
     def to_dict(self) -> dict:
         return {

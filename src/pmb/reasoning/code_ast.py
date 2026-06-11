@@ -28,8 +28,6 @@ import ast
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
-
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +39,7 @@ class CodeSymbol:
     signature: str = ""
     docstring: str = ""
     line: int = 0
-    parent: Optional[str] = None  # for methods: parent class name
+    parent: str | None = None  # for methods: parent class name
 
 
 def looks_like_python(text: str) -> bool:
@@ -71,7 +69,7 @@ def extract_python_symbols(code: str) -> list[CodeSymbol]:
 
     out: list[CodeSymbol] = []
 
-    def walk(node, parent_class: Optional[str] = None):
+    def walk(node, parent_class: str | None = None):
         if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
             args = []
             for a in node.args.args:

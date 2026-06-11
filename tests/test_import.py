@@ -6,16 +6,13 @@ each tool's real schema.
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.ingest import PARSERS, parse_source
-from pmb.ingest.importers import parse_chatgpt, parse_claude, parse_mem0, parse_markdown
+from pmb.ingest.importers import parse_chatgpt, parse_claude, parse_markdown, parse_mem0
 
 
 @pytest.fixture

@@ -4,15 +4,11 @@ Pure functions - no Engine, no models. Fast, CI-friendly.
 """
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
+from pmb.ingest.watch import _split_paragraphs, load_state, save_state, scan_new_chunks
 from pmb.provenance import describe_source, source_key
-from pmb.ingest.watch import scan_new_chunks, load_state, save_state, _split_paragraphs
-
 
 # ----------------------------------------------------------------------
 # provenance.describe_source

@@ -1,31 +1,29 @@
 """
 Session tracking.
 
-Session — это logical группировка событий, обычно соответствует одной сессии
-работы с агентом (Claude Code, Cursor).
+A session is a logical grouping of events, usually corresponding to one
+working session with an agent (Claude Code, Cursor).
 
 Detection:
 - Explicit: `pmb session start [name]`
-- Auto: gap > 1 hour между events создаёт новую session
+- Auto: a gap > 1 hour between events creates a new session
 
 State:
-- {workspace_dir}/session.yaml хранит current session_id и start_time
+- {workspace_dir}/session.yaml stores the current session_id and start_time
 """
 
 from __future__ import annotations
 
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
 from pmb.core.workspace import Workspace
 
-
-SESSION_GAP_SECONDS = 3600  # 1 hour без активности → новая сессия
+SESSION_GAP_SECONDS = 3600  # 1 hour without activity → new session
 
 
 @dataclass
@@ -48,7 +46,7 @@ class Session:
 
 
 class SessionTracker:
-    """Управление current session для workspace."""
+    """Management of the current session for a workspace."""
 
     def __init__(self, workspace: Workspace):
         self.workspace = workspace
@@ -56,11 +54,11 @@ class SessionTracker:
     def _state_file(self) -> Path:
         return self.workspace.storage_dir / "session.yaml"
 
-    def current(self, auto_create: bool = True) -> Optional[Session]:
+    def current(self, auto_create: bool = True) -> Session | None:
         f = self._state_file()
         if f.exists():
             try:
-                with open(f, "r", encoding="utf-8") as fp:
+                with open(f, encoding="utf-8") as fp:
                     data = yaml.safe_load(fp) or {}
                 if data:
                     sess = Session(
@@ -78,7 +76,7 @@ class SessionTracker:
             return self.start()
         return None
 
-    def start(self, name: Optional[str] = None) -> Session:
+    def start(self, name: str | None = None) -> Session:
         sess = Session(
             id=uuid.uuid4().hex[:12],
             name=name or f"session-{time.strftime('%Y%m%d-%H%M', time.gmtime())}",
@@ -88,18 +86,18 @@ class SessionTracker:
         self._save(sess)
         return sess
 
-    def end(self) -> Optional[Session]:
+    def end(self) -> Session | None:
         sess = self.current(auto_create=False)
         if not sess:
             return None
-        # Просто удаляем state file — следующий запрос создаст новую
+        # Simply delete the state file — the next request will create a new one
         f = self._state_file()
         if f.exists():
             f.unlink()
         return sess
 
     def touch(self) -> Session:
-        """Обновить last_activity. Создаёт новую сессию если предыдущая stale."""
+        """Update last_activity. Creates a new session if the previous one is stale."""
         sess = self.current(auto_create=True)
         sess.last_activity = time.time()
         self._save(sess)

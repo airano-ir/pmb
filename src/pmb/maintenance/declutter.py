@@ -16,6 +16,12 @@ import re
 import sqlite3
 from collections import defaultdict
 
+from pmb import lang as _lang
+
+# Cyrillic letter range for word tokenizers — lives in the ru pack (L1) so this
+# module stays Cyrillic-free while still tokenizing Russian/Ukrainian content.
+_CYR = "".join(str(x) for x in _lang.merged_list("cyrillic_script_range"))
+
 # Keys/content that scream "test data". Content markers are deliberately
 # HIGH-PRECISION (declutter ARCHIVES): we dropped collision-prone keyboard
 # mashes — "asdf" is a real tool (asdf-vm), "qwerty"/"foobar" appear in real
@@ -25,10 +31,11 @@ _TEST_CONTENT_RE = re.compile(
     r"\b(?:final_value|lorem ipsum|test123|placeholder text)\b|x{5,}",
     re.IGNORECASE,
 )
-_STOPWORDS = {
+# EN floor inline; RU/UK stop-acks ("yes"/"no"/"this") merge in from packs (L1).
+_STOPWORDS = _lang.merged_set("declutter_stopwords", {
     "the", "a", "an", "is", "are", "was", "of", "and", "to", "in", "it",
-    "this", "that", "ok", "okay", "yes", "no", "да", "нет", "это",
-}
+    "this", "that", "ok", "okay", "yes", "no",
+})
 
 LLM_CANDIDATE_CAP = 50
 LLM_TIMEOUT_S = 15.0
@@ -44,7 +51,7 @@ def _meta(raw) -> dict:
 
 
 def _is_pure_stopwords(content: str) -> bool:
-    toks = re.findall(r"[0-9a-zA-Zа-яёА-ЯЁ']+", (content or "").lower())
+    toks = re.findall(r"[0-9a-zA-Z" + _CYR + r"']+", (content or "").lower())
     return bool(toks) and all(t in _STOPWORDS for t in toks)
 
 

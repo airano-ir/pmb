@@ -18,10 +18,11 @@ Cache invalidation:
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -32,7 +33,11 @@ class _Entry:
 
 
 class RecallCache:
-    """Tiny LRU cache. Thread-unsafe — Engine is single-process anyway."""
+    """Tiny LRU cache. Guarded by a lock (S9): the memory daemon serves recalls
+    from a worker-thread pool and bumps the generation on writes, so get/put/
+    bump_generation can interleave across threads — an unguarded OrderedDict
+    raises `RuntimeError: OrderedDict mutated during iteration` or drops counts
+    under that race. The lock is uncontended in the single-process CLI path."""
 
     def __init__(self, max_size: int = 128, ttl_seconds: float = 300.0):
         self.max_size = max_size
@@ -41,6 +46,7 @@ class RecallCache:
         self._generation = 0
         self.hits = 0
         self.misses = 0
+        self._lock = threading.RLock()
 
     @property
     def enabled(self) -> bool:
@@ -48,55 +54,60 @@ class RecallCache:
 
     def bump_generation(self) -> None:
         """Mark every existing entry stale (called after writes)."""
-        self._generation += 1
+        with self._lock:
+            self._generation += 1
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         if not self.enabled:
             return None
-        ent = self._data.get(key)
-        if ent is None:
-            self.misses += 1
-            return None
-        if ent.generation != self._generation:
-            del self._data[key]
-            self.misses += 1
-            return None
-        if self.ttl_seconds > 0 and (time.time() - ent.born_at) > self.ttl_seconds:
-            del self._data[key]
-            self.misses += 1
-            return None
-        # LRU touch
-        self._data.move_to_end(key)
-        self.hits += 1
-        return ent.value
+        with self._lock:
+            ent = self._data.get(key)
+            if ent is None:
+                self.misses += 1
+                return None
+            if ent.generation != self._generation:
+                del self._data[key]
+                self.misses += 1
+                return None
+            if self.ttl_seconds > 0 and (time.time() - ent.born_at) > self.ttl_seconds:
+                del self._data[key]
+                self.misses += 1
+                return None
+            # LRU touch
+            self._data.move_to_end(key)
+            self.hits += 1
+            return ent.value
 
     def put(self, key: str, value: Any) -> None:
         if not self.enabled:
             return
-        if key in self._data:
-            self._data.move_to_end(key)
-        self._data[key] = _Entry(
-            value=value, born_at=time.time(), generation=self._generation,
-        )
-        while len(self._data) > self.max_size:
-            self._data.popitem(last=False)
+        with self._lock:
+            if key in self._data:
+                self._data.move_to_end(key)
+            self._data[key] = _Entry(
+                value=value, born_at=time.time(), generation=self._generation,
+            )
+            while len(self._data) > self.max_size:
+                self._data.popitem(last=False)
 
     def stats(self) -> dict:
-        total = self.hits + self.misses
-        return {
-            "size": len(self._data),
-            "max_size": self.max_size,
-            "ttl_seconds": self.ttl_seconds,
-            "generation": self._generation,
-            "hits": self.hits,
-            "misses": self.misses,
-            "hit_rate": (self.hits / total) if total else 0.0,
-        }
+        with self._lock:
+            total = self.hits + self.misses
+            return {
+                "size": len(self._data),
+                "max_size": self.max_size,
+                "ttl_seconds": self.ttl_seconds,
+                "generation": self._generation,
+                "hits": self.hits,
+                "misses": self.misses,
+                "hit_rate": (self.hits / total) if total else 0.0,
+            }
 
     def clear(self) -> None:
-        self._data.clear()
-        self.hits = 0
-        self.misses = 0
+        with self._lock:
+            self._data.clear()
+            self.hits = 0
+            self.misses = 0
 
 
 def make_recall_cache_key(

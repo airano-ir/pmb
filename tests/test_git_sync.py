@@ -7,13 +7,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.core.git_sync import WorkspaceGitSync, clone_workspace
 

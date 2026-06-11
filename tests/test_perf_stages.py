@@ -4,10 +4,6 @@ migration. A client-timed-out call is NOT counted as a clean success."""
 from __future__ import annotations
 
 import sqlite3
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.mcp import perf
 

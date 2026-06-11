@@ -22,13 +22,11 @@ refuses the write.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
-
 
 # ----------------------------------------------------------------------
 # Schema - every knob the user can tune, with type and human help text
@@ -40,9 +38,9 @@ class _Setting:
     type: type
     default: Any
     help: str
-    choices: Optional[tuple] = None
-    min: Optional[float] = None
-    max: Optional[float] = None
+    choices: tuple | None = None
+    min: float | None = None
+    max: float | None = None
 
 
 # ----------------------------------------------------------------------
@@ -185,6 +183,14 @@ SCHEMA: dict[str, _Setting] = {
         "noise.",
         min=1, max=200,
     ),
+    "hooks.pretool_guard": _Setting(
+        bool, True,
+        "R11: the PreToolUse lesson guard — fire a matching rule ('use pnpm, "
+        "never npm') at TOOL-CALL time (when the agent is about to run `npm "
+        "install`), even if the agent never called memory. Daemon-served and "
+        "ADVISORY (never blocks); a rule fires at most once per session. A "
+        "no-op without a running daemon, so it's safe to leave on.",
+    ),
     "hooks.semantic_intents": _Setting(
         bool, False,
         "C5 (opt-in, default OFF): when lexical intent detection finds nothing "
@@ -218,8 +224,33 @@ SCHEMA: dict[str, _Setting] = {
         float, 0.30,
         "For GENERIC_FACTUAL fallback (no explicit pattern, just a '?'), "
         "surface a recall hit only if its top score clears this floor. "
-        "Set to 0.0 to always surface; raise to 0.5 to suppress noisy hits.",
+        "Set to 0.0 to always surface; raise to 0.5 to suppress noisy hits. "
+        "NOTE: `score` is min-max-normalized over the candidate set, so this "
+        "floor is RELATIVE — see auto_recall.evidence_min_cosine for the "
+        "absolute companion gate.",
         min=0.0, max=1.0,
+    ),
+    "auto_recall.evidence_min_cosine": _Setting(
+        float, 0.0,
+        "R3 absolute-evidence gate for GENERIC_FACTUAL surfacing. The `score` "
+        "floor above is min-max-normalized (top hit ≈ 1.0 even when the corpus "
+        "is irrelevant), so it nearly always passes. When > 0, ALSO require the "
+        "top hit's UN-normalized vector similarity (signals.raw_cosine = "
+        "1/(1+L2_distance), in [0,1]) to clear this bar, so a question the "
+        "workspace knows nothing about surfaces nothing. NOTE the scale is "
+        "compressed (real matches land ~0.05–0.15 with the default embedder, "
+        "not 0.5+), so the right floor is small and DATA-dependent — keep this "
+        "0.0 (off) until the V1 recall eval measures the relevant-vs-noise "
+        "distribution on your corpus and picks the floor.",
+        min=0.0, max=1.0,
+    ),
+    "auto_recall.project_min_mentions": _Setting(
+        int, 3,
+        "R5: a GRAPH entity must recur at least this many times (n_mentions) "
+        "before the auto-recall hook treats it as a 'known project'. Stops "
+        "one-off concept entities from faking a PROJECT_PREP. The workspace "
+        "name is always a known project regardless of this floor.",
+        min=1, max=100,
     ),
     "auto_recall.include_trace": _Setting(
         bool, True,
@@ -412,8 +443,8 @@ SCHEMA: dict[str, _Setting] = {
     "keyed.auto_detect_current_state": _Setting(
         bool, True,
         "When a user fact plainly states a CURRENT personal attribute "
-        "(\"I now live in Tampa\", \"my current employer is X\", \"сейчас живу "
-        "в …\"), also upsert the matching keyed fact so the live value "
+        "(\"I now live in Tampa\", \"my current employer is X\"), also upsert "
+        "the matching keyed fact so the live value "
         "supersedes any stale one; the original fact is kept as history. "
         "Conservative: fires only on explicit present-state phrasing from "
         "user-origin facts — never reflections / project index / autowrite.",
@@ -459,6 +490,59 @@ SCHEMA: dict[str, _Setting] = {
         "real semantic recall. The current message still answers cold. Set "
         "false to require an explicit `pmb daemon start`.",
     ),
+    "connect.default_daemon": _Setting(
+        bool, True,
+        "S6: when `pmb connect` is run for a JSON host (claude-code / cursor) "
+        "WITHOUT an explicit --daemon/--stdio, default to the shared warm-daemon "
+        "HTTP entry (one ~400 MB process for N clients) instead of a stdio "
+        "server per client. Only applies when daemon.autostart is on. Set false "
+        "to keep the old stdio default; --stdio always overrides per-invocation.",
+    ),
+    "daemon.tool_profile": _Setting(
+        str, "",
+        "S6: the MCP tool profile the warm daemon should serve (minimal | lean | "
+        "default | full) when clients connect over HTTP (`pmb connect --daemon`). "
+        "Empty = inherit PMB_TOOL_PROFILE / the built-in default. `pmb connect` "
+        "sets this to 'lean' for a hook-enabled host so the shared daemon trims "
+        "the tools the hooks already cover, exactly like the stdio entry did.",
+    ),
+    "daemon.maintenance": _Setting(
+        bool, True,
+        "M1: let the warm daemon tend the store on a schedule (once per "
+        "maintenance_interval_h of uptime, only when idle) instead of relying on "
+        "hand-installed cron. Runs archive_cold (archive-only), a conflict scan "
+        "(report-only → doctor) and a declutter DRY-RUN (report-only). Never "
+        "hard-deletes. Set false to disable the tick entirely.",
+    ),
+    "daemon.maintenance_archive": _Setting(
+        bool, True,
+        "M1: whether the maintenance tick's archive_cold step actually archives "
+        "(reversible) or only the report-only steps run. Set false to keep the "
+        "conflict/declutter reports but never auto-archive cold memory.",
+    ),
+    "daemon.maintenance_interval_h": _Setting(
+        float, 24.0,
+        "M1: minimum hours of daemon uptime between maintenance ticks.",
+        min=1.0, max=720.0,
+    ),
+    "daemon.maintenance_idle_min": _Setting(
+        float, 5.0,
+        "M1: the daemon must be idle (no request) this many minutes before a "
+        "maintenance tick runs, so housekeeping never competes with a live "
+        "request.",
+        min=0.0, max=1440.0,
+    ),
+    "write.high_importance_daily_budget": _Setting(
+        int, 30,
+        "R13 importance-spam guard: at most this many fact writes with "
+        "importance > 0.9 per rolling 24h. Past the budget, further high-"
+        "importance facts are clamped to 0.7 with a metadata."
+        "importance_budget_clamped breadcrumb, so an agent stamping 0.95 on "
+        "everything can't dominate ranking. Keyed/lesson facts are exempt; "
+        "PINNED facts are exempt automatically (pin resets importance to 1.0). "
+        "Generous default; set 0 to disable.",
+        min=0, max=10000,
+    ),
     "write.max_activity_importance": _Setting(
         float, 0.8,
         "Cap on the importance of an `activity` event (unless pinned). Agents "
@@ -467,6 +551,18 @@ SCHEMA: dict[str, _Setting] = {
         "metadata.importance_clamped breadcrumb is left). Facts/lessons/goals "
         "are never clamped. 1.0 disables the cap.",
         min=0.1, max=1.0,
+    ),
+    "write.dedup_window_h": _Setting(
+        float, 24.0,
+        "Exact-duplicate suppression window for `activity` events, in HOURS. "
+        "Activities are session-scoped working memory that agents often re-log "
+        "seconds apart; within this window an exact-normalized duplicate of an "
+        "ACTIVE activity does not create a new row — the existing row's "
+        "access_count / last_accessed are bumped and its ULID is returned with "
+        "{deduped: true}. A single indexed SQL probe, no embedding. Facts and "
+        "goals keep their own L1+L2 dedup path (see dedup.*). 0 = off (every "
+        "activity inserts).",
+        min=0.0, max=8760.0,
     ),
     "recall.singleflight": _Setting(
         bool, True,
@@ -554,6 +650,15 @@ SCHEMA: dict[str, _Setting] = {
         "I live'. Set 0 to disable.",
         min=0.0, max=2.0,
     ),
+    "recall.keyed_boost_personal_only": _Setting(
+        bool, True,
+        "R6: apply the keyed-fact floor/boost ONLY when the query looks like a "
+        "personal-attribute question (a question word + a first-person/user "
+        "cue). Off → the old behaviour where every query that lexically reached "
+        "a keyed value boosted it (so 'Warsaw deployment timezone' could rocket "
+        "'user city: Warsaw' to the top). Keyed facts are still RETRIEVABLE "
+        "either way; this only governs the ranking boost.",
+    ),
     "recall.temporal_half_life_days": _Setting(
         float, 14.0,
         "Days at which temporal proximity drops to 0.5. Lower = stricter "
@@ -624,6 +729,22 @@ SCHEMA: dict[str, _Setting] = {
         "recall's side-effects must be visible IMMEDIATELY after the call "
         "(deterministic tests, single-shot CLI scripts) — recall then drains "
         "the touch buffer inline before returning.",
+    ),
+    "recall.channel_weights": _Setting(
+        str, "",
+        "X2 adaptive scoring weights — a JSON object scaling the base recall "
+        "channels, e.g. '{\"hit\": 1.1, \"importance\": 0.9, \"recency\": 1.0}'. "
+        "Empty (default) = identity = byte-identical to the old fixed formula. "
+        "`pmb.reasoning.scoring.propose_channel_weights` can SUGGEST a vector "
+        "from feedback, but recall never adopts one on its own.",
+    ),
+    "lessons.rank_v2": _Setting(
+        bool, True,
+        "R9: rank find_lessons results by lexical strength × importance × "
+        "follow-history damping (a rule that surfaces 10×+ and is never "
+        "followed fades) with recency as a tiebreak — instead of lexical "
+        "overlap alone. Off restores the legacy (strong, sim, overlap) sort. "
+        "Only reorders results; never changes WHICH lessons match.",
     ),
     "recall.lesson_min_overlap": _Setting(
         int, 1,
@@ -742,7 +863,7 @@ SCHEMA: dict[str, _Setting] = {
     "recall.pattern_split": _Setting(
         bool, True,
         "Improvement UU: split compound queries on natural markers "
-        "('X and why Y' / 'X потому что Y' / 'X, also Y') and fuse "
+        "('X and why Y' / 'X, also Y') and fuse "
         "sub-query results via Reciprocal Rank Fusion. No LLM needed - "
         "patterns cover ~80%% of compound queries on EN+RU. "
         "Default ON: regression-safe (single-clause queries skip split "
@@ -1157,9 +1278,9 @@ class Config:
 
     def __init__(
         self,
-        workspace_dir: Optional[Path] = None,
-        pmb_home: Optional[Path] = None,
-        overrides: Optional[dict[str, Any]] = None,
+        workspace_dir: Path | None = None,
+        pmb_home: Path | None = None,
+        overrides: dict[str, Any] | None = None,
     ):
         self.workspace_dir = workspace_dir
         self.pmb_home = pmb_home
@@ -1184,7 +1305,7 @@ class Config:
         if not p.exists():
             return {}
         try:
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             if not isinstance(data, dict):
                 return {}
@@ -1245,7 +1366,7 @@ class Config:
             self._save(self.global_path, self._global)
         return typed
 
-    def reset_workspace(self, key: Optional[str] = None) -> None:
+    def reset_workspace(self, key: str | None = None) -> None:
         """Remove key (or all keys) from the per-workspace file."""
         if key is None:
             self._workspace.clear()

@@ -1,7 +1,7 @@
 """Importers - bring existing memory into PMB from other tools."""
 from pmb.ingest.importers import (
-    ImportResult,
     PARSERS,
+    ImportResult,
     parse_source,
 )
 

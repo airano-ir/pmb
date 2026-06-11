@@ -42,7 +42,7 @@ def mock_hooks(monkeypatch):
 
 
 def test_lean_keeps_deliberate_drops_hook_covered():
-    from pmb.mcp.server import _LEAN_TOOLS, _DEFAULT_TOOLS
+    from pmb.mcp.server import _DEFAULT_TOOLS, _LEAN_TOOLS
     # deliberate, agent-composed tools the hook CANNOT make → kept. prepare +
     # session_brief stay too (rules reference them; deliberate mid-session use).
     for t in ("recall", "record_batch", "project_overview", "find_lessons",

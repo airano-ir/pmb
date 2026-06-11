@@ -13,16 +13,16 @@ network, no API keys. Sub-100ms p95 on a warm workspace.
 
 Intents (multilingual, RU/UK/EN):
 
-  PROJECT_PREP        a known project name + a work-verb (fix/add/refactor/
-                      исправь/допиши). → full project_overview + arcs + goals.
+  PROJECT_PREP        a known project name + a work-verb (fix/add/refactor +
+                      RU/UK equivalents). → full project_overview + arcs + goals.
   PROJECT_OVERVIEW    a known project name standalone. → project_overview.
-  PAST_QUERY          "когда / what did I / why did we / какой у меня".
+  PAST_QUERY          "what did I / why did we" + RU/UK equivalents.
                       → recall(message).
-  RECENT_QUERY        "что мы только что / what did I just / щойно".
+  RECENT_QUERY        "what did I just / what are we doing now" + RU/UK.
                       → what_just_happened(5).
-  GOALS_QUERY         "какие у меня цели / open goals".
+  GOALS_QUERY         "open goals / what's left" + RU/UK equivalents.
                       → list_goals(in_progress).
-  LESSONS_QUERY       "какие правила / lessons / conventions".
+  LESSONS_QUERY       "what rules / lessons / conventions" + RU/UK.
                       → find_lessons(message).
   GENERIC_FACTUAL     question mark + non-trivial content, no other match.
                       → recall(message, top_k=3), surface only if score > 0.3.
@@ -38,8 +38,9 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
+from pmb import lang as _lang
 
 # ─── Intents ─────────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ class Intent:
     GOALS_QUERY = "GOALS_QUERY"
     LESSONS_QUERY = "LESSONS_QUERY"
     GENERIC_FACTUAL = "GENERIC_FACTUAL"
+    WORK_REQUEST = "WORK_REQUEST"
     SKIP = "SKIP"
 
 
@@ -60,86 +62,88 @@ class Intent:
 # Three-language coverage (en/ru/uk). Anchored to whole-word boundaries
 # where reasonable. Tested in tests/test_auto_recall.py.
 
-# "what did I / when did I / why did we / where did / who did" + Cyrillic
-# equivalents. Includes mild typos ("когда-то я делал X").
+def _ialt(en_frags: list[str], *cats: str) -> str:
+    """Join English inline regex fragments with the RU/UK fragments an active
+    lang pack contributes for `cats`, into one alternation body (no outer
+    group). Keeps this module Cyrillic-free (L1): the EN fragments stay inline,
+    the Cyrillic equivalents live in packs/{ru,uk}.yaml. Order is irrelevant —
+    these feed iterate-all `search()` matchers."""
+    frags = list(en_frags)
+    for c in cats:
+        frags.extend(str(x) for x in _lang.merged_list(c) if str(x).strip())
+    return "|".join(frags)
+
+
+# "what did I / when did I / why did we / where did / who did" + the RU/UK
+# equivalents (pack: intent_past_query). Includes mild typos.
 _PAST_QUERY = re.compile(
-    r"(?:\bкогда\s+(?:я|мы|это)|\bчто\s+(?:я|мы)\s+(?:делал|сделал|"
-    r"говорил|записал|выбрал|решил|обсужд)|\bпочему\s+(?:мы|я)\s+"
-    r"(?:выбра|реши|отказа)|\bкакой\s+у\s+меня|\bгде\s+(?:я|мы)\s+"
-    r"(?:храни|записа|положи)|\bкто\s+так(?:ой|ая)|\bчто\s+я\s+"
-    r"планировал|"
-    r"\bколи\s+я|\bщо\s+я\s+(?:робив|зробив)|\bхто\s+так(?:ий|а)|"
-    r"\bwhat\s+did\s+(?:i|we)\s|\bwhen\s+did\s+(?:i|we)|\bwhy\s+did\s+we|"
-    r"\bwhere\s+did\s+(?:i|we)|\bwho\s+(?:is|was|said|did)|\bwhat'?s\s+"
-    r"(?:my|the\s+)|\bhow\s+come|\bdo\s+we\s+have|\bhave\s+i\s+(?:ever|"
-    r"already))",
+    r"(?:" + _ialt([
+        r"\bwhat\s+did\s+(?:i|we)\s", r"\bwhen\s+did\s+(?:i|we)",
+        r"\bwhy\s+did\s+we", r"\bwhere\s+did\s+(?:i|we)",
+        r"\bwho\s+(?:is|was|said|did)", r"\bwhat'?s\s+(?:my|the\s+)",
+        r"\bhow\s+come", r"\bdo\s+we\s+have", r"\bhave\s+i\s+(?:ever|already)",
+    ], "intent_past_query") + r")",
     re.IGNORECASE,
 )
 
-# "что мы только что обсуждали / что мы сейчас делаем" — last few turns.
+# "what did I just / what are we doing right now" + RU/UK (intent_recent_query).
 _RECENT_QUERY = re.compile(
-    r"(?:\bчто\s+(?:мы|я)\s+(?:только\s+что|сейчас|щас|недавно)|"
-    r"\bщо\s+ми\s+(?:щойно|тільки\s+що)|"
-    r"\bwhat\s+(?:did|are)\s+(?:i|we)\s+(?:just|currently|right\s+now)|"
-    r"\bwhat'?s\s+(?:going\s+on|happening)|"
-    r"\bкакая\s+у\s+нас\s+(?:сейчас|щас)|"
-    r"\bна\s+ч[её]м\s+я\s+остановил)",
+    r"(?:" + _ialt([
+        r"\bwhat\s+(?:did|are)\s+(?:i|we)\s+(?:just|currently|right\s+now)",
+        r"\bwhat'?s\s+(?:going\s+on|happening)",
+    ], "intent_recent_query") + r")",
     re.IGNORECASE,
 )
 
+# Open goals / "what's left to do" + RU/UK equivalents (intent_goals_query).
 _GOALS_QUERY = re.compile(
-    r"(?:\bкакие\s+у\s+меня\s+(?:цели|задачи|планы)|"
-    r"\bмои\s+(?:цели|задачи|планы)|"
-    r"\bчто\s+я\s+планировал|"
-    r"\bоткрытые\s+(?:цели|задачи)|"
-    r"\bяк[іи]\s+у\s+мене\s+цілі|"
-    r"\bmy\s+(?:open\s+)?goals?|\bopen\s+goals?|\bin\s+flight|"
-    r"\bwhat\s+am\s+i\s+working\s+on|\bcurrent\s+goals?|"
-    # 'what's left to do' — a natural goals question the old patterns missed
-    r"\bдодела\w+|\bнедодела\w*|\bчто\s+остал\w+|"
-    r"\bчто\s+(?:дел\w+\s+)?дальше\b|"
-    r"\bщо\s+(?:залиш\w+|дал[іи]|дороб\w+)|"
-    r"\bto-?do\b|\bwhat'?s\s+(?:left|next)\b|\bwhat\s+is\s+left\b|"
-    r"\bremaining\s+(?:tasks?|work|items?)\b|"
-    r"\bwhat\s+(?:do\s+i\s+still\s+need|should\s+i\s+do\s+next))",
+    r"(?:" + _ialt([
+        r"\bmy\s+(?:open\s+)?goals?", r"\bopen\s+goals?", r"\bin\s+flight",
+        r"\bwhat\s+am\s+i\s+working\s+on", r"\bcurrent\s+goals?",
+        r"\bto-?do\b", r"\bwhat'?s\s+(?:left|next)\b", r"\bwhat\s+is\s+left\b",
+        r"\bremaining\s+(?:tasks?|work|items?)\b",
+        r"\bwhat\s+(?:do\s+i\s+still\s+need|should\s+i\s+do\s+next)",
+    ], "intent_goals_query") + r")",
     re.IGNORECASE,
 )
 
+# Project rules / lessons / conventions + RU/UK (intent_lessons_query).
 _LESSONS_QUERY = re.compile(
-    r"(?:\bкакие\s+(?:есть\s+)?правила|\bправила\s+проекта|"
-    r"\bкакие\s+(?:есть\s+)?уроки|\bчто\s+я\s+учил|"
-    r"\bconvention|\blesson|\brule\s+(?:about|for)|"
-    r"\bdo\s+we\s+use\b|\bdo\s+we\s+have\s+a\s+rule|"
-    r"\bяк[іи]\s+правила)",
+    r"(?:" + _ialt([
+        r"\bconvention", r"\blesson", r"\brule\s+(?:about|for)",
+        r"\bdo\s+we\s+use\b", r"\bdo\s+we\s+have\s+a\s+rule",
+    ], "intent_lessons_query") + r")",
     re.IGNORECASE,
 )
 
-# Work verbs that, combined with a project name, mean "I'm about to work
-# on it". Multilingual; intentionally generous.
+# Work verbs that, combined with a project name, mean "I'm about to work on
+# it". The RU/UK verb stems live in the packs (work_verb_markers); EN inline.
+# Intentionally generous.
 _WORK_VERB = re.compile(
-    r"(?:\b(?:fix|fixing|add|adding|refactor|refactoring|implement|"
-    r"implementing|build|building|write|writing|debug|debugging|"
-    r"deploy|deploying|test|testing|continue|review|reviewing|"
-    r"port|porting|migrate|migrating|update|updating|rewrite|"
-    r"rewriting|wire|wiring|patch|patching|land|ship|push)\b|"
-    r"\bworking\s+on\b|\bwork\s+on\b|"
-    r"\b(?:исправ|почини|допиш|напиш|перепиш|добав|рефактор|"
-    r"задеплой|оттестир|поработ|настро|внес|внеси|пробрось|"
-    r"обнови|переведи|вынеси|вытащ|реализу|реши|"
-    r"правил|правит|править|правлю)|"
-    r"\b(?:виправ|напиши|допиши|додай|рефактор|оновити))",
+    r"(?:" + _ialt([
+        r"\b(?:fix|fixing|add|adding|refactor|refactoring|implement|"
+        r"implementing|build|building|write|writing|debug|debugging|"
+        r"deploy|deploying|test|testing|continue|review|reviewing|"
+        r"port|porting|migrate|migrating|update|updating|rewrite|"
+        r"rewriting|wire|wiring|patch|patching|land|ship|push|"
+        # R4: common imperative work verbs the old list missed
+        r"tighten|optimiz\w*|optimise|clean(?:\s*up)?|simplif\w*|harden|"
+        r"improve|remove|delete|rename|extract|split|merge|handle|"
+        r"enable|disable|configure|set\s*up|setup|install|upgrade|"
+        r"rework|tweak|hook\s*up|integrate|finish|finalize|finalise)\b",
+        r"\bworking\s+on\b", r"\bwork\s+on\b",
+    ], "work_verb_markers") + r")",
     re.IGNORECASE,
 )
 
-# Trivial input: greetings, acks, single emoji, very short.
+# Trivial input: greetings, acks, single emoji, very short. RU/UK acks live in
+# the packs (trivial_acks); EN inline.
 _TRIVIAL = re.compile(
-    r"^[\s\W_]*(?:hi|hello|hey|yo|ok|okay|kk|got\s+it|sure|thanks|"
-    r"thank\s+you|ty|tysm|cheers|nice|cool|np|good\s+morning|"
-    r"good\s+night|gn|gm|"
-    r"привет|здравствуй|спс|спасибо|ок|окей|круто|понятно|поняла?|"
-    r"норм|клас|хорошо|давай|ну\s+давай|ага|"
-    r"привіт|добрий\s+день|дякую|зрозуміло)"
-    r"[\s\W_]*$",
+    r"^[\s\W_]*(?:" + _ialt([
+        r"hi", r"hello", r"hey", r"yo", r"ok", r"okay", r"kk", r"got\s+it",
+        r"sure", r"thanks", r"thank\s+you", r"ty", r"tysm", r"cheers", r"nice",
+        r"cool", r"np", r"good\s+morning", r"good\s+night", r"gn", r"gm",
+    ], "trivial_acks") + r")[\s\W_]*$",
     re.IGNORECASE,
 )
 
@@ -162,7 +166,7 @@ def is_trivial(msg: str, min_chars: int = 5) -> bool:
 
 def detect_intents(
     msg: str,
-    known_projects: Optional[set[str]] = None,
+    known_projects: set[str] | None = None,
     min_chars: int = 5,
 ) -> list[str]:
     """Classify a user message into a list of intents.
@@ -218,6 +222,14 @@ def detect_intents(
     if not out and _HAS_QUESTION.search(s):
         out.append(Intent.GENERIC_FACTUAL)
 
+    # R4: a WORK REQUEST — an imperative / work verb, no project, no question.
+    # "tighten the retry logic" / "refactor the auth module" used to return
+    # [SKIP] (no "?"), so the agent did real work with ZERO surfaced lessons or
+    # decisions. Fire a non-SKIP intent so the always-on lessons + decisions
+    # side-dish runs (cheap SQL, no semantic recall, no project_overview).
+    if not out and _WORK_VERB.search(s):
+        out.append(Intent.WORK_REQUEST)
+
     return out or [Intent.SKIP]
 
 
@@ -230,10 +242,10 @@ class AutoContextResult:
 
     message: str
     intents: list[str]
-    project: Optional[dict] = None        # project_overview output
+    project: dict | None = None        # project_overview output
     arcs: list[dict] = field(default_factory=list)
     recall_hits: list[dict] = field(default_factory=list)
-    recall_query: Optional[str] = None
+    recall_query: str | None = None
     recall_confidence: float = 0.0
     recent: list[dict] = field(default_factory=list)
     open_goals: list[dict] = field(default_factory=list)
@@ -241,7 +253,7 @@ class AutoContextResult:
     decisions: list[dict] = field(default_factory=list)
     latency_ms: int = 0
     skipped: bool = False
-    skip_reason: Optional[str] = None
+    skip_reason: str | None = None
 
     def is_empty(self) -> bool:
         """True if nothing useful matched — hook should print nothing."""
@@ -257,6 +269,28 @@ class AutoContextResult:
 
 
 def _known_projects(engine) -> set[str]:
+    """Known project-entity names, memoized by write-generation (S5).
+
+    The uncached form runs `graph_top_entities(200)` (~27 ms) and fires on
+    nearly every hook message; the set only changes when the corpus changes,
+    so we key it on the recall cache's generation counter (bumped on every
+    write) and recompute only after a write."""
+    try:
+        gen = getattr(engine.recall_cache, "_generation", 0)
+    except Exception:
+        gen = 0
+    cached = getattr(engine, "_known_projects_cache", None)
+    if cached is not None and cached[0] == gen:
+        return cached[1]
+    out = _known_projects_uncached(engine)
+    try:
+        engine._known_projects_cache = (gen, out)
+    except Exception:
+        pass
+    return out
+
+
+def _known_projects_uncached(engine) -> set[str]:
     """Pull all known project-entity names this workspace has.
 
     Combines two sources:
@@ -277,16 +311,48 @@ def _known_projects(engine) -> set[str]:
     except Exception:
         pass
 
-    # 2. Graph entities.
+    # 2. Graph entities — but ONLY plausible PROJECT entities (R5). The old
+    # `kind=None, len>=2` swept in every concept the extractor emitted —
+    # 'tests' / 'fails' / 'cloud' (concept) and mis-classified tool names as
+    # 'person' — so "fix the tests" faked a PROJECT_PREP and a junk
+    # project_overview ate the context budget ahead of the lessons. A graph
+    # entity now has to EARN "known project" status: a project-ish kind, a real
+    # recurrence (n_mentions >= floor), and a name that isn't a bare stopword.
+    # (The workspace-name default added above bypasses this — the user's own
+    # project always fires.)
     try:
         entities = engine.graph_top_entities(kind=None, limit=200)
     except Exception:
         return out
+    # A SMALL generic function-word set — NOT text_match.STOPWORDS, which also
+    # contains dev-noise like 'pmb'/'code'/'test'/'file' that are perfectly
+    # valid PROJECT names. We only want to reject bare grammar words here.
+    _NAME_STOP = {
+        "the", "a", "an", "is", "are", "was", "were", "this", "that", "it",
+        "and", "or", "but", "of", "in", "on", "to", "for", "with", "as",
+        "what", "who", "where", "when", "why", "how", "which",
+    }
+    _PROJECT_KINDS = {
+        "project", "repo", "repository", "product", "codebase",
+        "app", "application", "service", "system",
+    }
+    try:
+        min_m = int(engine.config.get("auto_recall.project_min_mentions") or 3)
+    except Exception:
+        min_m = 3
     for e in entities or []:
         name = e.get("name") or e.get("normalized_name")
-        if name and isinstance(name, str) and len(name) >= 2:
-            if not name.isdigit():
-                out.add(name)
+        if not (name and isinstance(name, str) and len(name) >= 2):
+            continue
+        if name.isdigit() or name.strip().lower() in _NAME_STOP:
+            continue
+        kind = (e.get("kind") or "").strip().lower()
+        if kind and kind not in _PROJECT_KINDS:
+            continue
+        n_m = int(e.get("n_mentions") or e.get("mentions") or e.get("count") or 0)
+        if n_m and n_m < min_m:
+            continue
+        out.add(name)
     return out
 
 
@@ -294,7 +360,7 @@ def _resolve_project_name(
     engine,
     msg: str,
     known_projects: set[str],
-) -> Optional[str]:
+) -> str | None:
     """Pick the project name to dispatch on.
 
     Strategy:
@@ -327,6 +393,7 @@ def run_auto_context(
     min_chars: int = 5,
     recall_top_k: int = 5,
     recall_min_score: float = 0.30,
+    recall_evidence_min: float = 0.0,   # R3: absolute raw-cosine gate (0 = off)
     lessons_limit: int = 5,
     decisions_limit: int = 3,
     surface_decisions: bool = True,
@@ -469,9 +536,22 @@ def run_auto_context(
                 # GENERIC_FACTUAL is best-effort — only surface if the top
                 # hit is reasonably confident. PAST_QUERY is explicit so
                 # we always surface what we got.
+                # R3: the `score` gate runs on a MIN-MAX-normalized scale (top
+                # hit ≈ 1.0 even for an irrelevant corpus), so it nearly always
+                # passes — the main false-positive channel. When
+                # recall_evidence_min > 0, ALSO require the top hit's ABSOLUTE
+                # vector similarity (signals.raw_cosine) to clear the bar, so a
+                # query the workspace knows nothing about surfaces nothing.
+                # Default 0.0 = off (eval-gated; flip on after V1 tunes it).
+                def _abs_ok(h: dict) -> bool:
+                    if recall_evidence_min <= 0:
+                        return True
+                    sig = h.get("signals") or {}
+                    return float(sig.get("raw_cosine") or 0.0) >= recall_evidence_min
                 if hits and (
                     Intent.PAST_QUERY in intents
-                    or hits[0].get("score", 0.0) >= recall_min_score
+                    or (hits[0].get("score", 0.0) >= recall_min_score
+                        and _abs_ok(hits[0]))
                 ):
                     res.recall_hits = hits
                     res.recall_query = msg
@@ -683,7 +763,7 @@ def format_context(
 
 
 def compute_prepare_context_text(engine, message: str,
-                                 max_chars: int = 4000) -> "str | None":
+                                 max_chars: int = 4000) -> str | None:
     """Run the auto-recall pipeline for `message` and return the formatted
     context text, or None when there is nothing to inject.
 
@@ -702,6 +782,7 @@ def compute_prepare_context_text(engine, message: str,
         min_chars=int(engine.config.get("auto_recall.min_message_chars") or 5),
         recall_top_k=int(engine.config.get("auto_recall.recall_top_k") or 5),
         recall_min_score=float(engine.config.get("auto_recall.recall_min_score") or 0.30),
+        recall_evidence_min=float(engine.config.get("auto_recall.evidence_min_cosine") or 0.0),
         surface_decisions=bool(engine.config.get("auto_recall.surface_decisions")),
     )
     if res.skipped or res.is_empty():

@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 from typing import Optional  # noqa: F401
 
-
 REQUIRED_DEPS = [
     "sentence_transformers",
     "lancedb",
@@ -106,16 +105,15 @@ def check_consolidation_backend() -> dict:
     has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
     try:
         from pmb.health.consolidate import (
-            ClaudeCLIClient, OllamaClient,
-            DEFAULT_OLLAMA_URL, DEFAULT_OLLAMA_MODEL,
+            DEFAULT_OLLAMA_MODEL,
+            ClaudeCLIClient,
+            OllamaClient,
         )
         claude_cli = ClaudeCLIClient.available()
         ollama_up = OllamaClient.ping()
     except Exception:
         claude_cli = False
         ollama_up = False
-        DEFAULT_OLLAMA_URL = "http://localhost:11434"
-        DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
 
     available = []
     if claude_cli:
@@ -207,6 +205,7 @@ def check_quality_flags() -> dict:
     try:
         import sqlite3
         import time as _t
+
         from pmb.core.workspace import detect_workspace
         ws = detect_workspace()
         if not ws.db_path.exists():
@@ -282,9 +281,9 @@ def check_multilingual_model() -> dict:
     speed without realising their data is multilingual.
     """
     try:
-        from pmb.workspace import detect_workspace
         from pmb.config import Config
         from pmb.health.multilingual_check import evaluate
+        from pmb.workspace import detect_workspace
         ws = detect_workspace()
         ws.ensure_dirs()
         cfg = Config(workspace_dir=ws.storage_dir, pmb_home=ws.pmb_home)
@@ -361,7 +360,7 @@ def check_graph_extractor() -> dict:
     return {"status": "warn", "msg": f"unknown graph.extractor={backend!r} → falls back to regex"}
 
 
-def run_doctor(remote: Optional[str] = None) -> list[tuple[str, dict]]:
+def run_doctor(remote: str | None = None) -> list[tuple[str, dict]]:
     """Run all checks. Returns list of (label, result_dict)."""
     checks: list[tuple[str, dict]] = [
         ("Python", check_python()),
@@ -382,10 +381,10 @@ def run_doctor(remote: Optional[str] = None) -> list[tuple[str, dict]]:
     return checks
 
 
-def print_doctor(console, remote: Optional[str] = None) -> int:
+def print_doctor(console, remote: str | None = None) -> int:
     """Pretty-print doctor results. Returns non-zero if any check failed."""
-    from rich.table import Table
     from rich.panel import Panel
+    from rich.table import Table
 
     results = run_doctor(remote=remote)
     n_fail = sum(1 for _, r in results if r["status"] == "fail")

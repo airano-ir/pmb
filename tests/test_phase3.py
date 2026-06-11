@@ -4,58 +4,25 @@ Phase 3 tests: self-test, conflicts, compaction, adaptive importance.
 
 from __future__ import annotations
 
-import gc
-import os
 import sqlite3
-import sys
-import tempfile
 import time
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.core.engine import Engine
-from pmb.core.workspace import detect_workspace
-from pmb.health.self_test import (
-    SelfTestRunner, generate_test_query, _significant_tokens,
-)
+from pmb.health.adaptive import adaptive_history, apply_adaptive_boost
 from pmb.health.conflicts import (
-    ConflictDetector, extract_key_value, _values_seem_different,
+    ConflictDetector,
+    _values_seem_different,
+    extract_key_value,
 )
-from pmb.health.adaptive import apply_adaptive_boost, adaptive_history
+from pmb.health.self_test import (
+    SelfTestRunner,
+    _significant_tokens,
+    generate_test_query,
+)
 from pmb.maintenance.compact import StorageCompactor
 from pmb.maintenance.scheduler import generate_scheduler_config
-
-
-@pytest.fixture
-def tmp_pmb_home():
-    tmp = tempfile.mkdtemp()
-    home = Path(tmp) / "pmb_home"
-    os.environ["PMB_HOME"] = str(home)
-    try:
-        yield home
-    finally:
-        os.environ.pop("PMB_HOME", None)
-        gc.collect()
-        import shutil
-        for _ in range(3):
-            try:
-                shutil.rmtree(tmp, ignore_errors=False)
-                break
-            except (OSError, PermissionError):
-                time.sleep(0.2)
-                gc.collect()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
-
-
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
-
 
 # ---------------------------------------------------------------------------
 # Self-test query generation

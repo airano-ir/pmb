@@ -1,15 +1,15 @@
 """
 Hybrid Search - BM25 + dense vector retrieval.
 
-Стратегия:
-- Embeddings: sentence-transformers (локально)
+Strategy:
+- Embeddings: sentence-transformers (local)
 - BM25: rank-bm25
 - Fusion: weighted normalized scores (default 50/50)
 - Ranking signals: similarity + importance + recency
 
 Storage:
-- Vectors в LanceDB (ulid → embedding)
-- BM25 - in-memory rebuild on cold start (быстро, ~100-1000 events)
+- Vectors in LanceDB (ulid → embedding)
+- BM25 - in-memory rebuild on cold start (fast, ~100-1000 events)
 """
 
 from __future__ import annotations
@@ -20,11 +20,10 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 from rank_bm25 import BM25Okapi
-
 
 # Bump when the on-disk pickle layout becomes incompatible
 _BM25_CACHE_VERSION = 2
@@ -115,7 +114,7 @@ class _OllamaEmbedAdapter:
                  base_url: str = "http://localhost:11434"):
         self.model_name = model_name
         self.base_url = base_url.rstrip("/")
-        self._dim: Optional[int] = None
+        self._dim: int | None = None
 
     def _embed_one(self, text: str) -> np.ndarray:
         import json as _json
@@ -141,7 +140,7 @@ class _OllamaEmbedAdapter:
         out = np.stack([self._embed_one(t) for t in inputs]).astype(np.float32)
         return out[0] if single else out
 
-    def get_sentence_embedding_dimension(self) -> Optional[int]:
+    def get_sentence_embedding_dimension(self) -> int | None:
         return self._dim
 
 
@@ -153,7 +152,7 @@ class _OpenAIEmbedAdapter:
 
     def __init__(self, model_name: str = "text-embedding-3-small"):
         self.model_name = model_name
-        self._dim: Optional[int] = None
+        self._dim: int | None = None
         self._key = os.environ.get("OPENAI_API_KEY")
 
     def encode(self, texts, show_progress_bar=False, batch_size: int = 32):
@@ -186,11 +185,11 @@ class _OpenAIEmbedAdapter:
         out = np.stack(vecs).astype(np.float32)
         return out[0] if single else out
 
-    def get_sentence_embedding_dimension(self) -> Optional[int]:
+    def get_sentence_embedding_dimension(self) -> int | None:
         return self._dim
 
 
-def _read_table_vector_dim(tbl) -> Optional[int]:
+def _read_table_vector_dim(tbl) -> int | None:
     """Read the fixed vector dimension of an existing LanceDB 'events' table.
 
     Returns None if it can't be determined (we then skip the dim guard rather
@@ -231,15 +230,20 @@ class SearchHit:
     vec_score: float
     importance: float
     recency_score: float
+    # R3: ABSOLUTE evidence — the un-normalized vector similarity 1/(1+dist) in
+    # [0,1]. `score`/`vec_score` are min-max normalized over the candidate set
+    # (great for RANKING, meaningless as an absolute threshold). raw_vec is the
+    # real "how close is this actually" signal that gates can trust.
+    raw_vec: float = 0.0
 
 
 def tokenize(text: str) -> list[str]:
-    """Простой токенизатор. Сохраняет аббревиатуры через case-folding."""
+    """Simple tokenizer. Preserves abbreviations via case-folding."""
     return re.findall(r"\w+", text.lower())
 
 
 def normalize(scores: np.ndarray) -> np.ndarray:
-    """Min-max в [0, 1]."""
+    """Min-max into [0, 1]."""
     if len(scores) == 0:
         return scores
     lo, hi = float(scores.min()), float(scores.max())
@@ -249,7 +253,7 @@ def normalize(scores: np.ndarray) -> np.ndarray:
 
 
 def cosine_similarity(q: np.ndarray, m: np.ndarray) -> np.ndarray:
-    """Cosine similarity между q (1d) и m (2d)."""
+    """Cosine similarity between q (1d) and m (2d)."""
     if len(m) == 0:
         return np.array([], dtype=np.float32)
     q_norm = q / (np.linalg.norm(q) + 1e-10)
@@ -258,19 +262,19 @@ def cosine_similarity(q: np.ndarray, m: np.ndarray) -> np.ndarray:
 
 
 class _ModelCache:
-    """Глобальный кэш embedding-модели. Supports both backends."""
+    """Global embedding-model cache. Supports both backends."""
 
     _model = None  # type: ignore[var-annotated]
-    _name: Optional[str] = None
-    _backend: Optional[str] = None
+    _name: str | None = None
+    _backend: str | None = None
 
-    _base_url: Optional[str] = None
+    _base_url: str | None = None
 
     @classmethod
     def get(
         cls, model_name: str = DEFAULT_MODEL,
         backend: str = "sentence-transformers",
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
     ):
         if (cls._model is None
                 or cls._name != model_name
@@ -292,10 +296,10 @@ class _ModelCache:
 
 
 class _CrossEncoderCache:
-    """Глобальный кэш cross-encoder реранкера. Отдельный от embedder'а."""
+    """Global cross-encoder reranker cache. Separate from the embedder's."""
 
     _model = None  # type: ignore[var-annotated]
-    _name: Optional[str] = None
+    _name: str | None = None
 
     @classmethod
     def get(cls, model_name: str = DEFAULT_RERANK_MODEL):
@@ -310,11 +314,11 @@ class HybridSearch:
     Hybrid index: BM25 + vector search.
 
     Lifecycle:
-      add(ulid, text) - добавить документ
-      build() - пересобрать BM25 (вызвать после bulk add)
-      search(query, top_k) - найти
+      add(ulid, text) - add a document
+      build() - rebuild BM25 (call after a bulk add)
+      search(query, top_k) - find
 
-    Vectors хранятся в LanceDB (persistent), BM25 - в памяти (rebuild on init).
+    Vectors are stored in LanceDB (persistent), BM25 - in memory (rebuild on init).
     """
 
     def __init__(
@@ -322,9 +326,9 @@ class HybridSearch:
         vector_path: Path,
         model_name: str = DEFAULT_MODEL,
         bm25_weight: float = 0.5,
-        rerank_model_name: Optional[str] = None,
+        rerank_model_name: str | None = None,
         embedding_backend: str = "sentence-transformers",
-        embedding_base_url: Optional[str] = None,
+        embedding_base_url: str | None = None,
     ):
         self.vector_path = vector_path
         self.model_name = model_name
@@ -335,7 +339,7 @@ class HybridSearch:
         # Vector dimension of the active LanceDB table - set when the table is
         # opened/created. None until then. Guards against mixing embedders of
         # different dims in one workspace (would corrupt recall).
-        self._table_dim: Optional[int] = None
+        self._table_dim: int | None = None
         # Reranker is fully opt-in - None disables it entirely (no load)
         self.rerank_model_name = rerank_model_name
 
@@ -357,7 +361,7 @@ class HybridSearch:
         # BM25 (in-memory). Built lazily: the first call to `search()` or
         # `add()` triggers `reload_bm25()` so we don't pay the LanceDB import
         # cost during Engine() construction.
-        self._bm25: Optional[BM25Okapi] = None
+        self._bm25: BM25Okapi | None = None
         self._bm25_ulids: list[str] = []
         self._bm25_tokens: list[list[str]] = []
         self._bm25_reloaded = False
@@ -412,7 +416,7 @@ class HybridSearch:
             "text": "",
         }]
         tbl = self._lance.create_table("events", data=empty_data)
-        # Удаляем dummy row
+        # Remove the dummy row
         tbl.delete("ulid = '_init'")
         return tbl
 
@@ -443,8 +447,8 @@ class HybridSearch:
             self._reranker = _CrossEncoderCache.get(self.rerank_model_name)
         return self._reranker
 
-    def rerank(self, query: str, hits: list["SearchHit"],
-               text_for_ulid) -> list["SearchHit"]:
+    def rerank(self, query: str, hits: list[SearchHit],
+               text_for_ulid) -> list[SearchHit]:
         """
         Re-score `hits` using the cross-encoder, return them sorted desc by score.
 
@@ -477,6 +481,7 @@ class HybridSearch:
                 ulid=h.ulid, score=float(s),
                 bm25_score=h.bm25_score, vec_score=h.vec_score,
                 importance=h.importance, recency_score=h.recency_score,
+                raw_vec=h.raw_vec,
             ))
         rescored.sort(key=lambda x: -x.score)
         return rescored
@@ -508,7 +513,7 @@ class HybridSearch:
             )
 
     def add(self, ulid: str, text: str) -> None:
-        """Добавить один документ. Не пересобирает BM25 - вызови build() после batch."""
+        """Add a single document. Does not rebuild BM25 - call build() after a batch."""
         # Make sure BM25 in-memory state is loaded before we append to it,
         # otherwise the first write after a process start would silently
         # drop pre-existing events.
@@ -684,6 +689,7 @@ class HybridSearch:
         the existing fallback runs)."""
         try:
             import sqlite3 as _sql
+
             # Vector path is on a separate path; we look for the events DB
             # by walking up from vector_path
             from pathlib import Path
@@ -725,8 +731,8 @@ class HybridSearch:
         self,
         query: str,
         top_k: int = 10,
-        importance_map: Optional[dict[str, float]] = None,
-        timestamp_map: Optional[dict[str, float]] = None,
+        importance_map: dict[str, float] | None = None,
+        timestamp_map: dict[str, float] | None = None,
         recency_half_life_days: float = 30.0,
     ) -> list[SearchHit]:
         """
@@ -734,7 +740,7 @@ class HybridSearch:
 
         importance_map: ulid -> importance [0..1]; multiplies score
         timestamp_map: ulid -> timestamp (seconds); used for recency boost
-        recency_half_life_days: за сколько дней recency боост падает в 2 раза
+        recency_half_life_days: number of days over which the recency boost halves
 
         Improvement DD: when the embedding model is not yet loaded (cold start),
         skip vector search entirely and return BM25-only results. This keeps
@@ -775,12 +781,12 @@ class HybridSearch:
 
         vec_scores: dict[str, float] = {}
         for r in vec_results:
-            # LanceDB возвращает _distance (L2 default) - конвертируем в similarity
+            # LanceDB returns _distance (L2 by default) - convert to similarity
             dist = r.get("_distance", 0.0)
             ulid = r.get("ulid", "")
             if ulid:
                 # cosine similarity ≈ 1 - L2_normalized_dist^2 / 2
-                # для нормализованных векторов; LanceDB по дефолту L2
+                # for normalized vectors; LanceDB defaults to L2
                 vec_scores[ulid] = 1.0 / (1.0 + dist)
 
         # BM25
@@ -827,6 +833,7 @@ class HybridSearch:
                 vec_score=float(norm_vec[i]),
                 importance=float(importance_arr[i]),
                 recency_score=float(recency_arr[i]),
+                raw_vec=float(vec_scores.get(ulid_list[i], 0.0)),  # R3 abs cosine
             )
             for i in order
         ]
@@ -834,7 +841,7 @@ class HybridSearch:
     def _compute_recency(
         self,
         ulid_list: list[str],
-        timestamp_map: Optional[dict[str, float]],
+        timestamp_map: dict[str, float] | None,
         recency_half_life_days: float,
     ) -> np.ndarray:
         recency_arr = np.zeros(len(ulid_list), dtype=np.float32)
@@ -857,8 +864,8 @@ class HybridSearch:
         self,
         query: str,
         top_k: int,
-        importance_map: Optional[dict[str, float]] = None,
-        timestamp_map: Optional[dict[str, float]] = None,
+        importance_map: dict[str, float] | None = None,
+        timestamp_map: dict[str, float] | None = None,
         recency_half_life_days: float = 30.0,
     ) -> list[SearchHit]:
         """Improvement DD: BM25-only fallback for cold-start recall.

@@ -2,16 +2,16 @@
 PMB MCP Server.
 
 Tools:
-- recall(query, top_k=5)            — поиск
-- remember(query, response, ...)    — добавить Q/A
-- record_fact(fact, ...)            — добавить factual statement
-- pin(ulid)                         — закрепить
-- forget(ulid)                      — архивировать
-- stats()                           — статистика workspace
-- list_recent(limit=20, event_type) — последние события
+- recall(query, top_k=5)            — search
+- remember(query, response, ...)    — add a Q/A pair
+- record_fact(fact, ...)            — add a factual statement
+- pin(ulid)                         — pin
+- forget(ulid)                      — archive
+- stats()                           — workspace stats
+- list_recent(limit=20, event_type) — most recent events
 
-Engine инициализируется лениво один раз — workspace detection выполняется
-на старте сервера, дальше используется один и тот же.
+The Engine is initialised lazily once — workspace detection runs at server
+start and the same engine is reused thereafter.
 """
 
 from __future__ import annotations
@@ -19,9 +19,8 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
-# UTF-8 на Windows. Guarded against stdout substitutions (Textual's
+# UTF-8 on Windows. Guarded against stdout substitutions (Textual's
 # _PrintCapture, pytest capture, etc.) that don't expose `.encoding`.
 try:
     enc = getattr(sys.stdout, "encoding", None)
@@ -47,7 +46,7 @@ write a lesson and never read it, the lesson is wasted.
 ══════════ READ FIRST — call BEFORE acting ══════════
 
 ▶ project_overview(name) — at the START of any work on a known project.
-  User says "работаю над LoadGuard / fix bug in LeanBoard / напиши код для
+  User says "working on LoadGuard / fix bug in LeanBoard / write code for
   PMB". ONE call returns: lessons (RULES to follow), decisions, open
   goals, recent activity, related entities. Replaces 5+ recall() calls.
   7ms, graph-backed. Try this BEFORE guessing the project structure.
@@ -60,7 +59,7 @@ write a lesson and never read it, the lesson is wasted.
   Re-orient on what THIS session decided/built. Don't re-ask the user.
 
 ▶ recent_activity / what_just_happened / list_goals — for the obvious
-  triggers ("что я недавно", "что мы только что", "какие у меня цели").
+  triggers ("what did I recently", "what did we just do", "what are my goals").
 
 If a lesson surfaces in any of the above — it overrides your default
 behaviour. "We use pnpm, never npm" → use pnpm. No discussion.
@@ -72,8 +71,8 @@ behaviour. "We use pnpm, never npm" → use pnpm. No discussion.
   Types: fact | fact_tree | goal | activity | milestone | lesson.
 
   Triggers:
-    1. "запомни / remember / это важно" → importance=0.95, pin=true
-    2. User shares a fact ("я работаю над X", "вчера ел пиццу")
+    1. "remember / it's important" → importance=0.95, pin=true
+    2. User shares a fact ("I'm working on X", "ate pizza yesterday")
        → importance=0.7
     3. You completed substantive work / made a decision
        → {"type":"activity","kind":"completed"/"decision", ...}
@@ -101,7 +100,7 @@ is durable signal vs. transient noise, lean toward NOT recording it.
 - NEVER recall after writing to verify
 - ABSOLUTE dates ("On May 25, 2026"), not "today"
 - Don't narrate tool calls — no "I'll save that / found in memory /
-  according to records / в памяти / я записал"
+  according to records / in memory / I recorded"
 - Read-tool results are your knowledge, weave naturally into the answer
 - Save-content rules apply to MEMORY only. Answer length is not
   restricted — answer with whatever depth the question deserves.
@@ -134,14 +133,14 @@ PART 0.5 — EXPLICIT MEMORY TRIGGERS (pin to permanent)
 If the user uses any of these phrases — the fact is HIGH PRIORITY. After
 saving, immediately call `pin(ulid)` so it never decays:
 
-  • "запомни" / "запомни это" / "не забудь" / "сохрани"
+  • "remember" / "remember this" / "don't forget" / "save this"
   • "remember this" / "remember that" / "don't forget" / "save this"
-  • "это важно" / "this is important" / "important:" / "для меня важно"
-  • "for the record" / "на будущее" / "write this down"
+  • "this is important" / "this is important" / "important:" / "important to me"
+  • "for the record" / "for the future" / "write this down"
 
 Pattern: record_fact (or fact_tree) with importance=0.95, then pin.
 
-  User: "Запомни — у меня день рождения 14 марта"
+  User: "Remember — my birthday is March 14"
   → record_fact("User's birthday is March 14", importance=0.95)
   → pin(ulid)
 
@@ -160,13 +159,13 @@ Each MCP call costs ~3-5 seconds of YOUR thinking time. User notices.
 
 3. **USE FACTS AS YOUR OWN KNOWLEDGE.** After recall, weave facts into the
    answer naturally. NEVER prefix with:
-       ❌ "в памяти записано что..."
-       ❌ "согласно записям..."
+       ❌ "memory records that..."
+       ❌ "according to the records..."
        ❌ "I found in memory that..."
        ❌ "Looking at my records..."
    Just answer as if you simply know:
-       ✅ "Встреча с Максом завтра в кафе на Подоле, обсуждаете Rust-стартап."
-       ✅ "Postgres 17 на порту 5433."
+       ✅ "Meeting with Max tomorrow at the café in Podil, discussing the Rust startup."
+       ✅ "Postgres 17 on port 5433."
 
 4. **NO PROCESS NARRATION.** Don't tell the user you're saving things,
    what tools you're calling, or how many records you stored. Just save
@@ -177,14 +176,14 @@ PART 1 — WHEN TO `recall` (READ memory)
 ═══════════════════════════════════════════════════════════════════════════
 
 ALWAYS call `recall` BEFORE answering, when the user asks about:
-  • Past events:    "когда я...", "what did I do...", "когда последний раз..."
-  • Personal data:  "какой у меня...", "what's my...", "где я живу"
-  • Decisions:      "почему мы выбрали X?", "why did we choose..."
-  • People:         "кто такой X?", "who is...", "что сказал X?"
-  • Project state:  "какой port?", "what's the config?", "where's X?"
-  • Health/life:    "когда я болел?", "what was my appointment?"
+  • Past events:    "when did I...", "what did I do...", "when was the last time..."
+  • Personal data:  "what's my...", "what's my...", "where do I live"
+  • Decisions:      "why did we choose X?", "why did we choose..."
+  • People:         "who is X?", "who is...", "what did X say?"
+  • Project state:  "what port?", "what's the config?", "where's X?"
+  • Health/life:    "when was I sick?", "what was my appointment?"
 
-For "what did we just do?" / "что мы только что обсуждали?" — call
+For "what did we just do?" / "what were we just discussing?" — call
 `what_just_happened(5)` or `recent_activity(minutes=60)` instead. Those
 are instant (no vector search).
 
@@ -284,7 +283,7 @@ Example. You fixed an auth bug:
      "content": "All 211 auth tests passing after refactor"},
   ])
 
-Future "когда мы фиксили auth?" / "почему ты выбрал X?" instantly answered
+Future "when did we fix auth?" / "why did you choose X?" instantly answered
 without re-reading code.
 
 ═══════════════════════════════════════════════════════════════════════════
@@ -296,7 +295,7 @@ PART 4 — OTHER TOOLS (use when relevant)
   recent_activity    — instant: last X minutes of activity log
   list_goals         — open goals (status="in_progress")
   chain_history      — full evolution of a tracked metric
-  pin                — pin a memory (use after "запомни"/"remember" triggers)
+  pin                — pin a memory (use after "remember"/"save this" triggers)
   dedupe_sweep       — one-shot dedup of duplicate facts
   workspace_info     — confirm which memory you're using
 
@@ -324,12 +323,12 @@ from pmb.mcp._toolspec import (  # tool-profile gating machinery
 
 
 def build_server(
-    cwd: Optional[Path] = None,
-    workspace_id: Optional[str] = None,
+    cwd: Path | None = None,
+    workspace_id: str | None = None,
     name: str = "pmb",
     prewarm: bool = True,
 ) -> FastMCP:
-    """Собрать MCP server с привязанным engine.
+    """Build the MCP server with a bound engine.
 
     prewarm=True: do a dummy embed during startup so sentence-transformers
     loads BEFORE the first tool call. Without this the first `recall` can

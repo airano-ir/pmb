@@ -1,46 +1,8 @@
 """Tests for Adaptive Layer Routing (Improvement E)."""
 from __future__ import annotations
 
-import os
-import sys
-import tempfile
-from pathlib import Path
-
-import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.core.engine import Engine
 from pmb.reasoning.router import QueryRouter
-
-
-@pytest.fixture
-def tmp_pmb_home():
-    import gc, shutil, time as _t
-    tmp = tempfile.mkdtemp()
-    home = Path(tmp) / "pmb_home"
-    os.environ["PMB_HOME"] = str(home)
-    try:
-        yield home
-    finally:
-        os.environ.pop("PMB_HOME", None)
-        gc.collect()
-        for _ in range(3):
-            try:
-                shutil.rmtree(tmp, ignore_errors=False)
-                break
-            except (OSError, PermissionError):
-                _t.sleep(0.2)
-                gc.collect()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
-
-
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
-
 
 # ----------------------------------------------------------------------
 # Pure router classification
@@ -128,7 +90,7 @@ def test_routing_boosts_facts_for_direct_lookup(
     eng.record_fact("Postgres runs on port 5433 for the api service")
 
     # Manually inject a fact_atom-typed event covering the same info
-    from pmb.core.events import Event, TIER_SEMANTIC
+    from pmb.core.events import TIER_SEMANTIC, Event
     fact_atom = Event(
         event_type="fact_atom",
         content="Fact: Postgres runs on port 5433",
@@ -159,7 +121,7 @@ def test_routing_downweights_facts_for_narrative(
         },
     )
     raw = eng.record_fact("Postgres adoption journey: we evaluated, chose, migrated")
-    from pmb.core.events import Event, TIER_SEMANTIC
+    from pmb.core.events import TIER_SEMANTIC, Event
     for i in range(3):
         fa = Event(
             event_type="fact_atom",

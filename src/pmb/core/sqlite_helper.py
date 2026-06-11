@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Union
-
 
 # Tune via env vars for power users / benchmarks.
 _BUSY_TIMEOUT_MS  = 10_000   # 10s — survives a normal record_batch burst
@@ -27,7 +25,7 @@ _TEMP_STORE       = "MEMORY" # in-memory temp tables (we have RAM)
 
 
 def connect(
-    path: Union[str, Path],
+    path: str | Path,
     *,
     isolation_level: str | None = "DEFERRED",
     row_factory: type | None = None,
@@ -103,8 +101,8 @@ def _is_pmb_db(database) -> bool:
         s = str(database)
         if not s or ":memory:" in s:
             return True
-        from pathlib import Path as _Path
         import os as _os
+        from pathlib import Path as _Path
         if _Path(s).name == "events.sqlite":
             return True  # PMB's canonical DB name (incl. the durable queue)
         home = _Path(_os.environ.get("PMB_HOME") or (_Path.home() / ".pmb")).resolve()

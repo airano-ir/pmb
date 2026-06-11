@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.markup import escape as esc
@@ -45,7 +44,7 @@ def _checkpoint_ws_sqlite(ws) -> None:
 
 @snapshot_app.command("create")
 def snapshot_create(
-    note: Optional[str] = typer.Option(None, "--note", "-m", help="Label for this snapshot"),
+    note: str | None = typer.Option(None, "--note", "-m", help="Label for this snapshot"),
 ):
     """Copy the current workspace to a timestamped local snapshot."""
     import shutil

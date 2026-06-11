@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 
 class ReasoningMixin:
     def distill_lessons(
         self,
         *,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         backend: str = "auto",
-        model: Optional[str] = None,
+        model: str | None = None,
         dry_run: bool = False,
         llm=None,
     ) -> dict:
@@ -42,7 +41,7 @@ class ReasoningMixin:
         self,
         dry_run: bool = False,
         backend: str = "auto",
-        model: Optional[str] = None,
+        model: str | None = None,
         since_days: float = 14.0,
         similarity_threshold: float = 0.5,
         min_cluster_size: int = 3,
@@ -92,7 +91,7 @@ class ReasoningMixin:
         llm=None,
         context_size: int = 4,
         backend: str = "auto",
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Run LLM reflection on a single event. Stores a 'reflection'-typed
         event linking back to the source. Returns the reflection dict, or
         None if LLM unavailable / parsing failed / source not found.
@@ -136,7 +135,7 @@ class ReasoningMixin:
             return None
 
         # Persist as a new event
-        from pmb.core.events import Event, TIER_SEMANTIC
+        from pmb.core.events import TIER_SEMANTIC, Event
 
         new_ev = Event(
             event_type="reflection",
@@ -260,8 +259,8 @@ class ReasoningMixin:
                 }
 
         from pmb.reasoning.predictive import (
-            PredictiveQuestionGenerator,
             CacheEntry,
+            PredictiveQuestionGenerator,
             store_entry,
         )
 
@@ -351,8 +350,8 @@ class ReasoningMixin:
                     "n_failed": 0,
                 }
 
+        from pmb.core.events import TIER_SEMANTIC, Event
         from pmb.reasoning.facts import FactExtractor
-        from pmb.core.events import Event, TIER_SEMANTIC
 
         extractor = FactExtractor(llm, max_facts_per_event=max_facts_per_event)
         n_facts = 0
@@ -531,14 +530,14 @@ class ReasoningMixin:
         members (one LLM call per touched arc).
         """
         from pmb.reasoning.arcs import (
-            ArcManager,
             Arc,
-            list_arcs,
-            create_arc,
+            ArcManager,
             add_event_to_arc,
+            create_arc,
             events_in_arc,
-            update_arc,
             get_arc,
+            list_arcs,
+            update_arc,
         )
 
         # Pull recent unassigned events
@@ -626,7 +625,7 @@ class ReasoningMixin:
 
     def list_arcs(
         self,
-        status: Optional[str] = "active",
+        status: str | None = "active",
         limit: int = 50,
     ) -> list[dict]:
         from pmb.reasoning.arcs import list_arcs
@@ -641,8 +640,8 @@ class ReasoningMixin:
             )
         ]
 
-    def arc_detail(self, arc_id: int) -> Optional[dict]:
-        from pmb.reasoning.arcs import get_arc, events_in_arc
+    def arc_detail(self, arc_id: int) -> dict | None:
+        from pmb.reasoning.arcs import events_in_arc, get_arc
 
         arc = get_arc(self.workspace.db_path, arc_id)
         if not arc or arc.workspace_id != self.workspace.id:
@@ -763,7 +762,7 @@ class ReasoningMixin:
                 break
         return ctx
 
-    def maybe_auto_consolidate(self, **kwargs) -> Optional[dict]:
+    def maybe_auto_consolidate(self, **kwargs) -> dict | None:
         """Run consolidation only if auto-trigger thresholds are met.
 
         Returns the consolidation result if a run happened, else None.

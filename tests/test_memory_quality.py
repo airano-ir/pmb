@@ -5,14 +5,13 @@ affect ranking, so tests here only assert the signal values.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.memory_quality import (
-    days_old, is_stale, freshness_label, confidence_from, confidence_label,
+    confidence_from,
+    confidence_label,
+    days_old,
+    freshness_label,
     is_lesson_intent,
+    is_stale,
 )
 
 DAY = 86400.0

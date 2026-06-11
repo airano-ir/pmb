@@ -35,8 +35,9 @@ import hashlib
 import logging
 import re
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pmb.core.engine import Engine
@@ -247,7 +248,7 @@ def _hash_text(s: str) -> str:
     return hashlib.sha1(s.encode("utf-8", errors="replace")).hexdigest()
 
 
-def _is_file_indexed(engine: "Engine", project_path: str, file_path: str, sha1: str) -> bool:
+def _is_file_indexed(engine: Engine, project_path: str, file_path: str, sha1: str) -> bool:
     """Idempotency check — has this file with this exact content already been
     indexed for this project?"""
     import sqlite3
@@ -270,7 +271,7 @@ def _is_file_indexed(engine: "Engine", project_path: str, file_path: str, sha1: 
 
 
 def index_project(
-    engine: "Engine",
+    engine: Engine,
     path: Path | str,
     importance: float = 0.55,
     force: bool = False,

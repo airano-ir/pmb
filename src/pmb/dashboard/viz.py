@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Optional
 
 
 def build_memory_html(
     engine,
     limit: int = 300,
     max_edges: int = 4000,
-    title: Optional[str] = None,
+    title: str | None = None,
 ) -> str:
     """Build the standalone HTML string for the workspace's memory graph."""
     ws = engine.workspace

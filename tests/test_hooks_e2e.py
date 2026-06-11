@@ -36,7 +36,7 @@ def engine(tmp_path, monkeypatch):
 
 
 def test_e2e_lesson_surface_then_followcheck_confirms(engine):
-    from pmb.hooks import run_auto_context, format_context, run_followcheck
+    from pmb.hooks import format_context, run_auto_context, run_followcheck
 
     # 1. Seed a lesson with distinctive tokens.
     engine.record_fact(
@@ -106,7 +106,7 @@ def test_e2e_followcheck_no_false_positive_without_activity(engine):
 
 
 def test_e2e_decisions_surface(engine):
-    from pmb.hooks import run_auto_context, format_context
+    from pmb.hooks import format_context, run_auto_context
 
     engine.record_fact(
         "Chose Postgres over Mongo for JSONB query support and partial indexes",
@@ -136,7 +136,7 @@ def test_e2e_decisions_surface(engine):
 
 
 def test_e2e_cold_engine_skips_recall_but_lessons_work(engine):
-    from pmb.hooks import run_auto_context, Intent
+    from pmb.hooks import Intent, run_auto_context
 
     # Fresh engine is not warm (no warmup called).
     assert not engine.is_warm()

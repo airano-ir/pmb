@@ -44,9 +44,8 @@ import math
 import re
 import sqlite3
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
-
 
 # Stop-words shared with PAMVR (kept inline to avoid circular import).
 _STOP = {
@@ -176,12 +175,12 @@ def mine_pmi_bridges(
     return bridges
 
 
-def load_cached(path: Path) -> Optional[dict]:
+def load_cached(path: Path) -> dict | None:
     """Load cached bridges from disk. Returns None if missing/corrupt."""
     try:
         if not path.exists():
             return None
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             blob = json.load(f)
         if not isinstance(blob, dict):
             return None
@@ -196,7 +195,7 @@ def save_cached(
     path: Path,
     bridges: dict[str, list[str]],
     event_count_at_mine: int,
-    params: Optional[dict] = None,
+    params: dict | None = None,
 ) -> None:
     """Persist bridges + provenance metadata."""
     path.parent.mkdir(parents=True, exist_ok=True)

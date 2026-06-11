@@ -16,7 +16,6 @@ from rich.table import Table
 from pmb.config import Config
 from pmb.core.workspace import detect_workspace
 
-
 console = Console()
 app = typer.Typer(no_args_is_help=True, help="Ollama integration — fully local LLM ops")
 
@@ -148,11 +147,11 @@ def use(
         console.print(f"[green]✓[/] consolidate.backend = ollama, model = {model_name}")
     if backend_for in ("all", "chat"):
         cfg.set_global("chat.transport", "ollama")
-        console.print(f"[green]✓[/] chat.transport = ollama")
+        console.print("[green]✓[/] chat.transport = ollama")
     if backend_for in ("all", "dedup"):
-        console.print(f"[green]✓[/] dedup verify will use ollama via `pmb dedupe --backend ollama`")
+        console.print("[green]✓[/] dedup verify will use ollama via `pmb dedupe --backend ollama`")
 
-    console.print(f"\nSaved to global config: [dim]~/.pmb/config.yaml[/]")
+    console.print("\nSaved to global config: [dim]~/.pmb/config.yaml[/]")
     if not _ping():
         console.print("\n[yellow]Note:[/] Ollama is not running. Start it before using PMB ops:")
         console.print(f"  [cyan]ollama serve &  ollama pull {model_name}[/]")
@@ -215,7 +214,7 @@ def test():
         if "PONG" in content.upper():
             console.print("\n[bold green]All good. Ollama is configured correctly for PMB.[/]")
         else:
-            console.print(f"\n[yellow]Got response but not PONG. Model may need a different prompt.[/]")
+            console.print("\n[yellow]Got response but not PONG. Model may need a different prompt.[/]")
     except Exception as e:
         console.print(f"[red]Error:[/] {e}")
         raise typer.Exit(1)

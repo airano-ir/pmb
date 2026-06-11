@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.panel import Panel
@@ -32,7 +31,7 @@ def _sync_for_current_workspace():
 
 @workspace_app.command("init")
 def workspace_init(
-    remote: Optional[str] = typer.Option(
+    remote: str | None = typer.Option(
         None, "--remote", "-r",
         help="Git remote URL (e.g. git@github.com:you/my-memory.git). Optional - "
              "you can add it later or push locally only.",
@@ -66,7 +65,7 @@ def workspace_init(
 def workspace_push(
     remote: str = typer.Option("origin", "--remote", "-r"),
     branch: str = typer.Option("main", "--branch", "-b"),
-    message: Optional[str] = typer.Option(None, "--message", "-m"),
+    message: str | None = typer.Option(None, "--message", "-m"),
     lean: bool = typer.Option(False, "--lean", help="Exclude derived caches."),
 ):
     """Commit and push the current workspace's memory to its git remote."""
@@ -123,7 +122,7 @@ def workspace_status():
 @workspace_app.command("export")
 def workspace_export(
     out: str = typer.Argument(..., help="Output bundle path, e.g. memory.enc"),
-    key_file: Optional[Path] = typer.Option(
+    key_file: Path | None = typer.Option(
         None, "--key-file",
         help="Encrypt with a raw 32-byte key file instead of a passphrase.",
     ),
@@ -163,7 +162,7 @@ def workspace_export(
 def workspace_import(
     bundle: str = typer.Argument(..., help="Encrypted bundle path"),
     name: str = typer.Argument(..., help="Local workspace id to create"),
-    key_file: Optional[Path] = typer.Option(
+    key_file: Path | None = typer.Option(
         None, "--key-file", help="Decrypt with the matching 32-byte key file.",
     ),
 ):
@@ -217,7 +216,7 @@ def workspace_clone(
 
 @workspace_app.command("use")
 def workspace_use(
-    name: Optional[str] = typer.Argument(
+    name: str | None = typer.Argument(
         None, help="Workspace id or name to make the default."),
     clear: bool = typer.Option(
         False, "--clear", help="Clear the saved default (revert to auto-detect)."),
@@ -229,6 +228,7 @@ def workspace_use(
     except inside a project that pins its own workspace.
     """
     import os as _os
+
     from pmb.core.workspace import (
         DEFAULT_PMB_HOME,
         list_workspaces,
@@ -276,8 +276,9 @@ def workspace_use(
 def workspace_current():
     """Show the active workspace and which rule resolved it."""
     import os as _os
-    from pmb.core.workspace import DEFAULT_PMB_HOME, read_default_workspace
+
     from pmb.cli.status_panel import _SOURCE_HELP
+    from pmb.core.workspace import DEFAULT_PMB_HOME, read_default_workspace
     ws = detect_workspace()
     pmb_home = Path(_os.environ.get("PMB_HOME", DEFAULT_PMB_HOME))
     saved = read_default_workspace(pmb_home)

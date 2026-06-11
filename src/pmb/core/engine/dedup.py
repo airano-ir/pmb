@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 
 class DedupMixin:
     def _dedup_pre_write(
@@ -82,6 +80,36 @@ class DedupMixin:
             threshold_mid=float(self.config.get("dedup.cosine_mid")),
         )
 
+    def _exact_dup_within_window(
+        self,
+        content: str,
+        event_type: str,
+        window_h: float,
+    ):
+        """L1-only exact-duplicate probe bounded by a short window (HOURS).
+
+        Unlike `_dedup_pre_write` this never embeds — one indexed SQL scan over
+        same-type ACTIVE events newer than `window_h`. Returns the canonical
+        event's `DedupHit` or None. Used by `record_activity`, whose items are
+        re-logged seconds apart and would otherwise pile up (0.2 / former E6).
+        """
+        if window_h <= 0 or not content:
+            return None
+        try:
+            from pmb.reasoning.dedup import find_exact_duplicate
+        except Exception:
+            return None
+        try:
+            return find_exact_duplicate(
+                db_path=self.workspace.db_path,
+                workspace_id=self.workspace.id,
+                event_type=event_type,
+                content=content,
+                lookback_days=window_h / 24.0,
+            )
+        except Exception:
+            return None
+
     def _dedup_nearest_candidates(
         self,
         content: str,
@@ -145,7 +173,8 @@ class DedupMixin:
     def _bump_for_dup(self, ulid: str) -> None:
         """When a write is suppressed by dedup, bump the canonical event's
         access_count + last_accessed so it surfaces faster on next recall."""
-        import sqlite3, time as _t
+        import sqlite3
+        import time as _t
 
         with sqlite3.connect(self.workspace.db_path) as conn:
             conn.execute(
@@ -156,8 +185,8 @@ class DedupMixin:
 
     def dedupe_sweep(
         self,
-        threshold: Optional[float] = None,
-        event_types: Optional[list[str]] = None,
+        threshold: float | None = None,
+        event_types: list[str] | None = None,
     ) -> dict:
         """One-shot dedup pass over ALL active events in this workspace.
 
@@ -188,7 +217,9 @@ class DedupMixin:
 
         Uses pyarrow directly (no pandas dependency).
         """
-        import sqlite3, numpy as np
+        import sqlite3
+
+        import numpy as np
 
         rows = []
         with sqlite3.connect(self.workspace.db_path) as conn:
