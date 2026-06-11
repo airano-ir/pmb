@@ -33,11 +33,9 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import scipy.sparse as sp
-
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +54,7 @@ class PPRGraph:
         return self.adj_normalized.shape[0]
 
 
-def build_ppr_graph(db_path: Path, workspace_id: str) -> Optional[PPRGraph]:
+def build_ppr_graph(db_path: Path, workspace_id: str) -> PPRGraph | None:
     """Read graph_entities + graph_edges + graph_event_entities and build a
     row-stochastic adjacency matrix. Returns None if the graph is empty.
 
@@ -145,7 +143,7 @@ def build_ppr_graph(db_path: Path, workspace_id: str) -> Optional[PPRGraph]:
 def personalized_pagerank(
     graph: PPRGraph,
     seed_entity_ids: list[int],
-    seed_weights: Optional[list[float]] = None,
+    seed_weights: list[float] | None = None,
     alpha: float = 0.5,
     iterations: int = 20,
     epsilon: float = 1e-6,
@@ -195,7 +193,7 @@ def personalized_pagerank(
 def score_events_by_ppr(
     graph: PPRGraph,
     ppr_scores: np.ndarray,
-    candidate_ulids: Optional[list[str]] = None,
+    candidate_ulids: list[str] | None = None,
 ) -> dict:
     """Return {ulid: ppr_score} for each event by summing the PPR mass of
     its linked entities. If candidate_ulids is None, score all events.

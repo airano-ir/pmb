@@ -6,12 +6,9 @@ that never call `use` (absent file == old behaviour).
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.core.workspace import (
     Workspace,
@@ -109,6 +106,7 @@ def test_set_and_clear_roundtrip(tmp_path):
 @pytest.fixture
 def cli(tmp_path, monkeypatch):
     from typer.testing import CliRunner
+
     from pmb.cli.main import app
     home = tmp_path / "home"
     monkeypatch.setenv("PMB_HOME", str(home))

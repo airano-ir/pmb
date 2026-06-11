@@ -27,9 +27,9 @@ from __future__ import annotations
 import json
 import time
 from collections import Counter
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pmb.core.engine import Engine
@@ -43,24 +43,24 @@ class FeedbackEntry:
     timestamp: float
     ulid: str
     verdict: str
-    query: Optional[str] = None
-    expected_ulid: Optional[str] = None
-    session_id: Optional[str] = None
+    query: str | None = None
+    expected_ulid: str | None = None
+    session_id: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
-def _feedback_path(engine: "Engine") -> Path:
+def _feedback_path(engine: Engine) -> Path:
     return engine.workspace.storage_dir / "recall_feedback.jsonl"
 
 
 def record_feedback(
-    engine: "Engine",
+    engine: Engine,
     ulid: str,
     verdict: str,
-    query: Optional[str] = None,
-    expected_ulid: Optional[str] = None,
+    query: str | None = None,
+    expected_ulid: str | None = None,
 ) -> dict:
     """
     Record one feedback line and apply lightweight reinforcement.
@@ -125,13 +125,13 @@ def record_feedback(
     }
 
 
-def history(engine: "Engine", limit: Optional[int] = None) -> list[FeedbackEntry]:
+def history(engine: Engine, limit: int | None = None) -> list[FeedbackEntry]:
     """Read all feedback entries (or last N)."""
     path = _feedback_path(engine)
     if not path.exists():
         return []
     out: list[FeedbackEntry] = []
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -146,7 +146,7 @@ def history(engine: "Engine", limit: Optional[int] = None) -> list[FeedbackEntry
     return out
 
 
-def summary(engine: "Engine") -> dict:
+def summary(engine: Engine) -> dict:
     """Aggregate feedback into a single dict."""
     entries = history(engine)
     if not entries:
@@ -200,7 +200,7 @@ def summary(engine: "Engine") -> dict:
     }
 
 
-def expected_ulid_boost_history(engine: "Engine") -> dict[str, int]:
+def expected_ulid_boost_history(engine: Engine) -> dict[str, int]:
     """Count how many times each ulid was named as expected_ulid in 'wrong' feedback."""
     counts: dict[str, int] = {}
     for e in history(engine):

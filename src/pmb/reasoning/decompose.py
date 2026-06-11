@@ -31,12 +31,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-
 
 log = logging.getLogger(__name__)
 
@@ -83,7 +80,7 @@ class Decomposition:
 class QueryDecomposer:
     """LLM-driven query splitter with on-disk cache."""
 
-    def __init__(self, llm_client, cache_dir: Optional[Path] = None):
+    def __init__(self, llm_client, cache_dir: Path | None = None):
         self.llm = llm_client
         self.cache_dir = cache_dir
         if cache_dir:

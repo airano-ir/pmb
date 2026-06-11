@@ -25,8 +25,6 @@ from __future__ import annotations
 import re
 import sqlite3
 from pathlib import Path
-from typing import Optional
-
 
 # Models that are explicitly English-only (or English-heavy).
 # `all-MiniLM-L6-v2` is the canonical "fast English baseline" — covered.
@@ -57,13 +55,13 @@ _NON_LATIN_LETTER_RE = re.compile(r"[^\x00-ɏ\W\d_]")
 _ANY_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
 
 
-def model_is_english_only(model_name: Optional[str]) -> bool:
+def model_is_english_only(model_name: str | None) -> bool:
     if not model_name:
         return False
     return model_name.strip().lower() in _EN_ONLY_MODELS
 
 
-def model_is_multilingual(model_name: Optional[str]) -> bool:
+def model_is_multilingual(model_name: str | None) -> bool:
     if not model_name:
         return False
     return model_name.strip().lower() in _MULTILINGUAL_MODELS
@@ -119,7 +117,7 @@ def sample_non_latin_ratio(
 
 def evaluate(
     db_path: Path,
-    model_name: Optional[str],
+    model_name: str | None,
     sample_size: int = 200,
 ) -> dict:
     """Combined check: sample data + compare against active model.
@@ -140,9 +138,9 @@ def evaluate(
     stats = sample_non_latin_ratio(db_path, sample_size=sample_size)
     en_only = model_is_english_only(model_name)
     multi = model_is_multilingual(model_name)
-    warning: Optional[str] = None
+    warning: str | None = None
     severity = "ok"
-    recommendation: Optional[str] = None
+    recommendation: str | None = None
 
     if stats["looks_multilingual"] and en_only:
         severity = "warn"

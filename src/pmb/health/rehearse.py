@@ -66,7 +66,7 @@ def _query_from_event(text: str, max_tokens: int = 7) -> str:
 
 
 def rehearse(
-    engine: "Engine",
+    engine: Engine,
     importance_threshold: float = 0.5,
     min_idle_days: float = 7.0,
     max_rehearse: int = 20,

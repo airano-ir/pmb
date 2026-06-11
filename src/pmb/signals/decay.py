@@ -1,21 +1,21 @@
 """
 Importance scoring and forgetting curve.
 
-Это **anti-degradation** механизм:
-- Часто-обращаемые memories поднимаются importance (reinforcement)
-- Не использованные долго — падают (forgetting)
-- При importance < 0.05 и age > 90 дней → archive (не удаляется навсегда)
+This is an **anti-degradation** mechanism:
+- Frequently accessed memories gain importance (reinforcement)
+- Those unused for a long time decline (forgetting)
+- When importance < 0.05 and age > 90 days → archive (not deleted permanently)
 
 Formula:
-- На каждый recall hit: importance += boost * (1 - importance)  // saturating boost
-- Daily decay: importance *= 0.985  (~half-life ~46 days если не используется)
-- Pin: importance = 1.0 + флаг pinned (не decay'ся)
+- On each recall hit: importance += boost * (1 - importance)  // saturating boost
+- Daily decay: importance *= 0.985  (~half-life ~46 days if unused)
+- Pin: importance = 1.0 + pinned flag (does not decay)
 
-Запускается:
-- recompute_importance(engine) — пересчитать после batch
-- apply_decay(engine) — daily ритуал
+Entry points:
+- recompute_importance(engine) — recompute after a batch
+- apply_decay(engine) — daily ritual
 
-В Phase 2 это ручные функции; в Phase 3 будет cron-like background scheduler.
+In Phase 2 these are manual functions; in Phase 3 there will be a cron-like background scheduler.
 """
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ ARCHIVE_MIN_AGE_DAYS = 90
 
 def boost_on_recall(current_importance: float, hit_score: float) -> float:
     """
-    Apply boost к importance после recall hit.
+    Apply a boost to importance after a recall hit.
 
-    Saturating: чем ближе к 1.0, тем меньше прироста.
-    hit_score (0..1) — насколько релевантным был hit (boost'им только сильные).
+    Saturating: the closer to 1.0, the smaller the increment.
+    hit_score (0..1) — how relevant the hit was (we only boost on strong ones).
     """
     if hit_score < 0.3:
         return current_importance
@@ -46,7 +46,7 @@ def boost_on_recall(current_importance: float, hit_score: float) -> float:
     return min(1.0, new_imp)
 
 
-def apply_decay(engine: "Engine", days_since_last_decay: float = 1.0) -> dict:
+def apply_decay(engine: Engine, days_since_last_decay: float = 1.0) -> dict:
     """
     Tier-aware daily decay - COMPOUNDED over `days_since_last_decay`.
 
@@ -81,7 +81,7 @@ def apply_decay(engine: "Engine", days_since_last_decay: float = 1.0) -> dict:
     archive_age_seconds = ARCHIVE_MIN_AGE_DAYS * 86400
 
     for ev in active:
-        # Pinned (importance >= 0.99) не decay'ся
+        # Pinned (importance >= 0.99) does not decay
         if ev.importance >= 0.99:
             continue
         # Tier-specific factor; unknown tier falls back to the old constant
@@ -89,7 +89,7 @@ def apply_decay(engine: "Engine", days_since_last_decay: float = 1.0) -> dict:
         factor = tier_factor ** days_since_last_decay
         new_imp = ev.importance * factor
 
-        # Бонус для recently accessed: не падает так сильно
+        # Bonus for recently accessed: does not decline as steeply
         recent_boost = 0.0
         days_since_access = (now - ev.last_accessed) / 86400.0
         if days_since_access < 7.0:
@@ -120,11 +120,11 @@ def apply_decay(engine: "Engine", days_since_last_decay: float = 1.0) -> dict:
     }
 
 
-def recompute_importance(engine: "Engine") -> dict:
+def recompute_importance(engine: Engine) -> dict:
     """
-    Пересчитать importance based на access patterns.
+    Recompute importance based on access patterns.
 
-    Используется if хочешь reset state — обычно apply_decay достаточно.
+    Used when you want to reset state — usually apply_decay is sufficient.
     """
     active = engine.events.list_active(engine.workspace.id, limit=100000)
     now = time.time()
@@ -134,7 +134,7 @@ def recompute_importance(engine: "Engine") -> dict:
         if ev.importance >= 0.99:
             continue
 
-        # Base importance по event_type
+        # Base importance by event_type
         base = {
             "qa": 0.5,
             "fact": 0.7,

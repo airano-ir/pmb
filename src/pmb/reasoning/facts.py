@@ -47,12 +47,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pmb.core.engine import Engine
     from pmb.core.events import Event
 
 
@@ -113,7 +111,7 @@ class FactExtractor:
         self.llm = llm_client
         self.max_facts = max_facts_per_event
 
-    def extract(self, event: "Event") -> list[AtomicFact]:
+    def extract(self, event: Event) -> list[AtomicFact]:
         if not event or not (event.content or "").strip():
             return []
         meta = event.metadata or {}

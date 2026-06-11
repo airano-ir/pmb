@@ -5,11 +5,6 @@ fields, gated by config. 0/False are KEPT (they carry meaning). Never raises.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.mcp.tools import _compact_recall
 
 

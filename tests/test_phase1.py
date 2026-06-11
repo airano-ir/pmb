@@ -10,21 +10,15 @@ Phase 1 smoke tests.
 
 from __future__ import annotations
 
-import os
-import shutil
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
 # Path setup для запуска без install
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from pmb.core.events import Event, EventStore
 from pmb.core.engine import Engine
+from pmb.core.events import Event, EventStore
 from pmb.core.workspace import detect_workspace, list_workspaces
-
 
 # tmp_pmb_home / tmp_workspace_dir come from conftest.py (tmp_path-based).
 # The old tempfile.TemporaryDirectory fixtures here hard-failed teardown on

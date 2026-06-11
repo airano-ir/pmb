@@ -5,14 +5,11 @@ _ModelCache so we can exercise arbitrary dimensions deterministically.
 """
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.core import search as search_mod
 from pmb.core.search import HybridSearch, _model_dim, _OllamaEmbedAdapter, _OpenAIEmbedAdapter

@@ -40,10 +40,9 @@ import json
 import logging
 import re
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
-
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +68,7 @@ PLACES_HINTS = {
     "boston", "seattle", "denver", "austin", "miami", "chicago",
     "sweden", "germany", "france", "spain", "italy", "japan", "china",
     "russia", "usa", "uk", "europe", "asia", "africa", "america",
-    "africa", "australia", "canada", "mexico", "brazil",
+    "australia", "canada", "mexico", "brazil",
     "north", "south", "east", "west", "european", "american",
     "asian", "african", "atlantic", "pacific",
 }
@@ -89,14 +88,13 @@ COMMON_NON_PERSON = {
     "morning", "afternoon", "evening", "night", "week", "year", "day",
     "weekend", "weeks", "years", "days", "months", "weekends",
     "happy", "sad", "tired", "excited", "nervous",
-    "lgbtq", "lgbt", "us", "we", "you", "i'm", "i've", "i'll",
+    "lgbtq", "lgbt", "us", "i'm", "i've", "i'll",
     "covid", "ai", "ml", "llm", "api", "url", "json", "xml", "html",
     # Question words — common in dialogue, NEVER persons
     "how", "what", "where", "when", "why", "who", "whom", "whose",
     "which", "whether", "whoever", "whatever", "wherever", "whenever",
     # Dialogue roles — "User:", "Agent:", "Assistant:" are roles, not names
-    "user", "agent", "assistant", "system", "bot", "human", "ai",
-    "chatbot", "model", "tool", "function",
+    "user", "agent", "assistant", "system", "bot", "human", "chatbot", "model", "tool", "function",
     # Section / project / product nouns mistakenly capitalized
     "frontend", "backend", "fullstack", "client", "server", "service",
     "database", "cache", "queue", "worker", "pipeline", "monorepo",
@@ -112,7 +110,7 @@ COMMON_NON_PERSON = {
     # Verbs that occasionally get capitalized at sentence start and survive
     # the sentence-start guard (e.g. "Verify credentials before login")
     "verify", "check", "test", "run", "build", "deploy", "create",
-    "delete", "update", "fetch", "send", "load", "save", "save",
+    "delete", "update", "fetch", "send", "load", "save",
     # CLI agent product names — they ARE proper nouns but rarely human names
     "codex", "claude", "anthropic",
 }
@@ -190,7 +188,7 @@ _FIRST_PERSON_RE = re.compile(
 @dataclass
 class PersonExtractionResult:
     persons: list[str]              # canonical lowercase names
-    speaker: Optional[str] = None   # if extracted from metadata
+    speaker: str | None = None   # if extracted from metadata
     rationale: list[str] = None     # which stages contributed
 
     def to_kind_name_pairs(self) -> list[tuple[str, str]]:
@@ -274,7 +272,7 @@ class KnownPersons:
 # Main extractor
 # ----------------------------------------------------------------------
 
-def _normalize_name(raw: str) -> Optional[str]:
+def _normalize_name(raw: str) -> str | None:
     """Lowercase, strip, check it's a plausible person name."""
     if not raw:
         return None
@@ -315,8 +313,8 @@ def _is_path_context(text: str, start: int, end: int) -> bool:
 
 def extract_persons(
     text: str,
-    metadata: Optional[dict] = None,
-    known_persons: Optional[KnownPersons] = None,
+    metadata: dict | None = None,
+    known_persons: KnownPersons | None = None,
     max_persons: int = 12,
 ) -> PersonExtractionResult:
     """Multi-stage person extraction.
@@ -341,7 +339,7 @@ def extract_persons(
             found[canon] = tier
         rationale.append(f"[{tier}] {canon}: {why}")
 
-    speaker_canon: Optional[str] = None
+    speaker_canon: str | None = None
 
     # Stage 1: explicit speaker metadata
     if metadata and isinstance(metadata, dict):
@@ -376,7 +374,6 @@ def extract_persons(
                 if prev.endswith((".", "!", "?")):
                     # Sentence start: only accept if it's a name typical pattern
                     # (e.g., followed by a verb)
-                    after = text[m.end():m.end() + 30]
                     verb_match = _VERB_AFTER_NAME_RE.match(text[m.start():m.start() + 60])
                     if not verb_match:
                         continue

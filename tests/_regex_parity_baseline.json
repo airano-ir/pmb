@@ -1,0 +1,327 @@
+{
+ "attributes": {
+  "detect_current_state": {
+   "Alice no longer lives in Paris": null,
+   "Alice relocated to Berlin": null,
+   "I currently live in Boston": [
+    "city",
+    "Boston"
+   ],
+   "I don't work at Google anymore": null,
+   "I just moved to Denver": [
+    "city",
+    "Denver"
+   ],
+   "I learned that Alice moved": null,
+   "I no longer live in Warsaw": null,
+   "I now live in Tampa": [
+    "city",
+    "Tampa"
+   ],
+   "my current city is Madrid": [
+    "city",
+    "Madrid"
+   ],
+   "my current employer is unknown": [
+    "employer",
+    "unknown"
+   ],
+   "my sister doesn't work at Google anymore": null,
+   "the deployment runs on port 5432": null,
+   "the user does not currently live in Warsaw; current city is unknown.": null,
+   "user currently works at Acme": [
+    "employer",
+    "Acme"
+   ],
+   "we use pnpm not npm": null,
+   "Алиса больше не живёт в Париже": null,
+   "зараз живу в Києві": null,
+   "мой текущий город неизвестен": null,
+   "переехал в Берлин": [
+    "city",
+    "Берлин"
+   ],
+   "переехала в Прагу": [
+    "city",
+    "Прагу"
+   ],
+   "пользователь переехал": null,
+   "сейчас живу в Киеве": [
+    "city",
+    "Киеве"
+   ],
+   "сейчас работаю в Anthropic": [
+    "employer",
+    "Anthropic"
+   ],
+   "теперь живу в Берлине": [
+    "city",
+    "Берлине"
+   ],
+   "теперь работает в Google": [
+    "employer",
+    "Google"
+   ],
+   "я больше не живу в Варшаве": null,
+   "я уже не работаю в Яндексе": null
+  },
+  "detect_negated_state": {
+   "Alice no longer lives in Paris": null,
+   "Alice relocated to Berlin": null,
+   "I currently live in Boston": null,
+   "I don't work at Google anymore": "employer",
+   "I just moved to Denver": null,
+   "I learned that Alice moved": null,
+   "I no longer live in Warsaw": "city",
+   "I now live in Tampa": null,
+   "my current city is Madrid": null,
+   "my current employer is unknown": "employer",
+   "my sister doesn't work at Google anymore": null,
+   "the deployment runs on port 5432": null,
+   "the user does not currently live in Warsaw; current city is unknown.": "city",
+   "user currently works at Acme": null,
+   "we use pnpm not npm": null,
+   "Алиса больше не живёт в Париже": null,
+   "зараз живу в Києві": null,
+   "мой текущий город неизвестен": null,
+   "переехал в Берлин": null,
+   "переехала в Прагу": null,
+   "пользователь переехал": null,
+   "сейчас живу в Киеве": null,
+   "сейчас работаю в Anthropic": null,
+   "теперь живу в Берлине": null,
+   "теперь работает в Google": null,
+   "я больше не живу в Варшаве": "city",
+   "я уже не работаю в Яндексе": "employer"
+  },
+  "has_user_subject_cue": {
+   "Alice no longer lives in Paris": false,
+   "Alice relocated to Berlin": false,
+   "I currently live in Boston": true,
+   "I don't work at Google anymore": true,
+   "I just moved to Denver": true,
+   "I learned that Alice moved": true,
+   "I no longer live in Warsaw": true,
+   "I now live in Tampa": true,
+   "my current city is Madrid": true,
+   "my current employer is unknown": true,
+   "my sister doesn't work at Google anymore": true,
+   "the deployment runs on port 5432": false,
+   "the user does not currently live in Warsaw; current city is unknown.": true,
+   "user currently works at Acme": true,
+   "we use pnpm not npm": false,
+   "Алиса больше не живёт в Париже": false,
+   "зараз живу в Києві": false,
+   "мой текущий город неизвестен": true,
+   "переехал в Берлин": false,
+   "переехала в Прагу": false,
+   "пользователь переехал": true,
+   "сейчас живу в Киеве": false,
+   "сейчас работаю в Anthropic": false,
+   "теперь живу в Берлине": false,
+   "теперь работает в Google": false,
+   "я больше не живу в Варшаве": true,
+   "я уже не работаю в Яндексе": true
+  }
+ },
+ "intents": {
+  "I live in Tampa": [
+   "SKIP"
+  ],
+  "do we have a rule about commits": [
+   "PAST_QUERY",
+   "LESSONS_QUERY"
+  ],
+  "hi": [
+   "SKIP"
+  ],
+  "my open goals": [
+   "GOALS_QUERY"
+  ],
+  "refactor the auth module": [
+   "WORK_REQUEST"
+  ],
+  "thanks": [
+   "SKIP"
+  ],
+  "the api runs on port 5432": [
+   "WORK_REQUEST"
+  ],
+  "what are we doing right now": [
+   "SKIP"
+  ],
+  "what did I do yesterday": [
+   "PAST_QUERY"
+  ],
+  "what's left to do": [
+   "GOALS_QUERY"
+  ],
+  "who is Alice": [
+   "PAST_QUERY"
+  ],
+  "why did we choose Postgres": [
+   "PAST_QUERY"
+  ],
+  "виправ помилку": [
+   "WORK_REQUEST"
+  ],
+  "где я записал пароль": [
+   "PAST_QUERY"
+  ],
+  "дякую": [
+   "SKIP"
+  ],
+  "исправь баг в auth": [
+   "WORK_REQUEST"
+  ],
+  "какие есть уроки": [
+   "LESSONS_QUERY"
+  ],
+  "какие правила проекта": [
+   "LESSONS_QUERY"
+  ],
+  "какие у меня цели": [
+   "GOALS_QUERY"
+  ],
+  "какой у меня план": [
+   "PAST_QUERY"
+  ],
+  "когда я последний раз был в спортзале": [
+   "PAST_QUERY"
+  ],
+  "коли я це робив": [
+   "PAST_QUERY"
+  ],
+  "кто такой Алекс": [
+   "PAST_QUERY"
+  ],
+  "мои задачи": [
+   "GOALS_QUERY"
+  ],
+  "ок": [
+   "SKIP"
+  ],
+  "отрефактори модуль": [
+   "SKIP"
+  ],
+  "почему мы выбрали Postgres": [
+   "PAST_QUERY"
+  ],
+  "привет": [
+   "SKIP"
+  ],
+  "привіт": [
+   "SKIP"
+  ],
+  "спасибо": [
+   "SKIP"
+  ],
+  "что мы сейчас делаем": [
+   "RECENT_QUERY"
+  ],
+  "что мы только что обсуждали": [
+   "RECENT_QUERY"
+  ],
+  "что осталось доделать": [
+   "GOALS_QUERY"
+  ],
+  "что я делал вчера": [
+   "PAST_QUERY"
+  ],
+  "що ми щойно обговорювали": [
+   "RECENT_QUERY"
+  ],
+  "що я зробив": [
+   "PAST_QUERY"
+  ],
+  "які правила": [
+   "LESSONS_QUERY"
+  ],
+  "які у мене цілі": [
+   "GOALS_QUERY"
+  ]
+ },
+ "query_split": {
+  "X потому что Y": [
+   "X потому что Y"
+  ],
+  "foo а также bar": [
+   "foo",
+   "bar"
+  ],
+  "single question only": [
+   "single question only"
+  ],
+  "what port and why did we pick it": [
+   "what port",
+   "why did we pick it"
+  ],
+  "какой порт и почему мы выбрали его": [
+   "какой порт",
+   "почему мы выбрали его"
+  ]
+ },
+ "user_names": {
+  "detect": {
+   "I am Alice": [],
+   "I'm Carol": [
+    "carol"
+   ],
+   "My name is Bob": [
+    "bob"
+   ],
+   "random text no name here": [],
+   "user name is Dave": [
+    "dave"
+   ],
+   "Меня зовут Алексей": [
+    "алексей"
+   ],
+   "Я Максим": [
+    "максим"
+   ],
+   "живёт в Париже": [],
+   "мене звати Олег": [
+    "олег"
+   ]
+  },
+  "looks": {
+   "I am Alice": false,
+   "I'm Carol": true,
+   "My name is Bob": true,
+   "random text no name here": false,
+   "user name is Dave": true,
+   "Меня зовут Алексей": true,
+   "Я Максим": true,
+   "живёт в Париже": false,
+   "мене звати Олег": true
+  },
+  "self_markers": [
+   "i",
+   "i'm",
+   "i've",
+   "im",
+   "ive",
+   "my",
+   "myself",
+   "мене",
+   "меня",
+   "мені",
+   "мне",
+   "мной",
+   "мною",
+   "обо",
+   "я"
+  ],
+  "self_re": {
+   "I am": true,
+   "my code": true,
+   "random": false,
+   "мене": true,
+   "меня": true,
+   "мені": true,
+   "мной": true,
+   "я тут": true
+  }
+ }
+}

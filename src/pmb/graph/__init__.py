@@ -23,9 +23,12 @@ extraction, `pmb consolidate` may add LLM-derived entities later.
 """
 
 from pmb.graph.entities import (
-    EntityExtractor, KNOWN_TECHS, extract_file_paths, extract_techs,
+    KNOWN_TECHS,
+    EntityExtractor,
+    extract_file_paths,
+    extract_techs,
 )
-from pmb.graph.store import GraphStore, Entity, Edge
+from pmb.graph.store import Edge, Entity, GraphStore
 
 __all__ = [
     "EntityExtractor", "KNOWN_TECHS", "extract_file_paths", "extract_techs",

@@ -47,11 +47,7 @@ import json
 import logging
 import re
 import time
-from collections import Counter
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
-
 
 log = logging.getLogger(__name__)
 
@@ -147,7 +143,7 @@ class JudgeResult:
     prediction: str
     correct: int        # 0 or 1
     reasoning: str = ""
-    category: Optional[int] = None
+    category: int | None = None
     retrieved_n: int = 0
     reader_ms: float = 0.0
     judge_ms: float = 0.0
@@ -207,7 +203,7 @@ class LocomoJudge:
 
     def run_question(
         self, question: str, gold: str, retrieved_contents: list[str],
-        category: Optional[int] = None,
+        category: int | None = None,
     ) -> JudgeResult:
         context = self._format_context(retrieved_contents)
         # Reader

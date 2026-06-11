@@ -2,18 +2,18 @@
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.cli.connect import (
-    claude_code_paths, cursor_paths, connect,
-    make_local_entry, make_remote_entry, merge_entry,
-    _load_json, _save_json,
+    _load_json,
+    _save_json,
+    connect,
+    make_local_entry,
+    make_remote_entry,
+    merge_entry,
 )
 
 

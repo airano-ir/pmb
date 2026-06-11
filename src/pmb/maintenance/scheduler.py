@@ -1,19 +1,18 @@
 """
 OS scheduler config helper.
 
-Генерирует config-файл/команду для:
+Generates a config file/command for:
 - Linux/macOS: cron entries
-- Windows: schtasks команды
+- Windows: schtasks commands
 
-Примеры:
-- daily decay в 04:00
-- weekly self-test в воскресенье 05:00
-- weekly compact в воскресенье 06:00
+Examples:
+- daily decay at 04:00
+- weekly self-test on Sunday at 05:00
+- weekly compact on Sunday at 06:00
 """
 
 from __future__ import annotations
 
-import os
 import platform
 import shutil
 import sys
@@ -37,7 +36,7 @@ def _pmb_command() -> str:
 
 def generate_scheduler_config() -> dict:
     """
-    Returns config snippets для текущей OS.
+    Returns config snippets for the current OS.
 
     {"os": "linux"|"darwin"|"windows", "cron"|"crontab"|"schtasks": [...]}
     """
@@ -54,7 +53,7 @@ def generate_scheduler_config() -> dict:
 
 def _unix_config(pmb: str, system: str) -> dict:
     crontab = [
-        f"# PMB maintenance — auto-generated",
+        "# PMB maintenance — auto-generated",
         f"0 4 * * *   {pmb} decay >> ~/.pmb/cron.log 2>&1     # daily decay 4 AM",
         f"0 5 * * 0   {pmb} health run >> ~/.pmb/cron.log 2>&1  # weekly self-test Sun 5 AM",
         f"0 6 * * 0   {pmb} compact >> ~/.pmb/cron.log 2>&1   # weekly compaction Sun 6 AM",

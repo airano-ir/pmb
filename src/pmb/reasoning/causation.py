@@ -49,8 +49,9 @@ import json
 import logging
 import sqlite3
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pmb.core.engine import Engine
@@ -189,7 +190,7 @@ def walk_edges(
     db_path,
     seed_ulids: Iterable[str],
     direction: str = "both",  # 'forward', 'backward', 'both'
-    edge_types: Optional[set[str]] = None,
+    edge_types: set[str] | None = None,
     min_confidence: float = 0.4,
     hops: int = 1,
     max_results: int = 50,
@@ -245,7 +246,7 @@ def walk_edges(
 # Cheap rule-based edges (no LLM)
 # ----------------------------------------------------------------------
 
-def add_temporal_next_edge(engine: "Engine", event: "Event") -> Optional[CausationEdge]:
+def add_temporal_next_edge(engine: Engine, event: Event) -> CausationEdge | None:
     """Link `event` to the immediately-previous event in the same workspace
     if their gap is short enough to suggest continuity. Free, no LLM."""
     GAP_THRESHOLD_SEC = 600.0  # 10 minutes default
@@ -289,7 +290,7 @@ class CausationExtractor:
         self.max_candidates = max_candidates
 
     def extract(
-        self, new_event: "Event", candidates: list["Event"],
+        self, new_event: Event, candidates: list[Event],
     ) -> list[CausationEdge]:
         if not candidates:
             return []

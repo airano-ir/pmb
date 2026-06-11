@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import Optional
-
-from pmb.core.events import (
-    Event,
-)
-
 from pmb.core.engine.types import (
     _dedupe_named_entities,
+)
+from pmb.core.events import (
+    Event,
 )
 
 
@@ -29,8 +26,8 @@ class GraphMixin:
         if self.config.get("recall.person_extraction"):
             try:
                 from pmb.graph.persons import (
-                    extract_persons,
                     KnownPersons,
+                    extract_persons,
                 )
 
                 kp = KnownPersons(self.workspace.db_path, self.workspace.id)
@@ -214,7 +211,8 @@ class GraphMixin:
 
         Returns: {n_edges_pruned, n_entities_pruned, edges_before, edges_after}
         """
-        import sqlite3, time as _t
+        import sqlite3
+        import time as _t
 
         cutoff = _t.time() - older_than_days * 86400.0
         with sqlite3.connect(self.workspace.db_path) as conn:
@@ -304,7 +302,7 @@ class GraphMixin:
     def graph_stats(self) -> dict:
         return self.graph.stats(self.workspace.id)
 
-    def graph_top_entities(self, kind: Optional[str] = None, limit: int = 20) -> list[dict]:
+    def graph_top_entities(self, kind: str | None = None, limit: int = 20) -> list[dict]:
         return [
             e.to_dict()
             for e in self.graph.top_entities(
@@ -314,7 +312,7 @@ class GraphMixin:
             )
         ]
 
-    def graph_neighbors(self, name: str, kind: Optional[str] = None, top_k: int = 10) -> dict:
+    def graph_neighbors(self, name: str, kind: str | None = None, top_k: int = 10) -> dict:
         kinds = (kind,) if kind else ()
         ents = self.graph.find_entities_by_name(self.workspace.id, [name], kinds=kinds)
         if not ents:

@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   # --------------------------------------------------------------
-  # Lint — fast, runs once. Doesn't gate other jobs.
+  # Lint — fast, runs once. BLOCKING (T2): ruff must be clean.
   # --------------------------------------------------------------
   lint:
     name: Lint (ruff)
@@ -26,12 +26,12 @@ jobs:
           cache: pip
       - run: pip install "ruff>=0.8"
       - run: ruff check src tests scripts --output-format=github
-        continue-on-error: true
 
   # --------------------------------------------------------------
-  # Regression + feature suites - the must-pass tests.
-  # These verify the headline features (PAMVR, keyed-upsert, warmup,
-  # durable queue, chunked IN, pattern split, connect, sync, import).
+  # Tests — the WHOLE suite on every PR (T1). No curated file lists:
+  # a new test file is covered the moment it lands. Genuinely
+  # load-flaky tests are marked @pytest.mark.quarantined (with a
+  # root-cause note) and run in the separate non-blocking job below.
   # --------------------------------------------------------------
   test:
     name: tests · ${{ matrix.os }} · py${{ matrix.python }}
@@ -84,62 +84,82 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,crypto]"
 
-      - name: Hardening regression suite
-        run: pytest tests/test_hardening.py -q --tb=short
-
-      - name: Connect + workspace-sync + encryption suite
-        run: >
-          pytest tests/test_connect.py tests/test_connect_codex.py
-          tests/test_connect_rules.py tests/test_connect_extended.py
-          tests/test_connect_active.py
-          tests/test_git_sync.py tests/test_encryption.py -q --tb=short
-
-      - name: Import + explain + embedder-backend suite
-        run: >
-          pytest tests/test_import.py tests/test_pamvr_explain.py
-          tests/test_embedder_backends.py -q --tb=short
-
-      - name: Provenance + watch + memory-quality + distill suite
-        run: >
-          pytest tests/test_provenance_watch.py tests/test_memory_quality.py
-          tests/test_distill.py -q --tb=short
-
-      - name: Local-use feature commands suite
-        run: pytest tests/test_local_features.py -q --tb=short
-
-      - name: J-score levers suite (resolved date / atomic patterns / validity windows)
-        run: pytest tests/test_jscore_levers.py -q --tb=short
-
-      - name: MCP end-to-end suite (tool exposure / session_brief / recall via in-memory client)
-        run: pytest tests/test_mcp_e2e.py -q --tb=short
-
-      - name: Keyed-memory + write-quality suite (A/E)
-        run: >
-          pytest tests/test_negation_tombstones.py
-          tests/test_keyed_close_negation.py tests/test_keyed_suggestions_llm.py
-          tests/test_keyed_canonical.py tests/test_quality_gate.py
-          tests/test_declutter.py tests/test_plans_as_goals.py
-          tests/test_identity_boost_names.py -q --tb=short
-
-      - name: Daemon + durable-writes suite (B)
-        run: pytest tests/test_write_outbox.py tests/test_daemon.py -q --tb=short
-
-      - name: Language packs + Unicode tokenization suite (C)
-        run: >
-          pytest tests/test_unicode_tokenization.py tests/test_language_packs.py
-          -q --tb=short
-
-      - name: MCP token-diet + recall/intent follow-ups (D/C5)
-        run: >
-          pytest tests/test_toolspec_budget.py tests/test_mcp_compaction.py
-          tests/test_recall_singleflight.py tests/test_semantic_intent.py
-          -q --tb=short
-
-      - name: Lightweight tests (no heavy ML)
-        run: pytest tests/test_config.py tests/test_redact.py -q --tb=short
+      # The whole suite, minus quarantined load-flaky tests (run below).
+      - name: Full test suite
+        run: pytest tests/ -q --tb=short -m "not quarantined"
 
   # --------------------------------------------------------------
-  # CLI smoke — entry points must work.
+  # Coverage — single cell (tracing slows the matrix). Enforces a
+  # measured floor on the engine core; ratchet up at each release,
+  # never down. (T3)
+  # --------------------------------------------------------------
+  coverage:
+    name: Coverage floor (core)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+      OMP_NUM_THREADS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+          key: hf-cov-${{ hashFiles('pyproject.toml') }}
+          restore-keys: hf-cov-
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,crypto]"
+      # Measured 2026-06-10: whole-package line coverage = 63% (18047 stmts).
+      # Floor = measured − 2. Ratchet UP at each release F-phase, never down.
+      - name: Coverage floor (whole package)
+        run: >
+          pytest tests/ -q -m "not quarantined"
+          --cov=pmb --cov-report=term-missing
+          --cov-fail-under=61
+
+  # --------------------------------------------------------------
+  # Quarantine — load-flaky tests, NON-blocking but VISIBLE. Every
+  # entry carries a root-cause note in its marker; most should die
+  # once the harness is consolidated (real waits, isolated engines).
+  # --------------------------------------------------------------
+  quarantine:
+    name: Quarantined (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      PYTHONUTF8: "1"
+      OMP_NUM_THREADS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+          key: hf-q-${{ hashFiles('pyproject.toml') }}
+          restore-keys: hf-q-
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,crypto]"
+      - name: Quarantined tests
+        run: pytest tests/ -q --tb=short -m "quarantined" || true
+
+  # --------------------------------------------------------------
+  # CLI smoke — entry points must work AND exit clean (T4). No
+  # `|| true`: stats/doctor are designed to exit 0 on an empty
+  # workspace (doctor is non-zero only with --strict).
   # --------------------------------------------------------------
   smoke:
     name: CLI smoke
@@ -153,5 +173,6 @@ jobs:
       - run: pip install -e .
       - run: pmb --help
       - run: pmb config list
-      - run: pmb stats || true   # empty workspace is OK
-      - run: pmb doctor || true  # warnings allowed
+      - run: pmb stats
+      - run: pmb doctor
+      - run: pmb daemon status

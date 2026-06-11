@@ -6,52 +6,23 @@ their members together so the LLM has full story context."""
 from __future__ import annotations
 
 import json
-import os
-import sys
-import tempfile
-from pathlib import Path
-
-import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.core.engine import Engine
 from pmb.reasoning.arcs import (
-    Arc, ArcManager, create_arc, list_arcs, get_arc,
-    add_event_to_arc, events_in_arc, looks_narrative,
+    Arc,
+    add_event_to_arc,
+    create_arc,
+    events_in_arc,
+    get_arc,
+    looks_narrative,
 )
-
 
 # ----------------------------------------------------------------------
 # Fixtures
 # ----------------------------------------------------------------------
 
-@pytest.fixture
-def tmp_pmb_home():
-    import gc, shutil, time as _t
-    tmp = tempfile.mkdtemp()
-    home = Path(tmp) / "pmb_home"
-    os.environ["PMB_HOME"] = str(home)
-    try:
-        yield home
-    finally:
-        os.environ.pop("PMB_HOME", None)
-        gc.collect()
-        for _ in range(3):
-            try:
-                shutil.rmtree(tmp, ignore_errors=False)
-                break
-            except (OSError, PermissionError):
-                _t.sleep(0.2)
-                gc.collect()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
 
 
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
 
 
 # ----------------------------------------------------------------------

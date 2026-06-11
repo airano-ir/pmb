@@ -1,25 +1,24 @@
 """
 Adaptive Importance — learns from failed self-test queries.
 
-Когда self-test failed на запросе X (expected event E не нашёлся в top-K),
-это сигнал что E недостаточно importance чтобы конкурировать с другими.
+When a self-test fails on query X (the expected event E wasn't in the top-K),
+that's a signal that E doesn't have enough importance to compete with others.
 
-Стратегии adaptation:
-1. Boost importance failed events на 10% (saturating)
-2. Дополнительно регистрируем failure pattern в adaptive_log.jsonl
-3. Если один и тот же event failed > 3 раз — суперblanket boost importance
+Adaptation strategies:
+1. Boost the importance of failed events by 10% (saturating)
+2. Additionally log the failure pattern in adaptive_log.jsonl
+3. If the same event fails > 3 times — apply a bigger blanket importance boost
 
-Это slow learning: каждый weekly self-test → small adjustment.
+This is slow learning: each weekly self-test → a small adjustment.
 
-Через 2-3 месяца system должна сама подняться до stable accuracy на тех
-queries которые юзер реально задаёт.
+After 2-3 months the system should reach stable accuracy on its own for the
+queries the user actually asks.
 """
 
 from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,21 +28,21 @@ if TYPE_CHECKING:
 
 
 BOOST_PER_FAILURE = 0.10
-SUPERBOOST_THRESHOLD = 3  # после 3 failures — bigger boost
+SUPERBOOST_THRESHOLD = 3  # after 3 failures — bigger boost
 SUPERBOOST_VALUE = 0.85
 
 
-def _adaptive_log_path(engine: "Engine") -> Path:
+def _adaptive_log_path(engine: Engine) -> Path:
     return engine.workspace.storage_dir / "adaptive_log.jsonl"
 
 
-def _load_failure_counts(engine: "Engine") -> dict[str, int]:
-    """Load счётчики failures по ulid."""
+def _load_failure_counts(engine: Engine) -> dict[str, int]:
+    """Load failure counts keyed by ulid."""
     log = _adaptive_log_path(engine)
     if not log.exists():
         return {}
     counts: dict[str, int] = {}
-    with open(log, "r", encoding="utf-8") as f:
+    with open(log, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -59,13 +58,13 @@ def _load_failure_counts(engine: "Engine") -> dict[str, int]:
 
 
 def apply_adaptive_boost(
-    engine: "Engine",
-    self_test_result: "SelfTestResult",
+    engine: Engine,
+    self_test_result: SelfTestResult,
 ) -> dict:
     """
-    После self-test применить adaptive boost к failed events.
+    After a self-test, apply an adaptive boost to the failed events.
 
-    Pin'нутые events (importance >= 0.99) пропускаются.
+    Pinned events (importance >= 0.99) are skipped.
 
     Returns:
         {
@@ -120,13 +119,13 @@ def apply_adaptive_boost(
     }
 
 
-def adaptive_history(engine: "Engine", limit: int = 100) -> list[dict]:
-    """Прочитать historic failures."""
+def adaptive_history(engine: Engine, limit: int = 100) -> list[dict]:
+    """Read historic failures."""
     log = _adaptive_log_path(engine)
     if not log.exists():
         return []
     items = []
-    with open(log, "r", encoding="utf-8") as f:
+    with open(log, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -150,7 +149,7 @@ FEEDBACK_DEMOTE_FACTOR = 0.5
 FEEDBACK_DEMOTE_FLOOR = 0.05
 
 
-def apply_feedback_adaptive(engine: "Engine") -> dict:
+def apply_feedback_adaptive(engine: Engine) -> dict:
     """
     Aggregate feedback counts and promote / demote importance.
 

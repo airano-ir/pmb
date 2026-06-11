@@ -11,10 +11,8 @@ Pure function, no I/O - trivially testable.
 
 from __future__ import annotations
 
-from typing import Optional
 
-
-def describe_source(metadata: Optional[dict]) -> str:
+def describe_source(metadata: dict | None) -> str:
     """Return a short label like 'chatgpt · Project planning', 'note (cli)',
     'markdown · notes.md', 'agent', or '-' when origin is unknown."""
     meta = metadata or {}
@@ -65,7 +63,7 @@ def describe_source(metadata: Optional[dict]) -> str:
     return "-"
 
 
-def source_key(metadata: Optional[dict]) -> str:
+def source_key(metadata: dict | None) -> str:
     """Coarse bucket key for grouping in `pmb audit` (collapses the detail
     that describe_source adds)."""
     meta = metadata or {}

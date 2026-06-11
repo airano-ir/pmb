@@ -6,50 +6,16 @@ temporal-next) let recall walk to bridge events that hybrid+BM25 miss.
 from __future__ import annotations
 
 import json
-import os
-import sys
-import tempfile
-import time
-from pathlib import Path
-
-import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.core.engine import Engine, _looks_multihop
 from pmb.reasoning.causation import (
-    CausationEdge, CausationExtractor, upsert_edge,
-    edges_from, edges_to, walk_edges,
+    CausationEdge,
+    CausationExtractor,
+    edges_from,
+    edges_to,
+    upsert_edge,
+    walk_edges,
 )
-
-
-@pytest.fixture
-def tmp_pmb_home():
-    import gc, shutil, time as _t
-    tmp = tempfile.mkdtemp()
-    home = Path(tmp) / "pmb_home"
-    os.environ["PMB_HOME"] = str(home)
-    try:
-        yield home
-    finally:
-        os.environ.pop("PMB_HOME", None)
-        gc.collect()
-        for _ in range(3):
-            try:
-                shutil.rmtree(tmp, ignore_errors=False)
-                break
-            except (OSError, PermissionError):
-                _t.sleep(0.2)
-                gc.collect()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
-
-
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
-
 
 # ----------------------------------------------------------------------
 # Multi-hop detector
@@ -152,7 +118,6 @@ class _StubCausationLLM:
 
 
 def test_causation_extractor_parses_llm_output(tmp_pmb_home, tmp_workspace_dir):
-    from pmb.core.events import Event
     eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home)
     a_ul = eng.record_fact("Alice complained that Postgres was slow")
     b_ul = eng.record_fact("Switched the project to use Redis cache layer")

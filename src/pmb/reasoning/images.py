@@ -27,14 +27,10 @@ For developers who keep screenshots / diagrams of work, this enables
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
 
 log = logging.getLogger(__name__)
 
@@ -43,10 +39,10 @@ log = logging.getLogger(__name__)
 class ImageAttachment:
     path: str
     description: str = ""
-    width: Optional[int] = None
-    height: Optional[int] = None
-    sha256: Optional[str] = None
-    clip_embedding: Optional[list[float]] = None
+    width: int | None = None
+    height: int | None = None
+    sha256: str | None = None
+    clip_embedding: list[float] | None = None
 
     def to_metadata(self) -> dict:
         meta = {
@@ -136,8 +132,8 @@ def _clip_encode_image(path: Path):
     except Exception:
         pass
     try:
-        from sentence_transformers import SentenceTransformer
         from PIL import Image
+        from sentence_transformers import SentenceTransformer
         model = SentenceTransformer("clip-ViT-B-32")
         emb = model.encode(Image.open(path), convert_to_numpy=True)
         # L2 normalize

@@ -41,10 +41,8 @@ import shutil
 import sqlite3
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
-
 
 # Files that make up a workspace's portable state.
 _CORE_FILES = ["events.sqlite", "meta.yaml"]
@@ -73,7 +71,7 @@ class GitResult:
     ok: bool
     action: str
     detail: str = ""
-    extra: Optional[dict] = None
+    extra: dict | None = None
 
     def as_dict(self) -> dict:
         d = {"ok": self.ok, "action": self.action, "detail": self.detail}
@@ -146,7 +144,7 @@ class WorkspaceGitSync:
 
     def init(
         self,
-        remote: Optional[str] = None,
+        remote: str | None = None,
         branch: str = "main",
         include_cache: bool = True,
     ) -> GitResult:
@@ -206,7 +204,7 @@ class WorkspaceGitSync:
         self,
         remote: str = "origin",
         branch: str = "main",
-        message: Optional[str] = None,
+        message: str | None = None,
         include_cache: bool = True,
     ) -> GitResult:
         if not self._git_available():
@@ -222,7 +220,7 @@ class WorkspaceGitSync:
 
         committed = False
         if self._has_staged_changes():
-            msg = message or f"pmb sync {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%SZ')}"
+            msg = message or f"pmb sync {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%SZ')}"
             r = self._git("commit", "-m", msg, check=False)
             if r.returncode != 0:
                 return GitResult(False, "push", f"commit failed: {r.stderr.strip()[:300]}")

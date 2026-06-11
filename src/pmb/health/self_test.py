@@ -1,24 +1,24 @@
 """
 Self-Test Runner — quantifies memory degradation over time.
 
-Идея: периодически (раз в неделю) система берёт случайные старые memories,
-формирует тестовые запросы из них, и пытается их вспомнить через recall.
-Если recall accuracy падает — это сигнал деградации.
+Idea: periodically (once a week) the system picks random old memories,
+builds test queries out of them, and tries to recall them via recall.
+If recall accuracy drops — that's a degradation signal.
 
-Метрика: % старых memories которые recall находит в top-K за их же ключевыми
-словами/фразой.
+Metric: % of old memories that recall finds in top-K using their own key
+words/phrase.
 
-Подход к генерации queries:
-- Для каждого выбранного event берём первые 8-15 значимых токенов content'а
-- Это становится query
-- Expected — тот же event_ulid
+Query generation approach:
+- For each selected event we take the first 8-15 significant tokens of its content
+- That becomes the query
+- Expected — the same event_ulid
 
-Это "scratch your own itch" benchmark — измеряет на реальных данных юзера,
-не на синтетике. Результаты сохраняются в health_log.jsonl и доступны через
-`pmb health` CLI.
+This is a "scratch your own itch" benchmark — it measures against the user's
+real data, not synthetic data. Results are saved to health_log.jsonl and are
+available through the `pmb health` CLI.
 
-Anti-bias measure: query сильно отличается от content (только подмножество
-токенов в случайном порядке) — иначе trivial.
+Anti-bias measure: the query differs substantially from the content (only a
+subset of tokens in random order) — otherwise it would be trivial.
 """
 
 from __future__ import annotations
@@ -27,31 +27,32 @@ import json
 import random
 import re
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
+
+from pmb import lang as _lang
 
 if TYPE_CHECKING:
     from pmb.core.engine import Engine
 
 
-# Слова-стопы которые не годятся как query keywords
-STOPWORDS = {
-    "это", "что", "как", "если", "когда", "то", "мы", "я", "ты", "он", "она",
-    "его", "её", "их", "наш", "ваш", "мой", "твой", "тот", "этот", "там",
-    "тут", "вот", "уже", "ещё", "только", "также", "ну", "же", "ли", "бы",
-    "можно", "нужно", "может", "должен", "и", "а", "но", "или", "что-то",
+# Stopwords that don't work as query keywords. EN floor inline; the RU/UK
+# function words ("this"/"what"/"how"/"when" in RU/UK) live in the packs
+# (self_test_stopwords)
+# and merge in below, keeping this module Cyrillic-free (L1).
+STOPWORDS = _lang.merged_set("self_test_stopwords", {
     "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
     "have", "has", "had", "do", "does", "did", "will", "would", "should",
     "can", "could", "may", "might", "must", "and", "or", "but", "if",
     "of", "in", "on", "at", "to", "for", "with", "from", "by", "as",
-    "user", "assistant", "q", "a",
-}
+    "user", "assistant", "q",
+})
 
 
 def _significant_tokens(text: str, n_keep: int = 8) -> list[str]:
     """
-    Извлечь значимые токены: слова >= 3 chars, не stopwords, без дубликатов.
+    Extract significant tokens: words >= 3 chars, not stopwords, no duplicates.
     """
     raw = re.findall(r"\w+", text.lower())
     seen = set()
@@ -70,12 +71,12 @@ def _significant_tokens(text: str, n_keep: int = 8) -> list[str]:
     return out
 
 
-def generate_test_query(content: str, rng: random.Random) -> Optional[str]:
+def generate_test_query(content: str, rng: random.Random) -> str | None:
     """
-    Генерирует test query из content'а event'а.
+    Generates a test query from an event's content.
 
-    Берём 4-7 значимых токенов в случайном порядке. Если меньше 4 значимых
-    токенов — событие не годится для self-test (слишком короткое).
+    We take 4-7 significant tokens in random order. If there are fewer than 4
+    significant tokens — the event isn't suitable for self-test (too short).
     """
     tokens = _significant_tokens(content, n_keep=12)
     if len(tokens) < 4:
@@ -92,7 +93,7 @@ class SelfTestResult:
     accuracy_at_1: float
     accuracy_at_3: float
     accuracy_at_5: float
-    avg_rank: Optional[float]
+    avg_rank: float | None
     failed_queries: list[dict] = field(default_factory=list)
     workspace_id: str = ""
     n_total_active: int = 0
@@ -100,10 +101,10 @@ class SelfTestResult:
     # same session appears in top-K. Closer to "did the retriever find the
     # right neighborhood" than the strict exact-ulid match. Falls back to
     # strict when events have no session_id.
-    session_accuracy_at_5: Optional[float] = None
+    session_accuracy_at_5: float | None = None
     session_coverage: float = 0.0  # fraction of samples that had a session_id
     # When n_tested == 0, why: "no_content_events" or "all_events_younger_than_min_age"
-    empty_reason: Optional[str] = None
+    empty_reason: str | None = None
     eligible_min_age_days: float = 1.0
     n_too_recent: int = 0
 
@@ -116,7 +117,7 @@ class SelfTestRunner:
     Runs self-tests and persists results in health_log.jsonl.
     """
 
-    def __init__(self, engine: "Engine", seed: Optional[int] = None):
+    def __init__(self, engine: Engine, seed: int | None = None):
         self.engine = engine
         self.rng = random.Random(seed if seed is not None else int(time.time()))
 
@@ -131,21 +132,21 @@ class SelfTestRunner:
         max_failed_to_save: int = 5,
     ) -> SelfTestResult:
         """
-        Запустить self-test.
+        Run the self-test.
 
-        Berut events старше min_age_days, sample n_samples из них, генерирует
-        query из каждого, прогоняет recall, считает попадания.
+        Takes events older than min_age_days, samples n_samples of them,
+        generates a query from each, runs recall, and counts the hits.
 
         Args:
-            n_samples: сколько events протестировать
-            min_age_days: минимальный возраст event'а (свежие skip — слишком easy)
-            top_k_max: сколько результатов запрашивать у recall
-            max_failed_to_save: сохраняем детали failed queries
+            n_samples: how many events to test
+            min_age_days: minimum age of an event (fresh ones are skipped — too easy)
+            top_k_max: how many results to request from recall
+            max_failed_to_save: we save the details of failed queries
         """
         workspace_id = self.engine.workspace.id
         active = self.engine.events.list_active(workspace_id, limit=10000)
 
-        # Filter: старше min_age_days и контентные (qa, fact, git)
+        # Filter: older than min_age_days and content-bearing (qa, fact, git)
         cutoff_ts = time.time() - min_age_days * 86400.0
         eligible_types = {"qa", "fact", "git"}
         eligible = [
@@ -243,13 +244,8 @@ class SelfTestRunner:
             if session_hit:
                 n_session_at_5 += 1
 
-        n_tested = len([s for s in samples if generate_test_query(s.to_text(), self.rng) is not None])
-        # n_tested здесь нестабилен (rng state), считаем правильно через ranks + failed
-        n_tested = len(ranks) + len(failed) + (sample_size - len(ranks) - len(failed))
-        # Простая правильная формула:
-        n_attempted = sample_size
-        # Но queries которые не удалось сгенерировать (None) тоже нужно вычесть
-        # Reset and count properly:
+        # n_tested via the rng is unstable (rng state advances); recompute it
+        # below from the deterministic generate_test_query pass instead.
         attempted = 0
         for s in samples:
             if generate_test_query(s.to_text(), random.Random(0)) is not None:
@@ -281,12 +277,12 @@ class SelfTestRunner:
             f.write(json.dumps(result.to_dict(), ensure_ascii=False) + "\n")
 
     def history(self, limit: int = 20) -> list[SelfTestResult]:
-        """Прочитать historic self-test results."""
+        """Read historic self-test results."""
         log = self._log_path()
         if not log.exists():
             return []
         results = []
-        with open(log, "r", encoding="utf-8") as f:
+        with open(log, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -300,7 +296,7 @@ class SelfTestRunner:
 
     def trend(self) -> dict:
         """
-        Trend analysis: есть ли деградация?
+        Trend analysis: is there degradation?
 
         Returns:
         {

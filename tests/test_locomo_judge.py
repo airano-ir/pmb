@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb.eval.locomo_judge import (
-    LocomoJudge, JudgeResult, aggregate, READER_PROMPT, JUDGE_PROMPT,
+    JUDGE_PROMPT,
+    READER_PROMPT,
+    JudgeResult,
+    LocomoJudge,
+    aggregate,
 )
 
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import time
 
-
 from pmb.core.engine.types import (
     _DUMMY_LOCK,
 )
@@ -13,14 +12,16 @@ class EmbedMixin:
         self,
         touches: list[str],
         importance_updates: list[tuple[str, float]],
+        tier_promotions: list[tuple[str, str]] | None = None,
     ) -> None:
         """Buffer recall side effects for the background flusher.
 
         Coalesces multiple touches of the same ulid (latest timestamp /
         importance wins) so a hot event accessed 16 times in 100ms
-        produces ONE SQLite write, not 16.
+        produces ONE SQLite write, not 16. S9: tier promotions ride the SAME
+        batch (was one connection+txn per promoted ulid per recall).
         """
-        if not touches and not importance_updates:
+        if not touches and not importance_updates and not tier_promotions:
             return
         now = time.time()
         with self._touch_lock:
@@ -28,6 +29,8 @@ class EmbedMixin:
                 self._touch_buffer[u] = now
             for u, imp in importance_updates:
                 self._touch_imp_buffer[u] = max(0.0, min(1.0, imp))
+            for u, tier in (tier_promotions or []):
+                self._touch_tier_buffer[u] = tier
             if not self._touch_flusher_started:
                 self._touch_flusher_started = True
                 import threading
@@ -63,12 +66,15 @@ class EmbedMixin:
         anything was flushed. Safe to call from engine.close() too.
         """
         with self._touch_lock:
-            if not self._touch_buffer and not self._touch_imp_buffer:
+            if (not self._touch_buffer and not self._touch_imp_buffer
+                    and not self._touch_tier_buffer):
                 return False
             touches_snap = dict(self._touch_buffer)
             imp_snap = dict(self._touch_imp_buffer)
+            tier_snap = dict(self._touch_tier_buffer)
             self._touch_buffer.clear()
             self._touch_imp_buffer.clear()
+            self._touch_tier_buffer.clear()
         try:
             with self.events._conn() as conn:
                 conn.execute("BEGIN")
@@ -84,6 +90,11 @@ class EmbedMixin:
                             "UPDATE events SET importance = ? WHERE ulid = ?",
                             [(i, u) for u, i in imp_snap.items()],
                         )
+                    if tier_snap:
+                        conn.executemany(
+                            "UPDATE events SET tier = ? WHERE ulid = ?",
+                            [(tier, u) for u, tier in tier_snap.items()],
+                        )
                     conn.execute("COMMIT")
                 except Exception:
                     conn.execute("ROLLBACK")
@@ -96,6 +107,8 @@ class EmbedMixin:
                     self._touch_buffer.setdefault(u, t)
                 for u, i in imp_snap.items():
                     self._touch_imp_buffer.setdefault(u, i)
+                for u, tier in tier_snap.items():
+                    self._touch_tier_buffer.setdefault(u, tier)
             return False
 
     def warmup(self, with_first_query: bool = True) -> dict:

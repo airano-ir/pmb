@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.markup import escape as esc
@@ -77,7 +76,7 @@ def dashboard(
 
 @app.command()
 def init(
-    name: Optional[str] = typer.Option(None, "--name", help="Custom workspace name"),
+    name: str | None = typer.Option(None, "--name", help="Custom workspace name"),
 ):
     """Initialize a workspace in the current directory."""
     ws = detect_workspace()
@@ -190,7 +189,7 @@ def stats():
 @app.command(name="list")
 def list_cmd(
     limit: int = typer.Option(20, "-n", "--limit"),
-    event_type: Optional[str] = typer.Option(None, "--type"),
+    event_type: str | None = typer.Option(None, "--type"),
 ):
     """Recent events in the current workspace."""
     eng = Engine()
@@ -235,7 +234,7 @@ def remember(
 def fact(
     text: str = typer.Argument(..., help="The factual statement to record"),
     importance: float = typer.Option(0.7, "--importance", "-i"),
-    ttl: Optional[str] = typer.Option(
+    ttl: str | None = typer.Option(
         None, "--ttl",
         help="Auto-expire after a duration (30d, 12h, 2w, 3mo). Archived later "
              "by `pmb prune-expired`; never affects recall.",
@@ -254,7 +253,7 @@ def note(
     text: str = typer.Argument(..., help="The note to remember, in quotes"),
     importance: float = typer.Option(0.6, "--importance", "-i"),
     pin: bool = typer.Option(False, "--pin", help="Pin it (max importance, never auto-archived)"),
-    ttl: Optional[str] = typer.Option(
+    ttl: str | None = typer.Option(
         None, "--ttl",
         help="Auto-expire after a duration (30d, 12h, 2w, 3mo). Archived later "
              "by `pmb prune-expired`; never affects recall.",
@@ -292,7 +291,7 @@ def learn(
         help="Record a FAILURE (negative memory): 'tried X, it didn't work'. "
              "Surfaces with a warning so you/the agent don't repeat it.",
     ),
-    ttl: Optional[str] = typer.Option(
+    ttl: str | None = typer.Option(
         None, "--ttl",
         help="Auto-expire after a duration (e.g. 90d). Rarely needed for "
              "lessons; useful for time-bound rules.",
@@ -328,7 +327,7 @@ def learn(
 
 @app.command()
 def distill(
-    session: Optional[str] = typer.Option(
+    session: str | None = typer.Option(
         None, "--session",
         help="Session id to distill (default: most recent session's events).",
     ),
@@ -649,7 +648,7 @@ def why(
 @app.command()
 def overview(
     topic: str = typer.Argument(..., help="Topic to summarize, in quotes"),
-    max_events: Optional[int] = typer.Option(
+    max_events: int | None = typer.Option(
         None, "-n", "--max-events",
         help="How many memories to synthesize (default: config overview.max_events)."),
 ):

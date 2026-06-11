@@ -87,8 +87,8 @@ def test_full_observer_to_autowrite(tmp_path, monkeypatch, repo):
     """End-to-end: observe project changes → record → autowrite synthesizes."""
     monkeypatch.setenv("PMB_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("PMB_WORKSPACE", "obs_e2e")
-    from pmb.core.engine import Engine
     from pmb.core.ambient_log import insert_agent_action
+    from pmb.core.engine import Engine
     from pmb.hooks import run_autowrite
 
     eng = Engine()

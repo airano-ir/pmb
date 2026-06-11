@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 
-
 # -------------------- shared fixtures --------------------
 
 
@@ -347,9 +346,10 @@ def test_warmup_is_idempotent(tmp_engine):
 
 def test_multilingual_check_flags_english_only_on_cyrillic(tmp_path):
     """Reviewer's real scenario: all-MiniLM-L6-v2 + Russian content → warn."""
-    from pmb.health.multilingual_check import evaluate
     # Build a minimal SQLite with Russian content
     import sqlite3
+
+    from pmb.health.multilingual_check import evaluate
     db = tmp_path / "events.sqlite"
     with sqlite3.connect(str(db)) as conn:
         conn.execute(
@@ -370,8 +370,9 @@ def test_multilingual_check_flags_english_only_on_cyrillic(tmp_path):
 
 def test_multilingual_check_silent_on_correct_setup(tmp_path):
     """Multilingual model + multilingual data → no warning."""
-    from pmb.health.multilingual_check import evaluate
     import sqlite3
+
+    from pmb.health.multilingual_check import evaluate
     db = tmp_path / "events.sqlite"
     with sqlite3.connect(str(db)) as conn:
         conn.execute(

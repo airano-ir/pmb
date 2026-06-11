@@ -20,11 +20,8 @@ signature; flip it off with `pmb config set autowrite.enabled false`.
 
 from __future__ import annotations
 
-import os
 import re
-from dataclasses import dataclass, field
-from typing import Optional
-
+from dataclasses import dataclass
 
 _EDIT_TOOLS = {
     "Edit", "Write", "MultiEdit", "NotebookEdit", "Update", "Create",
@@ -189,7 +186,7 @@ def score_turn_importance(actions: list[dict]) -> tuple[float, dict]:
 # ── template synthesis (default, no model) ───────────────────────────────
 
 
-def synthesize_template(actions: list[dict]) -> Optional[str]:
+def synthesize_template(actions: list[dict]) -> str | None:
     """Build a one-line summary, leading with the OUTCOME (a failure fixed,
     tests passed, a deploy) and only then the files touched — so the entry
     reads as 'what was accomplished', not 'what was mechanically edited'.
@@ -251,7 +248,7 @@ def synthesize_llm(
     backend: str,
     model: str = "",
     timeout: float = 20.0,
-) -> Optional[str]:
+) -> str | None:
     """Ask a CLI LLM to write a one-line human summary of the actions.
     `backend` is 'llm:ollama' / 'llm:claude' / 'llm:codex'. Returns None on
     any failure so the caller can fall back to the template."""
@@ -269,7 +266,9 @@ def synthesize_llm(
     )
     try:
         from pmb.graph.extractors_llm import (
-            _run_claude_cli, _run_ollama_cli, _run_codex_cli,
+            _run_claude_cli,
+            _run_codex_cli,
+            _run_ollama_cli,
         )
         provider = backend.split(":", 1)[1] if ":" in backend else backend
         if provider == "ollama":
@@ -294,9 +293,9 @@ def synthesize_llm(
 @dataclass
 class AutoWriteResult:
     wrote: bool = False
-    skipped_reason: Optional[str] = None
-    summary: Optional[str] = None
-    ulid: Optional[str] = None
+    skipped_reason: str | None = None
+    summary: str | None = None
+    ulid: str | None = None
     n_actions: int = 0
     synthesizer: str = "template"
     importance: float = 0.0
@@ -316,7 +315,7 @@ def autowrite_gate(
     window_minutes: float = 30.0,
     min_actions: int = 2,
     min_importance: float = 0.0,
-) -> Optional[str]:
+) -> str | None:
     """Cheap pre-check (no synthesis): should we journal this turn at all?
 
     Three gates, cheapest first:

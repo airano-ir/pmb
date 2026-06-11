@@ -4,55 +4,19 @@ Phase 2 tests — signals: git, session, decay, files.
 
 from __future__ import annotations
 
-import os
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.core.engine import Engine
 from pmb.core.workspace import detect_workspace
-from pmb.signals.session import Session, SessionTracker, SESSION_GAP_SECONDS
-from pmb.signals.decay import (
-    apply_decay, recompute_importance, boost_on_recall
-)
-from pmb.signals.git import GitSync, capture_recent_commits
+from pmb.signals.decay import boost_on_recall
 from pmb.signals.files import FileCorrelation
-
-
-@pytest.fixture
-def tmp_pmb_home():
-    import gc
-    tmp = tempfile.mkdtemp()
-    home = Path(tmp) / "pmb_home"
-    os.environ["PMB_HOME"] = str(home)
-    try:
-        yield home
-    finally:
-        os.environ.pop("PMB_HOME", None)
-        gc.collect()  # close LanceDB / SQLite handles
-        # На Windows SQLite/LanceDB может удержать handles — несколько попыток
-        import shutil, time as _t
-        for _ in range(3):
-            try:
-                shutil.rmtree(tmp, ignore_errors=False)
-                break
-            except (OSError, PermissionError):
-                _t.sleep(0.2)
-                gc.collect()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
-
-
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
+from pmb.signals.git import GitSync, capture_recent_commits
+from pmb.signals.session import SESSION_GAP_SECONDS, SessionTracker
 
 
 @pytest.fixture

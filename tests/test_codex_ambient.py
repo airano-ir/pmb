@@ -12,11 +12,11 @@ import json
 
 import pytest
 
+from pmb.core.ambient_log import is_significant_action
 from pmb.hooks.codex_rollout import (
     find_latest_rollout,
     parse_rollout_actions,
 )
-from pmb.core.ambient_log import is_significant_action
 
 
 def _write_rollout(path, records):
@@ -135,7 +135,8 @@ def test_find_latest_rollout(tmp_path):
     newer = d / "rollout-b.jsonl"
     older.write_text("{}", encoding="utf-8")
     newer.write_text("{}", encoding="utf-8")
-    import os, time
+    import os
+    import time
     os.utime(older, (time.time() - 100, time.time() - 100))
     found = find_latest_rollout(tmp_path / "sessions")
     assert found == newer

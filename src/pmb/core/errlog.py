@@ -16,7 +16,6 @@ import sqlite3
 import time
 import traceback
 from pathlib import Path
-from typing import Union
 
 # Prune counter — every Nth insert we drop rows older than the retention window
 # so the table can't grow unbounded on a chronically-failing path.
@@ -26,7 +25,7 @@ _insert_count = 0
 
 
 def log_error(
-    db_path: Union[str, Path],
+    db_path: str | Path,
     component: str,
     exc: BaseException,
     note: str = "",
@@ -58,7 +57,7 @@ def log_error(
 
 
 def recent_errors(
-    db_path: Union[str, Path],
+    db_path: str | Path,
     since_s: float = 24 * 3600.0,
     limit: int = 200,
 ) -> list[dict]:
@@ -79,7 +78,7 @@ def recent_errors(
 
 
 def error_counts(
-    db_path: Union[str, Path],
+    db_path: str | Path,
     since_s: float = 24 * 3600.0,
 ) -> dict[str, int]:
     """{component: count} over the window, for the status panel / doctor."""

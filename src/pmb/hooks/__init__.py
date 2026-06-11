@@ -9,27 +9,27 @@ modules they call into:
 """
 
 from pmb.hooks.auto_recall import (
-    Intent,
     AutoContextResult,
-    detect_intents,
-    run_auto_context,
-    format_context,
+    Intent,
     compute_prepare_context_text,
+    detect_intents,
+    format_context,
     is_trivial,
-)
-from pmb.hooks.session_restore import build_session_restore
-from pmb.hooks.followcheck import (
-    run_followcheck,
-    FollowCheckResult,
-    FollowVerdict,
+    run_auto_context,
 )
 from pmb.hooks.autowrite import (
-    run_autowrite,
-    autowrite_gate,
-    synthesize_template,
-    synthesize_llm,
     AutoWriteResult,
+    autowrite_gate,
+    run_autowrite,
+    synthesize_llm,
+    synthesize_template,
 )
+from pmb.hooks.followcheck import (
+    FollowCheckResult,
+    FollowVerdict,
+    run_followcheck,
+)
+from pmb.hooks.session_restore import build_session_restore
 
 __all__ = [
     "Intent",

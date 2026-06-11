@@ -30,8 +30,11 @@ import hashlib
 import logging
 import re
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING
+
+from pmb import lang as _lang
 
 if TYPE_CHECKING:
     from pmb.core.engine import Engine
@@ -108,10 +111,17 @@ def _import_backend():
 # Chunking — keep paragraphs together, respect heading boundaries
 # ----------------------------------------------------------------------
 
+# Heading words: EN inline; localized equivalents (RU/UK "Chapter"/"Section")
+# come from the packs (pdf_heading_words). The uppercase-Cyrillic char-class
+# reuses the packs' `sentence_uppercase` ranges so this module is Cyrillic-free
+# while still detecting Russian/Ukrainian ALL-CAPS headings (L1).
+_HEAD_WORDS = "|".join(["Chapter", "Section", "Part", "Appendix"]
+                       + [str(w) for w in _lang.merged_list("pdf_heading_words")])
+_UP = "".join(str(x) for x in _lang.merged_list("sentence_uppercase"))
 _HEADING_RE = re.compile(
-    r"^(?:\s*(?:Chapter|Глава|Раздел|Section|Part|Appendix)\s+[\dIVXLCM.]+\s*[:\-—]?\s*[^\n]+|"
-    r"\s*\d{1,2}(?:\.\d{1,2}){0,3}\s+[A-ZА-Я][^\n]{2,120}|"
-    r"\s*[A-ZА-Я][A-ZА-Я0-9 ,;:!\-—]{4,80})$",
+    r"^(?:\s*(?:" + _HEAD_WORDS + r")\s+[\dIVXLCM.]+\s*[:\-—]?\s*[^\n]+|"
+    r"\s*\d{1,2}(?:\.\d{1,2}){0,3}\s+[A-Z" + _UP + r"][^\n]{2,120}|"
+    r"\s*[A-Z" + _UP + r"][A-Z" + _UP + r"0-9 ,;:!\-—]{4,80})$",
     re.MULTILINE,
 )
 
@@ -139,7 +149,7 @@ def _split_into_chunks(text: str, target: int = CHUNK_TARGET_CHARS) -> list[str]
     return chunks
 
 
-def _detect_section(chunk: str) -> Optional[str]:
+def _detect_section(chunk: str) -> str | None:
     """Best-effort heuristic: first heading-looking line in the chunk."""
     m = _HEADING_RE.search(chunk[:400])
     if m:
@@ -159,7 +169,7 @@ def _file_hash(path: Path) -> str:
     return h.hexdigest()
 
 
-def _is_already_indexed(engine: "Engine", source_hash: str) -> bool:
+def _is_already_indexed(engine: Engine, source_hash: str) -> bool:
     """Check if a PDF with this exact content hash was already ingested."""
     import sqlite3
     try:
@@ -176,7 +186,7 @@ def _is_already_indexed(engine: "Engine", source_hash: str) -> bool:
 
 
 def ingest_pdf(
-    engine: "Engine",
+    engine: Engine,
     path: Path | str,
     importance: float = 0.6,
     force: bool = False,
@@ -285,7 +295,7 @@ def ingest_pdf(
 
 
 def ingest_pdfs(
-    engine: "Engine",
+    engine: Engine,
     paths_or_dir: Iterable[Path | str] | Path | str,
     recurse: bool = False,
     importance: float = 0.6,

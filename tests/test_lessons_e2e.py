@@ -99,7 +99,8 @@ def test_unconfirmed_surface_counts_as_unknown_not_ignored(engine):
     from pmb.hooks import run_auto_context
 
     _seed_lesson(engine, "The websocket reconnect uses exponential backoff capped at 30s")
-    # Surface it 3 times, never mark it.
+    # Surface it 3 times in one session, never mark it. R1 dedups same-session
+    # surfaces within the hour, so this is ONE surface (counting shows, not rows).
     for _ in range(3):
         run_auto_context(engine, "какие правила про websocket reconnect backoff")
 
@@ -109,7 +110,7 @@ def test_unconfirmed_surface_counts_as_unknown_not_ignored(engine):
     row = next((r for r in stats["per_lesson"]
                 if "websocket" in (r["content"] or "")), None)
     assert row is not None
-    assert row["surfaces"] >= 3
+    assert row["surfaces"] >= 1
     assert row["followed"] == 0
     assert row["ignored"] == 0
     # The frontend DEAD rule is (ignored >= 2 AND ignored > followed) — this
@@ -157,14 +158,17 @@ def test_followcheck_inferred_follow_shows_in_stats(engine):
 
 
 def test_per_lesson_aggregates_mixed_verdicts(engine):
-    from pmb.hooks import run_auto_context
-
-    _seed_lesson(engine, "Tailscale ACLs must allow the memo node on port 8765")
-    # Surface 3×, follow 2, ignore 0, leave 1 unknown.
+    # A lesson surfacing across THREE DISTINCT sessions (R1 dedups within a
+    # session-hour, so distinct surfaces require distinct sessions — which is
+    # exactly how a recurring rule accrues a follow-history in real use).
+    u = _seed_lesson(engine, "Tailscale ACLs must allow the memo node on port 8765")
+    L = {"ulid": u, "content": "Tailscale ACLs must allow the memo node"}
     sids = []
-    for _ in range(3):
-        res = run_auto_context(engine, "какие правила про tailscale acl и порт")
-        sids.append(res.lessons[0]["surface_id"])
+    for s in ("s1", "s2", "s3"):
+        r = engine._log_lesson_surfaces([dict(L)], query="tailscale acl port",
+                                        source="recall", session_id=s)
+        sids.append(r[0]["surface_id"])
+    assert len(set(sids)) == 3, "distinct sessions → distinct surfaces"
     engine.mark_lesson_followed(sids[0], followed=True, note="a")
     engine.mark_lesson_followed(sids[1], followed=True, note="b")
     # sids[2] left unmarked

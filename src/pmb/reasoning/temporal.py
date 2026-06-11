@@ -24,9 +24,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timezone
-from typing import Optional
-
+from datetime import UTC, datetime
 
 # Month names → 1..12
 MONTHS = {
@@ -87,8 +85,8 @@ def is_temporal_query(query: str) -> bool:
 
 
 def extract_event_time(
-    text: str, reference_now: Optional[float] = None,
-) -> Optional[float]:
+    text: str, reference_now: float | None = None,
+) -> float | None:
     """Try to find an explicit date in `text` and return its UTC timestamp.
 
     Returns None if no clear date.
@@ -163,8 +161,8 @@ def extract_event_time(
 
 
 def temporal_proximity_boost(
-    event_time: Optional[float],
-    query_anchor_time: Optional[float],
+    event_time: float | None,
+    query_anchor_time: float | None,
     half_life_days: float = 14.0,
 ) -> float:
     """Returns a [0, 1] proximity boost. 1 = same day, decays exponentially.
@@ -181,15 +179,15 @@ def temporal_proximity_boost(
 # ----------------------------------------------------------------------
 
 def _to_ts(year: int, month: int, day: int) -> float:
-    return datetime(year, month, day, tzinfo=timezone.utc).timestamp()
+    return datetime(year, month, day, tzinfo=UTC).timestamp()
 
 
 def _infer_year(reference_now: float, month: int) -> int:
     """Pick the year that puts the date <= 6 months from reference (in the
     past for ambiguous month-day strings — most user references go
     backward not forward)."""
-    now = datetime.fromtimestamp(reference_now, tz=timezone.utc)
-    candidate_this_year = datetime(now.year, month, 1, tzinfo=timezone.utc)
+    now = datetime.fromtimestamp(reference_now, tz=UTC)
+    candidate_this_year = datetime(now.year, month, 1, tzinfo=UTC)
     # If the month is later this year than now, it likely refers to last
     # year (memory references are backward-looking).
     if candidate_this_year > now + _delta_days(180):
@@ -202,9 +200,9 @@ def _delta_days(days: int):
     return timedelta(days=days)
 
 
-def _resolve_relative(phrase: str, reference_now: float) -> Optional[float]:
+def _resolve_relative(phrase: str, reference_now: float) -> float | None:
     from datetime import timedelta
-    now = datetime.fromtimestamp(reference_now, tz=timezone.utc)
+    now = datetime.fromtimestamp(reference_now, tz=UTC)
     p = phrase.lower()
     if p == "yesterday":
         return (now - timedelta(days=1)).timestamp()

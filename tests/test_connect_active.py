@@ -6,16 +6,12 @@ The default rules are deliberately conservative (PMB OFF until a trigger).
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.cli.connect import (  # noqa: E402
-    _build_agent_rules_block, install_agent_rules,
-    PMB_AGENT_RULES_START, PMB_AGENT_RULES_END,
+    PMB_AGENT_RULES_END,
+    PMB_AGENT_RULES_START,
+    _build_agent_rules_block,
+    install_agent_rules,
 )
-
 
 # Stable marker for the base (always-present) rules block. The body was
 # reworded to the "adherence is visible" framing; this header is the
@@ -94,6 +90,7 @@ def test_detect_installed_agents_finds_cursor_project(tmp_path, monkeypatch):
 
 def test_setup_help_runs():
     from typer.testing import CliRunner
+
     from pmb.cli.main import app
     r = CliRunner().invoke(app, ["setup", "--help"])
     assert r.exit_code == 0
@@ -147,6 +144,7 @@ def test_active_mode_and_overview_config_keys():
 
 def test_overview_help_runs():
     from typer.testing import CliRunner
+
     from pmb.cli.main import app
     r = CliRunner().invoke(app, ["overview", "--help"])
     assert r.exit_code == 0

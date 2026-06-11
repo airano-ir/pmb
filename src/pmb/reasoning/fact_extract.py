@@ -39,8 +39,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
 
+from pmb import lang as _lang
 
 MIN_LEN_FOR_EXTRACT = 60       # chars
 MIN_SENTENCES = 2              # below 2 sentences, nothing to split
@@ -58,8 +58,11 @@ class AtomicFact:
 # capitals after a terminator (keeps the capital requirement so abbreviations
 # like "U.S. army" don't over-split), PLUS CJK terminators (。！？) which carry
 # no following space. EN/RU/UK behaviour is unchanged; other scripts are added.
+# The Cyrillic uppercase ranges live in the packs (sentence_uppercase) so this
+# module stays Cyrillic-free (L1).
+_SENT_UPPER = "".join(_lang.merged_list("sentence_uppercase"))
 _SENT_SPLIT = re.compile(
-    r"(?<=[.!?])\s+(?=[A-ZА-ЯІЇЄҐÀ-ÖØ-ÞĀ-ŽΆ-Ώ])"
+    r"(?<=[.!?])\s+(?=[A-Z" + _SENT_UPPER + r"À-ÖØ-ÞĀ-ŽΆ-Ώ])"
     r"|(?<=[。！？])"
 )
 
@@ -118,86 +121,22 @@ _PATTERNS: list[tuple[re.Pattern, str, str]] = [
         r"(?:^|(?<=[.,])\s+|\band\s+)(?P<subj>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?|[Hh]e|[Ss]he|[Tt]hey|[Ii])\s+(?:moved\s+(?:from|away\s+from)|is\s+from|came\s+from|originally\s+from)\s+(?P<place>[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)\b"),
      "origin", "{subj} is from {place}"),
 
-    # ==================================================================
-    # RUSSIAN patterns (P0-1 hardening)
-    # ==================================================================
-    # Identity: "Меня зовут X" / "Его зовут X" / "Я Х"
-    (re.compile(
-        r"\b(?:меня|его|её|их|нас)\s+зовут\s+(?P<name>[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?)",
-        re.IGNORECASE), "ru_identity", "Имя: {name}"),
-    # "Я работаю X" / "X работает Y"
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?:я|он|она|они)\s+работа(?:ю|ет|ют)\s+(?P<role>[а-яё][а-яё\s]{2,30}?)(?=[.,;]|\s+(?:в|на|и|но|а)\s+|$)",
-        re.IGNORECASE), "ru_role", "Работа: {role}"),
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?P<subj>[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?)\s+работает\s+(?P<role>[а-яё][а-яё\s]{2,30}?)(?=[.,;]|\s+(?:в|на|и|но)\s+|$)"),
-     "ru_role_named", "{subj} работает {role}"),
-    # Location: "Я живу в X" / "X живёт в Y" / "X переехал в Y".
-    # Conjugation: жив-у/-ёшь/-ёт/-ём/-ёте/-ут — \w{1,3} covers all forms.
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?:я|он|она|они)\s+жив\w{1,3}\s+(?:в|во|на)\s+(?P<place>[А-ЯЁ][а-яёА-ЯЁ\-\s]{1,30}?)(?=[.,;]|\s+(?:и|но|а)\s+|$)",
-        re.IGNORECASE), "ru_location", "Живёт в {place}"),
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?P<subj>[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?)\s+жив\w{1,3}\s+(?:в|во|на)\s+(?P<place>[А-ЯЁ][а-яёА-ЯЁ\-\s]{1,30}?)(?=[.,;]|\s+(?:и|но|а)\s+|$)"),
-     "ru_location_named", "{subj} живёт в {place}"),
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?P<subj>[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?)\s+(?:переехал[аи]?|перебрался)\s+(?:в|во|на)\s+(?P<place>[А-ЯЁ][а-яёА-ЯЁ\-\s]{1,30}?)(?=[.,;]|$)"),
-     "ru_moved", "{subj} переехал в {place}"),
-    # Birthday: "Мой день рождения X" / "X июня" / "День рождения - X"
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+|\b)(?:мой|его|её|их)\s+день\s+рождени[яе]\s*[-—:]?\s*(?P<date>\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+\d{4})?)",
-        re.IGNORECASE), "ru_birthday", "День рождения: {date}"),
-    # Preference: "Я люблю X" / "Я предпочитаю X"
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+|\b)(?:я|мне)\s+(?:люблю|нравится|нравятся|предпочитаю)\s+(?P<thing>[а-яёА-ЯЁ][а-яёА-ЯЁ\s]{2,40}?)(?=[.,;]|$)",
-        re.IGNORECASE), "ru_preference", "Предпочтение: {thing}"),
-    # Family / relations: "Мой друг X" / "Моя жена X"
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+|\b)(?:мой|моя|мои|её|его)\s+(?P<rel>друг|подруга|жена|муж|сестра|брат|мама|папа|сын|дочь|кот|кошка|собака)\s+(?:\-|—|зовут)?\s*(?P<name>[А-ЯЁ][а-яё]+)",
-        re.IGNORECASE), "ru_relation", "{rel}: {name}"),
-    # "У меня X" / "У него Y зовут Z" — possession of pet/person/thing
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+|\b)[уУ]\s+(?:меня|него|неё|нас|них)\s+(?P<rel>кот|кошка|собака|друг|подруга|жена|муж|сын|дочь|сестра|брат)\s+(?:по\s+имени\s+|зовут\s+)?(?P<name>[А-ЯЁ][а-яё]+)",
-        re.IGNORECASE), "ru_possession", "{rel}: {name}"),
-
-    # ==================================================================
-    # UKRAINIAN patterns (P0-1 hardening)
-    # ==================================================================
-    # Identity: "Мене звати X" / "Його звуть X"
-    (re.compile(
-        r"\b(?:мене|його|її|їх|нас)\s+зват[иь]?\s+(?P<name>[А-ЯІЇЄҐ][а-яіїєґ']+(?:\s+[А-ЯІЇЄҐ][а-яіїєґ']+)?)",
-        re.IGNORECASE), "uk_identity", "Ім'я: {name}"),
-    # "Я працюю X" / "X працює Y"
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?:я|він|вона|вони)\s+працю(?:ю|є|ють)\s+(?P<role>[а-яіїєґ'][а-яіїєґ'\s]{2,30}?)(?=[.,;]|\s+(?:у|в|на|і|та|але)\s+|$)",
-        re.IGNORECASE), "uk_role", "Робота: {role}"),
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?P<subj>[А-ЯІЇЄҐ][а-яіїєґ']+(?:\s+[А-ЯІЇЄҐ][а-яіїєґ']+)?)\s+працює\s+(?P<role>[а-яіїєґ'][а-яіїєґ'\s]{2,30}?)(?=[.,;]|\s+(?:у|в|на|і|та)\s+|$)"),
-     "uk_role_named", "{subj} працює {role}"),
-    # Location: "Я живу в X" / "X живе в Y" / "X переїхав до Y".
-    # Conjugation: жив-у/-еш/-е/-емо/-ете/-уть.
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?:я|він|вона|вони)\s+жив\w{1,3}\s+(?:у|в|на)\s+(?P<place>[А-ЯІЇЄҐ][а-яіїєґА-ЯІЇЄҐ'\-\s]{1,30}?)(?=[.,;]|\s+(?:і|та|але)\s+|$)",
-        re.IGNORECASE), "uk_location", "Живе у {place}"),
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?P<subj>[А-ЯІЇЄҐ][а-яіїєґ']+(?:\s+[А-ЯІЇЄҐ][а-яіїєґ']+)?)\s+жив\w{1,3}\s+(?:у|в|на)\s+(?P<place>[А-ЯІЇЄҐ][а-яіїєґА-ЯІЇЄҐ'\-\s]{1,30}?)(?=[.,;]|\s+(?:і|та|але)\s+|$)"),
-     "uk_location_named", "{subj} живе у {place}"),
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+)(?P<subj>[А-ЯІЇЄҐ][а-яіїєґ']+(?:\s+[А-ЯІЇЄҐ][а-яіїєґ']+)?)\s+(?:переїхав|переїхала|переїхали|перебрався)\s+(?:до|в|у)\s+(?P<place>[А-ЯІЇЄҐ][а-яіїєґА-ЯІЇЄҐ'\-\s]{1,30}?)(?=[.,;]|$)"),
-     "uk_moved", "{subj} переїхав до {place}"),
-    # Birthday: "Мій день народження X"
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+|\b)(?:мій|його|її)\s+день\s+народженн[яі]\s*[-—:]?\s*(?P<date>\d{1,2}\s+(?:січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)(?:\s+\d{4})?)",
-        re.IGNORECASE), "uk_birthday", "День народження: {date}"),
-    # Preference: "Я люблю X" / "Мені подобається X"
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+|\b)(?:я\s+люблю|мені\s+подобає(?:ться|ться)|мені\s+подобаються)\s+(?P<thing>[а-яіїєґ'А-ЯІЇЄҐ][а-яіїєґ'А-ЯІЇЄҐ\s]{2,40}?)(?=[.,;]|$)",
-        re.IGNORECASE), "uk_preference", "Вподобання: {thing}"),
-    # Family / relations
-    (re.compile(
-        r"(?:^|(?<=[.,])\s+|\b)(?:мій|моя|мої|її|його)\s+(?P<rel>друг|подруга|дружина|чоловік|сестра|брат|мама|тато|син|донька|кіт|кішка|собака)\s+(?:\-|—|звати|звуть)?\s*(?P<name>[А-ЯІЇЄҐ][а-яіїєґ']+)",
-        re.IGNORECASE), "uk_relation", "{rel}: {name}"),
 ]
+# RU/UK extraction patterns + their localized output templates live in the
+# built-in ru.yaml / uk.yaml packs under `fact_extract_patterns`
+# ([{re, kind, template, flags}]) — L1 keeps this module Cyrillic-free.
+_FE_FLAG = {"i": re.IGNORECASE, "m": re.MULTILINE, "s": re.DOTALL}
+for _ent in _lang.merged_list("fact_extract_patterns"):
+    if not (isinstance(_ent, dict) and _ent.get("re") and _ent.get("kind")):
+        continue
+    _fl = 0
+    for _ch in str(_ent.get("flags") or ""):
+        _fl |= _FE_FLAG.get(_ch, 0)
+    try:
+        _PATTERNS.append((re.compile(_ent["re"], _fl), _ent["kind"],
+                          _ent.get("template", "")))
+    except Exception:
+        continue
 
 
 def split_sentences(text: str) -> list[str]:
@@ -208,13 +147,13 @@ def split_sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def _clean(s: Optional[str]) -> str:
+def _clean(s: str | None) -> str:
     if not s:
         return ""
     return re.sub(r"\s+", " ", s).strip(" ,.!?;:")
 
 
-def _atomic_from_match(m: re.Match, kind: str, template: str) -> Optional[AtomicFact]:
+def _atomic_from_match(m: re.Match, kind: str, template: str) -> AtomicFact | None:
     """Build an AtomicFact from a regex match using a template."""
     try:
         d = {k: _clean(v) for k, v in m.groupdict().items() if v}
@@ -229,8 +168,8 @@ def _atomic_from_match(m: re.Match, kind: str, template: str) -> Optional[Atomic
         )}, **d}).strip()
         text = re.sub(r"\s+", " ", text)
         # Quality filter: avoid mostly-empty extractions
-        # Min 6 chars / 2 words — short atoms like "Имя: Алексей" or
-        # "Живёт в Киеве" are valid. Cuts off truly noisy single-word fragments.
+        # Min 6 chars / 2 words — short localized atoms (a name or a "lives in
+        # <city>" fact) are valid. Cuts off truly noisy single-word fragments.
         if len(text) < 6 or len(text.split()) < 2:
             return None
         # Bound length (no full paragraphs masquerading as atomic facts)

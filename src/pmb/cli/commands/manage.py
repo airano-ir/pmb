@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import List, Optional
 
 import typer
 from rich.markup import escape as esc
@@ -27,42 +26,76 @@ from pmb.core.engine import Engine
 from pmb.core.workspace import detect_workspace, list_workspaces
 
 
+def _ensure_daemon_started(pmb_home: Path | None, tool_profile: str | None) -> None:
+    """S6: best-effort detached daemon spawn so the HTTP MCP entry is reachable
+    the moment it's written — no window where it points at a not-yet-running
+    daemon. No-op if one is already live, under pytest, or on any error (the
+    lifecycle hooks autostart it otherwise). Inherits the configured tool
+    profile so the shared daemon serves the same lean surface."""
+    import os
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    try:
+        from pmb.mcp.registry import find_live_daemon
+        if find_live_daemon():
+            return
+        import subprocess
+        import sys as _sys
+        env = dict(os.environ)
+        if pmb_home:
+            env["PMB_HOME"] = str(pmb_home)
+        if tool_profile:
+            env["PMB_TOOL_PROFILE"] = tool_profile
+        kwargs: dict = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = 0x00000008 | 0x00000200  # DETACHED|NEW_GROUP
+        else:
+            kwargs["start_new_session"] = True
+        subprocess.Popen(
+            [_sys.executable, "-m", "pmb.cli", "daemon", "run"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, env=env, **kwargs)
+        console.print("  [dim]Starting the shared daemon in the background…[/]")
+    except Exception:
+        pass
+
+
 @app.command()
 def connect(
-    agent: Optional[str] = typer.Argument(
+    agent: str | None = typer.Argument(
         None,
         help="claude-code | cursor | codex | windsurf | gemini | vscode | "
              "zed | opencode | continue",
     ),
     scope: str = typer.Option("project", "--scope",
                               help="project | global (where the agent supports both)"),
-    remote: Optional[str] = typer.Option(
+    remote: str | None = typer.Option(
         None, "--remote",
         help="Connect to a remote PMB server. Two forms:\n"
              "  • SSH: user@host:/abs/path/to/repo (stdio over SSH tunnel)\n"
              "  • HTTP: http://host:8765/mcp (team-shared streamable-http)",
     ),
-    bearer_token: Optional[str] = typer.Option(
+    bearer_token: str | None = typer.Option(
         None, "--bearer-token", "--token",
         envvar="PMB_MCP_BEARER_TOKEN",
         help="Shared secret for the remote HTTP server (if it was started "
              "with `pmb mcp serve --bearer-token <secret>`).",
     ),
-    name: Optional[str] = typer.Option(
+    name: str | None = typer.Option(
         None, "--name", help="MCP entry name (default: pmb or pmb-remote)",
     ),
-    workspace: Optional[str] = typer.Option(
+    workspace: str | None = typer.Option(
         None, "--workspace", "-w",
         help="Force a SPECIFIC workspace id (override cwd-based detection). "
              "Use this to SHARE one memory across multiple AI clients - e.g. "
              "Claude Code + Cursor both pointing at 'personal' workspace.",
     ),
-    pmb_home: Optional[Path] = typer.Option(
+    pmb_home: Path | None = typer.Option(
         None, "--pmb-home",
         help="Override PMB_HOME (where workspaces live on disk). Useful for "
              "multi-user shared memory on a NAS / Dropbox path.",
     ),
-    config_path: Optional[str] = typer.Option(
+    config_path: str | None = typer.Option(
         None, "--config-path",
         help="Override the agent's MCP config file location (for editors "
              "whose config lives somewhere our default guess doesn't cover).",
@@ -92,6 +125,15 @@ def connect(
              "duplicating or re-adding the MCP server entry.",
     ),
     probe: bool = typer.Option(False, "--probe", help="Spawn pmb-mcp briefly to verify it starts"),
+    daemon: bool | None = typer.Option(
+        None, "--daemon/--stdio",
+        help="S6: point the host at the ONE shared warm daemon over HTTP "
+             "instead of spawning a stdio server (Engine + ~400 MB model) per "
+             "client. JSON hosts (claude-code, cursor) only. Default follows "
+             "`connect.default_daemon` (on); choosing it pins daemon.idle_exit_min"
+             "=0 so the connection stays warm. --stdio forces the old per-client "
+             "stdio entry.",
+    ),
 ):
     """Add a `pmb` entry to your agent's MCP config without touching other entries.
 
@@ -172,6 +214,17 @@ def connect(
                 )
         return
 
+    # S6: --daemon/--stdio overrides per-invocation; otherwise follow the
+    # `connect.default_daemon` config (default on).
+    if daemon is None:
+        try:
+            from pmb.config import Config
+            _home = Path(pmb_home) if pmb_home else (Path.home() / ".pmb")
+            effective_daemon = bool(Config(pmb_home=_home).get("connect.default_daemon"))
+        except Exception:
+            effective_daemon = True
+    else:
+        effective_daemon = daemon
     try:
         result = do_connect(
             agent, cwd=Path.cwd(), scope=scope, remote=remote, name_override=name,
@@ -180,6 +233,7 @@ def connect(
             active_toggles=(_toggles if effective_active else None),
             bearer_token=bearer_token,
             install_hooks=hooks,
+            use_daemon=effective_daemon,
         )
     except ValueError as e:
         console.print(f"[red]{e}[/]")
@@ -193,6 +247,32 @@ def connect(
         + json.dumps(result["entry"], indent=2, ensure_ascii=False),
         title="MCP connected",
     ))
+
+    # S6: when we pointed the host at the shared HTTP daemon (now the default for
+    # JSON hosts), explain the win + how to opt out; when --daemon was explicitly
+    # asked for but the host can't take an HTTP entry, say so.
+    if result.get("daemon_http"):
+        console.print(
+            "[green]Shared warm daemon (HTTP) — the default now.[/] This host "
+            "reuses the ONE warm process instead of spawning its own Engine + "
+            "~400 MB model, so N connected clients cost ~400 MB total, not ×N. "
+            "The daemon is pinned to never idle-exit so the connection stays warm "
+            "(the hooks autostart it on the next message).\n"
+            "  Start it now if you don't want to wait for the first hook:\n"
+            "    [cyan]pmb daemon start[/]\n"
+            "  Prefer the old per-client stdio server? [cyan]pmb connect "
+            f"{result.get('agent', 'claude-code')} --stdio[/]  "
+            "(or set [cyan]connect.default_daemon false[/] globally)."
+        )
+        # S6 (Caveat-S6b): start it now so the entry is reachable immediately.
+        _ensure_daemon_started(pmb_home, result.get("tool_profile"))
+    elif result.get("daemon_http_unavailable"):
+        console.print(
+            "[yellow]Stdio entry (HTTP daemon not applicable here):[/] this host "
+            "takes a command-shaped stdio entry (codex / editor extensions / "
+            "--remote), not an HTTP one — wrote stdio. The shared HTTP daemon is "
+            "available for claude-code / cursor."
+        )
 
     # Show instruction-rules result so user knows the AI will follow PMB rules
     rules_info = result.get("instruction_rules") or []
@@ -248,7 +328,7 @@ def connect(
 
 @app.command()
 def setup(
-    agent: Optional[str] = typer.Argument(
+    agent: str | None = typer.Argument(
         None, help="Agent to wire (claude-code / codex / cursor / ...). Omit to auto-detect."),
     active: bool = typer.Option(
         False, "--active",
@@ -282,7 +362,7 @@ def setup(
         f"Ollama (optional local LLM): "
         + ("[green]installed[/]" if ollama_ok
            else "[dim]not installed - fine, PMB works fully offline without it[/]") + "\n"
-        f"Defaults: ablation-tuned (BM25-heavy fusion, reranker off) - ready to use.",
+        "Defaults: ablation-tuned (BM25-heavy fusion, reranker off) - ready to use.",
         title="PMB setup",
     ))
 
@@ -431,7 +511,7 @@ def _day_key(ts: float) -> str:
     return time.strftime("%Y-%m-%d", time.gmtime(ts))
 
 
-def _kind_marker(meta: Optional[dict]) -> str:
+def _kind_marker(meta: dict | None) -> str:
     kind = (meta or {}).get("kind", "")
     if kind == "failure":
         return "[red]⚠[/] "
@@ -443,8 +523,8 @@ def _kind_marker(meta: Optional[dict]) -> str:
 @app.command()
 def timeline(
     limit: int = typer.Option(60, "-n", "--limit", help="Max events to show"),
-    event_type: Optional[str] = typer.Option(None, "--type", help="Filter by event type"),
-    days: Optional[float] = typer.Option(None, "--days", help="Only events from the last N days"),
+    event_type: str | None = typer.Option(None, "--type", help="Filter by event type"),
+    days: float | None = typer.Option(None, "--days", help="Only events from the last N days"),
     newest_first: bool = typer.Option(False, "--newest-first",
                                       help="Reverse order (default: oldest -> newest)"),
 ):
@@ -561,7 +641,7 @@ def insights():
 @app.command()
 def digest(
     period: str = typer.Argument("today", help="today | week | month"),
-    days: Optional[float] = typer.Option(None, "--days", help="Override: last N days"),
+    days: float | None = typer.Option(None, "--days", help="Override: last N days"),
 ):
     """'What did I tell you recently?' - a quick recap of new memories.
 
@@ -614,8 +694,8 @@ def digest(
 @app.command()
 def export(
     fmt: str = typer.Option("markdown", "--format", "-f", help="markdown | json"),
-    out: Optional[str] = typer.Option(None, "--out", "-o", help="Write to file (default: stdout)"),
-    event_type: Optional[str] = typer.Option(None, "--type", help="Only this event type"),
+    out: str | None = typer.Option(None, "--out", "-o", help="Write to file (default: stdout)"),
+    event_type: str | None = typer.Option(None, "--type", help="Only this event type"),
     include_archived: bool = typer.Option(False, "--include-archived",
                                           help="Also dump archived memories"),
 ):
@@ -809,7 +889,7 @@ def prune_expired(
 @app.command()
 def tag(
     ulid: str = typer.Argument(..., help="Event ULID"),
-    tags: List[str] = typer.Argument(..., help="One or more tags to add"),
+    tags: list[str] = typer.Argument(..., help="One or more tags to add"),
 ):
     """Tag a memory for local organization (collections).
 
@@ -837,7 +917,7 @@ def tag(
 @app.command()
 def untag(
     ulid: str = typer.Argument(...),
-    tags: List[str] = typer.Argument(...),
+    tags: list[str] = typer.Argument(...),
 ):
     """Remove tag(s) from a memory."""
     eng = Engine()
@@ -993,7 +1073,7 @@ def workspaces():
 def goals(
     action: str = typer.Argument(
         "list", help="list (default) | done"),
-    ulid: Optional[str] = typer.Argument(
+    ulid: str | None = typer.Argument(
         None, help="Goal ULID (required for `done`)."),
     all_: bool = typer.Option(
         False, "--all", help="Include done/cancelled goals, not just open ones."),

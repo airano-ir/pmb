@@ -1,0 +1,26 @@
+{
+ "Bob is 30 years old and is married. He moved from Texas.": [],
+ "Today I met Alice. She lives in Berlin and is the tech lead at Stripe.": [
+  [
+   "She lives in Berlin",
+   "location"
+  ]
+ ],
+ "We use Postgres for storage. We chose Redis over Memcached.": [],
+ "random text with no extractable facts here at all": [],
+ "Его зовут Иван. Иван переехал в Берлин. Мой друг Олег.": [],
+ "Його звуть Тарас. Тарас переїхав до Львова. Мій день народження 5 травня.": [
+  [
+   "День народження: 5 травня",
+   "uk_birthday"
+  ],
+  [
+   "Тарас переїхав до Львова",
+   "uk_moved"
+  ]
+ ],
+ "Мене звати Олег. Я живу в Києві. Я працюю дизайнером.": [],
+ "Меня зовут Алексей. Я живу в Киеве и работаю инженером.": [],
+ "Мой день рождения 14 марта. Я люблю спокойные игры.": [],
+ "У меня кот по имени Барсик.": []
+}

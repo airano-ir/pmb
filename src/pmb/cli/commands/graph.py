@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -34,7 +32,7 @@ def graph_stats():
 
 @graph_app.command("top")
 def graph_top(
-    kind: Optional[str] = typer.Option(None, "--kind", help="file | tech | concept"),
+    kind: str | None = typer.Option(None, "--kind", help="file | tech | concept"),
     limit: int = typer.Option(20, "-n", "--limit"),
 ):
     """Most-mentioned entities."""
@@ -53,7 +51,7 @@ def graph_top(
 @graph_app.command("neighbors")
 def graph_neighbors(
     name: str = typer.Argument(..., help="Entity name to look up"),
-    kind: Optional[str] = typer.Option(None, "--kind"),
+    kind: str | None = typer.Option(None, "--kind"),
     top_k: int = typer.Option(10, "-k"),
 ):
     """Strongest neighbors of an entity by co-occurrence weight."""

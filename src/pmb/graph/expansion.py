@@ -23,11 +23,10 @@ Caching:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pmb.health.consolidate import LLMClient
@@ -59,7 +58,7 @@ def _load_cache(workspace_storage_dir: Path) -> dict[str, list[str]]:
         return {}
     out: dict[str, list[str]] = {}
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -87,7 +86,7 @@ def _append_cache(
 def expand_query(
     query: str,
     workspace_storage_dir: Path,
-    llm: Optional["LLMClient"] = None,
+    llm: LLMClient | None = None,
 ) -> list[str]:
     """
     Return a list of concrete-entity hints for `query`. Empty list means

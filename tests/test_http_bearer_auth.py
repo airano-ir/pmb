@@ -25,7 +25,6 @@ from starlette.testclient import TestClient
 
 from pmb.mcp.server import _build_bearer_middleware
 
-
 TOKEN = "s3cr3t-bearer-token-xyz"
 
 

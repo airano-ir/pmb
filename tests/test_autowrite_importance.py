@@ -19,11 +19,10 @@ from __future__ import annotations
 import pytest
 
 from pmb.hooks.autowrite import (
-    classify_actions,
-    score_turn_importance,
-    synthesize_template,
     autowrite_gate,
     run_autowrite,
+    score_turn_importance,
+    synthesize_template,
 )
 
 _BAR = 0.45  # the default autowrite.min_importance

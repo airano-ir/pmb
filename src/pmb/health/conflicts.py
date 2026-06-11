@@ -1,23 +1,23 @@
 """
-Conflict Detector — выявляет противоречия между фактами разного времени.
+Conflict Detector — detects contradictions between facts from different times.
 
-Идея: один key (например `database`) может иметь разные value в разное время.
-Это либо эволюция (Postgres 16 → Postgres 17, нормально), либо ошибка
-(2 живых факта противоречат).
+Idea: one key (for example `database`) can have different values at different
+times. This is either evolution (Postgres 16 → Postgres 17, which is fine) or
+an error (2 live facts contradict each other).
 
-Стратегии детекции (без LLM-вызовов):
-1. **Same-key heuristics**: ищем events типа "fact" где content имеет
-   паттерн "X = Y" или "X is Y" с одинаковым X но разным Y.
-2. **Semantic clusters**: для qa events — высокая similarity между
-   вопросами (близкие по embedding) но низкая между ответами.
+Detection strategies (without LLM calls):
+1. **Same-key heuristics**: we look for "fact" events whose content has the
+   pattern "X = Y" or "X is Y" with the same X but a different Y.
+2. **Semantic clusters**: for qa events — high similarity between the
+   questions (close by embedding) but low similarity between the answers.
 
-В Phase 3 — простая реализация через regex для facts. Semantic clusters
-— TODO для следующей итерации.
+In Phase 3 — a simple implementation via regex for facts. Semantic clusters
+are a TODO for the next iteration.
 
-Output: список FactConflict с suggested_resolution:
-- "supersede": newer заменяет older — automatic resolution
-- "concurrent": оба могут быть истинны (разные branches)
-- "needs_review": требует ручного разбора
+Output: a list of FactConflict with suggested_resolution:
+- "supersede": newer replaces older — automatic resolution
+- "concurrent": both may be true (different branches)
+- "needs_review": requires manual review
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass, field, asdict
-from typing import TYPE_CHECKING, Optional
+from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pmb.core.engine import Engine
@@ -65,7 +65,7 @@ _MAX_VALUE_LEN = 80
 
 @dataclass
 class FactConflict:
-    """Конфликт между двумя фактами."""
+    """A conflict between two facts."""
 
     key: str
     older_ulid: str
@@ -75,13 +75,13 @@ class FactConflict:
     newer_value: str
     newer_timestamp: float
     suggested_resolution: str  # "supersede" | "concurrent" | "needs_review"
-    confidence: float  # 0..1, насколько уверены что это конфликт
+    confidence: float  # 0..1, how confident we are that this is a conflict
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
-def extract_key_value(content: str) -> Optional[tuple[str, str]]:
+def extract_key_value(content: str) -> tuple[str, str] | None:
     """
     Conservatively extract a (key, value) pair.
 
@@ -118,12 +118,12 @@ def extract_key_value(content: str) -> Optional[tuple[str, str]]:
 
 
 def _values_seem_different(v1: str, v2: str) -> bool:
-    """Грубая проверка: значения не идентичны и не подмножество одно другого."""
+    """Rough check: values are not identical and neither is a subset of the other."""
     v1n = v1.lower().strip().rstrip(".,;:!?")
     v2n = v2.lower().strip().rstrip(".,;:!?")
     if v1n == v2n:
         return False
-    # Если одно — substring другого, это эволюция (e.g. "Postgres" vs "Postgres 17")
+    # If one is a substring of the other, it's evolution (e.g. "Postgres" vs "Postgres 17")
     if v1n in v2n or v2n in v1n:
         return False
     return True
@@ -132,30 +132,30 @@ def _values_seem_different(v1: str, v2: str) -> bool:
 class ConflictDetector:
     """Detects conflicts among facts in workspace."""
 
-    def __init__(self, engine: "Engine"):
+    def __init__(self, engine: Engine):
         self.engine = engine
 
     def detect(self, max_age_days: float = 365.0) -> list[FactConflict]:
         """
-        Найти конфликты в active fact events.
+        Find conflicts among active fact events.
 
-        Возвращает список FactConflict, отсортированный по newer_timestamp DESC.
+        Returns a list of FactConflict, sorted by newer_timestamp DESC.
         """
         workspace_id = self.engine.workspace.id
         events = self.engine.events.list_active(
             workspace_id, limit=10000, event_type="fact",
         )
-        # Также смотрим qa events на key=value паттерны
+        # We also inspect qa events for key=value patterns
         qa_events = self.engine.events.list_active(
             workspace_id, limit=10000, event_type="qa",
         )
-        all_candidates: list["Event"] = events + qa_events
+        all_candidates: list[Event] = events + qa_events
 
         cutoff = time.time() - max_age_days * 86400.0
         all_candidates = [e for e in all_candidates if e.timestamp >= cutoff]
 
         # Group by key
-        key_to_events: dict[str, list[tuple["Event", str]]] = {}
+        key_to_events: dict[str, list[tuple[Event, str]]] = {}
         for ev in all_candidates:
             kv = extract_key_value(ev.content)
             if not kv:
@@ -167,7 +167,7 @@ class ConflictDetector:
         for key, items in key_to_events.items():
             if len(items) < 2:
                 continue
-            # Сортируем по timestamp asc
+            # Sort by timestamp asc
             items.sort(key=lambda x: x[0].timestamp)
             # Compare adjacent pairs (older vs newer)
             for i in range(len(items) - 1):
@@ -176,12 +176,12 @@ class ConflictDetector:
                 if not _values_seem_different(older_val, newer_val):
                     continue
 
-                # Same session? Тогда concurrent vs supersede
+                # Same session? Then concurrent vs supersede
                 same_session = (
                     older_ev.source_session_id == newer_ev.source_session_id
                     and older_ev.source_session_id is not None
                 )
-                # > 7 days apart? — скорее supersede
+                # > 7 days apart? — more likely supersede
                 age_diff_days = (newer_ev.timestamp - older_ev.timestamp) / 86400.0
 
                 if age_diff_days > 7:
@@ -240,13 +240,42 @@ class ConflictDetector:
                 except Exception:
                     pass
                 llm = resolve_llm_client(backend=backend)
-            except Exception as e:
+            except Exception:
                 # Fall back to non-merge mode rather than failing
                 llm = None
                 merge_via_llm = False
 
+        def _is_protected(ulid: str) -> bool:
+            """R12: a pinned (importance>=0.99) or lesson fact must NEVER be
+            auto-archived by conflict resolution — every other archiver in the
+            codebase protects those, this one didn't."""
+            try:
+                import json as _j
+                import sqlite3 as _sql
+                with _sql.connect(str(self.engine.workspace.db_path)) as _c:
+                    row = _c.execute(
+                        "SELECT importance, metadata_json FROM events WHERE ulid=?",
+                        (ulid,)).fetchone()
+                if not row:
+                    return False
+                if float(row[0] or 0.0) >= 0.99:
+                    return True
+                md = _j.loads(row[1] or "{}")
+                return md.get("kind") == "lesson" or md.get("source") == "lesson"
+            except Exception:
+                return False
+
         for c in conflicts:
             if c.suggested_resolution != "supersede" or c.confidence < 0.6:
+                continue
+            # R12: skip the conflict entirely if archiving would touch a
+            # protected fact (pinned / lesson). The older value is what gets
+            # archived in supersede; in merge mode BOTH originals are archived.
+            if _is_protected(c.older_ulid) or (
+                    merge_via_llm and _is_protected(c.newer_ulid)):
+                actions.append({"key": c.key, "older_ulid": c.older_ulid,
+                                "newer_ulid": c.newer_ulid,
+                                "mode": "skipped_protected"})
                 continue
 
             action = {
@@ -333,7 +362,6 @@ Newer: %(newer)s
 
 def _ask_llm_to_merge(c, llm) -> str:
     """Ask the LLM to produce a merged fact preserving both contexts."""
-    import json
     prompt = _MERGE_PROMPT % {
         "key": c.key,
         "older": c.older_value,

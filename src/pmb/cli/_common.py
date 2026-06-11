@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import sys
 import time
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -47,7 +46,7 @@ def loading(message: str):
     return console.status(f"[cyan]{message}[/]", spinner="dots")
 
 
-def _humanize_time(ts: Optional[float]) -> str:
+def _humanize_time(ts: float | None) -> str:
     if ts is None:
         return "-"
     return time.strftime("%Y-%m-%d %H:%M", time.gmtime(ts))
@@ -61,7 +60,7 @@ def _open_config():
     return Config(workspace_dir=ws.storage_dir, pmb_home=ws.pmb_home), ws
 
 
-def _agent_toggles_from_config() -> Optional[dict]:
+def _agent_toggles_from_config() -> dict | None:
     """Read the agent.* proactive-logging toggles from config (for
     `pmb connect --active` / `pmb setup`). Returns None on any error so the
     rules just fall back to all-categories-on."""
@@ -80,7 +79,7 @@ _DUR_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400,
               "w": 604800, "mo": 2592000, "y": 31536000}
 
 
-def _parse_duration(text: Optional[str]) -> Optional[float]:
+def _parse_duration(text: str | None) -> float | None:
     """'30d' / '12h' / '2w' / '3mo' / '1y' (or a bare integer = days) -> seconds.
     Returns None if unparseable."""
     import re

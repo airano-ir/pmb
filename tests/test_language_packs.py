@@ -1,10 +1,12 @@
-"""C2/C3: language packs.
+"""C2/C3 + L1: language packs.
 
-Built-in EN/RU/UK lexical data stays in code as the floor; a language pack
-(``$PMB_HOME/lang/<code>.yaml``) EXTENDS it. The contract: with no pack files,
-behaviour is byte-identical (the merge is a no-op); with a pack enabled, its
-stopwords / verb-synonyms / function-words / first-person markers / attribute
-aliases are merged in — never removing the floor.
+EN lexical data stays in code; the RU/UK floor now lives in the built-in
+ALWAYS-ACTIVE packs ``pmb/lang/packs/{ru,uk}.yaml`` (L1 — keeps the .py modules
+Cyrillic-free while EN+RU+UK matching is byte-identical; the parity is gated by
+tests/test_lang_pack_parity.py). Other built-in templates (de, es) stay OPT-IN:
+active only when copied into ``$PMB_HOME/lang/``. A pack EXTENDS the merged
+sets/groups — never removes — so enabling de adds German on top of the EN+RU+UK
+floor.
 """
 from __future__ import annotations
 
@@ -15,8 +17,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pmb import lang
 
@@ -36,14 +36,17 @@ def _write_pack(home: Path, code: str, body: str) -> None:
     lang.clear_cache()
 
 
-# ── parity: no packs → merge is a no-op ─────────────────────────────────────
+# ── built-in floor: ru + uk active by default, extend-only ──────────────────
 
-def test_no_packs_is_byte_identical(tmp_home):
-    assert lang.active_codes() == []
+def test_builtin_ru_uk_active_by_default(tmp_home):
+    # L1: ru + uk are built-in ALWAYS-ACTIVE floor packs (de/es stay opt-in).
+    assert lang.active_codes() == ["ru", "uk"]
+    # extend-only: a custom base is always a subset of the merge
     base_set = {"the", "a", "is"}
-    assert lang.merged_set("stopwords", base_set) == base_set
-    base_groups = {"live": {"live", "lives"}}
-    assert lang.merged_groups("verb_synonyms", base_groups) == base_groups
+    assert base_set <= lang.merged_set("stopwords", base_set)
+    # the RU/UK verb floor now comes FROM the built-in packs, not inline code
+    merged = lang.merged_groups("verb_synonyms", {"live": {"live"}})
+    assert {"live", "живу", "живе"} <= merged["live"]
     # frozenset in → frozenset out (container kind preserved)
     fs = frozenset({"x"})
     assert isinstance(lang.merged_set("stopwords", fs), frozenset)
@@ -64,14 +67,16 @@ def test_pack_extends_groups(tmp_home):
           work: [arbeite]
     """)
     out = lang.merged_groups("verb_synonyms", {"live": {"live"}})
-    assert out["live"] == {"live", "wohne", "wohnt"}
-    assert out["work"] == {"arbeite"}               # new canonical added
+    # de extends on top of the EN inline + the built-in ru/uk floor
+    assert {"live", "wohne", "wohnt"} <= out["live"]
+    assert {"arbeite"} <= out["work"]               # new canonical added
 
 
 def test_active_codes_lists_enabled(tmp_home):
     _write_pack(tmp_home, "de", "stopwords: [der]")
     _write_pack(tmp_home, "es", "stopwords: [el]")
-    assert lang.active_codes() == ["de", "es"]
+    # de/es (opt-in) alongside the always-active ru/uk built-ins
+    assert lang.active_codes() == ["de", "es", "ru", "uk"]
 
 
 def test_malformed_pack_is_ignored(tmp_home):

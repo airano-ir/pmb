@@ -1,11 +1,6 @@
 """Tests for the agent-wrapper scaffold. No network calls."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.agent_wrapper.budget import TokenBudget
 from pmb.agent_wrapper.policy import DropOldestNarrative
 
@@ -189,7 +184,8 @@ def test_ollama_transport_calls_api_chat(monkeypatch):
     """AgentLoop with transport=ollama hits /api/chat on the configured URL."""
     import json
     import urllib.request as urlreq
-    from pmb.agent_wrapper.loop import AgentLoop, AgentConfig
+
+    from pmb.agent_wrapper.loop import AgentConfig, AgentLoop
 
     captured = {}
 
@@ -239,9 +235,10 @@ def test_ollama_transport_calls_api_chat(monkeypatch):
 
 
 def test_ollama_transport_unreachable_raises(monkeypatch):
-    import urllib.request as urlreq
     import urllib.error
-    from pmb.agent_wrapper.loop import AgentLoop, AgentConfig
+    import urllib.request as urlreq
+
+    from pmb.agent_wrapper.loop import AgentConfig, AgentLoop
 
     def _fail(req, timeout=None):
         raise urllib.error.URLError("connection refused")

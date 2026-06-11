@@ -36,11 +36,10 @@ final sort.
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from typing import Any
 
 from pmb import lang as _lang
 from pmb.reference_data import extend_set as _extend_set
-
 
 _STOP = {
     "a", "an", "the", "is", "are", "was", "were", "of", "in", "on", "to",
@@ -54,6 +53,11 @@ _STOP = {
 # Active language packs ($PMB_HOME/lang/*.yaml) EXTEND the stopword set — no-op
 # unless the user enabled one (`pmb lang enable de`).
 _STOP = _lang.merged_set("stopwords", _STOP)
+
+# Cyrillic letter range for the relation/word tokenizers — sourced from the ru
+# pack (cyrillic_script_range) so this module stays Cyrillic-free (L1). Both
+# call sites tokenize already-lowercased text, so the full block is exact.
+_CYR = "".join(str(x) for x in _lang.merged_list("cyrillic_script_range"))
 
 
 # Domain-specific vocabulary bridges. Map query terms to content synonyms.
@@ -74,51 +78,31 @@ VOCAB_BRIDGES: dict[str, list[str]] = {
 
 
 # Verb synonym groups for verb-match boost.
-# Cross-lingual stems included - "live" expands to RU "живу/живёт/живут"
-# AND UK "живу/живе/живуть" so that an English query asking about a
-# Russian or Ukrainian fact finds it. Closes the EN→RU=0% gap.
+# Cross-lingual stems included - "live" expands to the RU/UK verb stems (from
+# the lang packs) so that an English query asking about a Russian or Ukrainian
+# fact finds it. Closes the EN->RU=0% gap.
 VERB_SYNS: dict[str, set[str]] = {
-    "own":     {"own", "owns", "owned", "have", "has", "control", "manage",
-                "владеть", "владею", "владеет", "володіти"},
+    "own":     {"own", "owns", "owned", "have", "has", "control", "manage"},
     "pick":    {"pick", "picked", "choose", "chose", "chosen", "select",
-                "selected", "выбрал", "выбрала", "выбрали", "обрати",
-                "обрав", "обрала"},
-    "lead":    {"lead", "leading", "leads", "led", "head", "heads", "manage",
-                "веду", "ведёт", "вёл", "веде", "очолює"},
-    "live":    {"live", "lives", "lived", "reside", "based",
-                # Russian conjugations
-                "живу", "живёт", "живет", "живёшь", "живут", "живём",
-                "живете", "жил", "жила", "жили", "проживает", "проживаю",
-                # Ukrainian
-                "живу", "живе", "живеш", "живуть", "живемо", "живете",
-                "жив", "жила", "жили", "мешкає", "мешкаю",
-                "переехал", "переехала", "переехали",
-                "переїхав", "переїхала", "переїхали"},
+                "selected"},
+    "lead":    {"lead", "leading", "leads", "led", "head", "heads", "manage"},
+    "live":    {"live", "lives", "lived", "reside", "based"},
     "think":   {"think", "thinks", "thought", "argue", "argued", "believe",
-                "claim", "push", "pushed", "feel", "felt",
-                "думаю", "думает", "думал", "вважаю", "вважає"},
+                "claim", "push", "pushed", "feel", "felt"},
     "fix":     {"fix", "fixed", "patch", "patched", "hotfix", "resolved",
-                "solved", "исправил", "починил", "виправив"},
+                "solved"},
     "decide":  {"decide", "decided", "agreed", "accepted", "concluded",
-                "ratified", "решил", "решили", "вирішив", "вирішили"},
-    "deploy":  {"deploy", "deployed", "host", "hosted", "running", "runs",
-                "разворачиваем", "развернули", "развёрнут",
-                "розгортаємо", "розгорнули"},
-    "migrate": {"migrate", "migrated", "switch", "switched", "move", "moved",
-                "мигрировал", "мигрировали", "переключили",
-                "мігрував", "мігрували", "перейшли"},
-    "use":     {"use", "used", "using", "используем", "используется",
-                "використовуємо", "використовується"},
-    # New: work - bridges "Where does X work" to RU "работает" / UK "працює"
-    "work":    {"work", "works", "worked", "working", "job", "employed",
-                "работаю", "работает", "работаешь", "работают", "работал",
-                "працюю", "працює", "працюєш", "працюють", "працював"},
-    # New: name - "what's my name" → finds "Меня зовут"
-    "name":    {"name", "called", "зовут", "зовусь", "называют",
-                "звати", "звуть", "ім'я"},
+                "ratified"},
+    "deploy":  {"deploy", "deployed", "host", "hosted", "running", "runs"},
+    "migrate": {"migrate", "migrated", "switch", "switched", "move", "moved"},
+    "use":     {"use", "used", "using"},
+    "work":    {"work", "works", "worked", "working", "job", "employed"},
+    "name":    {"name", "called"},
 }
-# Active language packs EXTEND the verb-synonym groups (e.g. German wohne/lebt
-# under `live`). No-op unless a pack is enabled.
+# The RU/UK verb stems (live/move/work/name in Russian & Ukrainian) live in the
+# built-in ru.yaml / uk.yaml packs (active by default), which merge in here;
+# other active packs EXTEND the groups too (e.g. German wohne/lebt under `live`).
+# See pmb/lang. This is what keeps this module Cyrillic-free (L1).
 VERB_SYNS = _lang.merged_groups("verb_synonyms", VERB_SYNS)
 
 
@@ -141,21 +125,8 @@ _PN_TOKEN_RE = re.compile(r"[^\W\d_](?:[^\W\d_]|')*", re.UNICODE)
 # Function words that often appear capitalised at sentence start; they are
 # NOT proper nouns even if capitalised.
 _NOT_PROPER = {
-    # Russian
-    "когда", "почему", "где", "кто", "что", "как", "куда", "откуда",
-    "сегодня", "вчера", "завтра", "сейчас", "вот", "это", "тот",
-    "мне", "меня", "тебя", "его", "её", "их", "нас", "вас",
-    "был", "была", "было", "были", "буду", "будет", "будут",
-    "люблю", "нравится", "хочу", "могу", "должен",
-    "скажи", "расскажи", "напомни", "слушай", "знаешь",
-    # Ukrainian
-    "коли", "чому", "де", "хто", "що", "як", "куди", "звідки",
-    "сьогодні", "вчора", "завтра", "зараз", "ось", "це", "той",
-    "мене", "тебе", "його", "її", "їх", "нас", "вас",
-    "був", "була", "було", "були", "буду", "буде", "будуть",
-    "люблю", "подобається", "хочу", "можу", "мушу",
-    "скажи", "розкажи", "слухай",
-    # English
+    # English. The RU/UK function words (when/where/now in Russian & Ukrainian)
+    # live in the built-in ru.yaml / uk.yaml packs and merge in below (L1).
     "the", "where", "when", "who", "what", "how", "why", "which",
     "today", "yesterday", "tomorrow", "now", "this", "that",
     "ill", "iam", "youre", "weve", "they", "their",
@@ -205,7 +176,7 @@ def _tokens(s: str) -> set[str]:
     }
 
 
-def _query_main_verb(q: str) -> Optional[str]:
+def _query_main_verb(q: str) -> str | None:
     q = q.lower().rstrip("?")
     for pat in [
         r"\bdoes\s+\w+\s+(\w+)",
@@ -254,7 +225,7 @@ class _QueryFeatures:
     all_proper: list[str] = field(default_factory=list)  # entities + dynamic
     proper_lower: list[str] = field(default_factory=list)
     proper_patterns: list = field(default_factory=list)  # compiled regexes
-    query_verb: Optional[str] = None
+    query_verb: str | None = None
     verb_stems: set[str] = field(default_factory=set)
     topic_tokens: set[str] = field(default_factory=set)
     topic_expanded: set[str] = field(default_factory=set)
@@ -273,20 +244,20 @@ class _QueryFeatures:
     q_tokens_set: set[str] = field(default_factory=set)
     # Self-reference rescue: when query proper noun is a known user name,
     # candidates with first-person markers are accepted as matches even
-    # without the literal name. Fixes EN→RU "Where does Алексей live?" →
-    # "Я живу в Киеве".
+    # without the literal name. Fixes the cross-lingual case where an English
+    # query names the user and the answer is a first-person fact in RU/UK.
     user_names: set[str] = field(default_factory=set)
     query_has_user_name: bool = False
-    # Self-intent: query like "Кто я", "Where do I live", "what's my name"
+    # Self-intent: query like "who am I", "Where do I live", "what's my name"
     # - first-person question. Boost first-person candidates.
     has_self_intent: bool = False
 
 
 def prepare_query_features(
     query: str,
-    named_entities: Optional[set[str]] = None,
-    vocab_bridges: Optional[dict[str, list[str]]] = None,
-    user_names: Optional[set[str]] = None,
+    named_entities: set[str] | None = None,
+    vocab_bridges: dict[str, list[str]] | None = None,
+    user_names: set[str] | None = None,
 ) -> _QueryFeatures:
     """Precompute all query-side features for PAMVR. Call ONCE per recall;
     pass the result to apply_pamvr for each candidate.
@@ -376,25 +347,11 @@ def prepare_query_features(
             f.policy_topic_terms = {topic} | set(f.bridges.get(topic, []))
 
     # Self-intent: first-person query about user themselves
-    f.has_self_intent = bool(re.search(
-        r"\b(?:кто я|where (?:do|am) i|what(?:'?s)? my name|"
-        r"what do i (?:do|like|prefer)|где я (?:живу|работаю|был|была)|"
-        r"коли я|де я (?:живу|працюю|був|була)|"
-        r"мой\s+\w+|моя\s+\w+|мои\s+\w+|"
-        r"мій\s+\w+|моя\s+\w+|мої\s+\w+)\b",
-        f.ql,
-    ))
+    f.has_self_intent = bool(_SELF_INTENT_RE.search(f.ql))
 
-    # Relation marker presence
-    RELATION_MARKERS = {
-        "друг", "друга", "другу", "подруга", "подруги",
-        "жена", "жены", "муж", "мужа", "сестра", "сестры",
-        "брат", "брата", "сын", "сына", "дочь", "дочери",
-        "friend", "friends", "wife", "husband", "sister",
-        "brother", "son", "daughter",
-    }
-    f.q_tokens_set = set(re.findall(r"[a-zа-яёіїєґ']+", f.ql))
-    f.q_has_relation = bool(f.q_tokens_set & RELATION_MARKERS)
+    # Relation marker presence (markers shared with apply-time _RELATION_MARKERS)
+    f.q_tokens_set = set(re.findall(r"[a-z" + _CYR + r"']+", f.ql))
+    f.q_has_relation = bool(f.q_tokens_set & _RELATION_MARKERS)
 
     # Fix/bug/decision query kinds
     for pat, kinds, prefixes in [
@@ -414,13 +371,27 @@ def prepare_query_features(
 # (e.g. German ich/mein) via the `first_person` category. Rebuilt into one
 # alternation, longest-first so multi-char forms ("i'm") win over "i".
 _FIRST_PERSON = {
-    "я", "меня", "мне", "мной", "i", "i'm", "im", "i've", "my", "myself",
-    "мене", "мені", "мною",
+    "i", "i'm", "im", "i've", "my", "myself",
 }
+# `first_person` is SHARED with attributes.py (de/es packs add ich/mein); the
+# RU/UK first-person pronouns relocate to a DEDICATED pamvr_first_person
+# category so they can't bleed into that shared set (L1).
 _FIRST_PERSON = _lang.merged_set("first_person", _FIRST_PERSON)
+_FIRST_PERSON = _lang.merged_set("pamvr_first_person", _FIRST_PERSON)
 _FIRST_PERSON_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(w) for w in
                         sorted(_FIRST_PERSON, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+# Self-intent question: "who am I / where do I live / what's my name" + the
+# RU/UK equivalents (self_intent_markers in the packs). EN inline, Cyrillic in
+# packs (L1). Used by _pamvr_prepare to flag first-person questions.
+_SELF_INTENT_RE = re.compile(
+    r"\b(?:" + "|".join([
+        r"where (?:do|am) i", r"what(?:'?s)? my name",
+        r"what do i (?:do|like|prefer)",
+    ] + [str(x) for x in _lang.merged_list("self_intent_markers")]) + r")\b",
     re.IGNORECASE,
 )
 
@@ -431,24 +402,22 @@ def _has_first_person(text: str) -> bool:
     return bool(_FIRST_PERSON_RE.search(text))
 
 
-# Relation markers - used at apply time too
-_RELATION_MARKERS = {
-    "друг", "друга", "другу", "подруга", "подруги",
-    "жена", "жены", "муж", "мужа", "сестра", "сестры",
-    "брат", "брата", "сын", "сына", "дочь", "дочери",
+# Relation markers - used at apply time too. EN floor inline; the RU relation
+# nouns (friend/wife/sister in Russian) live in the packs as relation_markers.
+_RELATION_MARKERS = _lang.merged_set("relation_markers", {
     "friend", "friends", "wife", "husband", "sister",
     "brother", "son", "daughter",
-}
+})
 
 
 def apply_pamvr(
     query: str,
     event: Any,            # pmb.core.events.Event
     base_score: float,
-    named_entities: Optional[set[str]] = None,
-    vocab_bridges: Optional[dict[str, list[str]]] = None,
-    query_features: Optional[_QueryFeatures] = None,
-    trace: Optional[list] = None,
+    named_entities: set[str] | None = None,
+    vocab_bridges: dict[str, list[str]] | None = None,
+    query_features: _QueryFeatures | None = None,
+    trace: list | None = None,
 ) -> float:
     """Apply all PAMVR boost rules to a base score. Returns the new score.
 
@@ -505,8 +474,9 @@ def apply_pamvr(
     # Three-tier match logic:
     #   (a) literal entity present in content → strong boost
     #   (b) self-reference rescue - query proper noun IS the user's name
-    #       AND candidate has first-person marker (я/I/мене) → match
-    #       Closes "Where does Алексей live?" → "Я живу в Киеве" gap.
+    #       AND candidate has a first-person marker (EN/RU/UK "I"/"me") → match
+    #       Closes the cross-lingual "Where does <user> live?" -> first-person
+    #       "I live in <city>" answer gap.
     #   (c) verb+topic rescue - no entity but verb match + topic overlap
     #       → soft demote (not a hard miss)
     #   (d) otherwise → hard penalty
@@ -517,8 +487,8 @@ def apply_pamvr(
         if matched_in_content:
             score *= 1.20
         elif f.query_has_user_name and _has_first_person(ct):
-            # (b) self-reference rescue: e.g. user is Алексей, query asks
-            # about Алексей, candidate is "Я живу в Киеве" - match.
+            # (b) self-reference rescue: query names the user, the candidate is
+            # a first-person fact (e.g. "I live in <city>") - treat as a match.
             score *= 1.10
         elif not (verb_hit and f.topic_tokens
                   and any(t in ct for t in f.topic_expanded)):
@@ -633,7 +603,7 @@ def apply_pamvr(
     # ---- 13b. Relation-marker disambiguation ----
     # Cheap per-candidate: split ct into tokens once, check intersection.
     if f.all_proper and f.q_has_relation:
-        ct_tokens = set(re.findall(r"[a-zа-яёіїєґ']+", ct))
+        ct_tokens = set(re.findall(r"[a-z" + _CYR + r"']+", ct))
         c_has_relation = bool(ct_tokens & _RELATION_MARKERS)
         if c_has_relation:
             score *= 1.25
@@ -654,8 +624,8 @@ def apply_pamvr(
     _t("entity-count (collective who-question)")
 
     # ---- 15. Self-intent: first-person question → boost first-person
-    # facts. Closes "Кто я", "где я живу" → "Я живу в Киеве" gap that
-    # PAMVR otherwise misses because "я" is a stop-word.
+    # facts. Closes the "who am I / where do I live" → first-person "I live in
+    # <city>" gap that PAMVR otherwise misses because "I" is a stop-word.
     if f.has_self_intent and _has_first_person(ct):
         score *= 1.30
 
@@ -668,8 +638,8 @@ def explain_pamvr(
     query: str,
     event: Any,
     base_score: float = 1.0,
-    named_entities: Optional[set[str]] = None,
-    vocab_bridges: Optional[dict[str, list[str]]] = None,
+    named_entities: set[str] | None = None,
+    vocab_bridges: dict[str, list[str]] | None = None,
 ) -> dict:
     """Run PAMVR with tracing on. Returns which rules fired, each multiplier,
     the net multiplier, and the final score. Powers `pmb why`.

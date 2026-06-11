@@ -54,12 +54,12 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 if TYPE_CHECKING:
-    from pmb.core.engine import Engine
+    pass
 
 
 log = logging.getLogger(__name__)
@@ -94,13 +94,13 @@ JSON list:"""
 
 @dataclass
 class CacheEntry:
-    id: Optional[int]
+    id: int | None
     workspace_id: str
     query_text: str
     query_embedding: np.ndarray   # float32, shape (D,)
     top_ulids: list[str]
     created_at: float
-    last_hit_at: Optional[float] = None
+    last_hit_at: float | None = None
     n_hits: int = 0
 
     def cosine(self, query_emb: np.ndarray) -> float:
@@ -269,12 +269,12 @@ def best_match(
     entries: list[CacheEntry],
     query_emb: np.ndarray,
     threshold: float = 0.85,
-) -> Optional[tuple[CacheEntry, float]]:
+) -> tuple[CacheEntry, float] | None:
     """Return (entry, similarity) of the best-matching cached query, or None
     if no entry exceeds the threshold."""
     if not entries:
         return None
-    best: Optional[CacheEntry] = None
+    best: CacheEntry | None = None
     best_sim = -1.0
     for e in entries:
         sim = e.cosine(query_emb)

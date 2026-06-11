@@ -15,7 +15,6 @@ from pmb.hooks.followcheck import (
     run_followcheck,
 )
 
-
 # ─── token extraction ───────────────────────────────────────────────────
 
 

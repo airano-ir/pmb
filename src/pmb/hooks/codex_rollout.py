@@ -26,8 +26,6 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-
 
 # Codex tool name → PMB (tool, is_record). Anything not here is non-significant.
 _SHELL_NAMES = {"shell_command", "shell", "local_shell", "exec_command", "bash"}
@@ -39,7 +37,7 @@ def _codex_sessions_dir() -> Path:
     return Path.home() / ".codex" / "sessions"
 
 
-def find_latest_rollout(sessions_dir: Optional[Path] = None) -> Optional[Path]:
+def find_latest_rollout(sessions_dir: Path | None = None) -> Path | None:
     """The most recently modified rollout-*.jsonl, or None."""
     base = sessions_dir or _codex_sessions_dir()
     if not base.exists():
@@ -57,7 +55,7 @@ def find_latest_rollout(sessions_dir: Optional[Path] = None) -> Optional[Path]:
     return newest
 
 
-def _extract_call(payload: dict) -> Optional[dict]:
+def _extract_call(payload: dict) -> dict | None:
     """Map one function_call payload to a PMB action dict, or None if it's a
     trivial/UI tool (render_chart, update_plan, web_search, …)."""
     name = (payload.get("name") or "").strip()
@@ -101,7 +99,7 @@ class RolloutScan:
     actions: list[dict] = field(default_factory=list)   # {tool,target,command,status,call_id}
     agent_recorded: bool = False                        # saw a record_* call
     new_offset: int = 0                                 # lines consumed
-    rollout_path: Optional[str] = None
+    rollout_path: str | None = None
 
 
 def parse_rollout_actions(

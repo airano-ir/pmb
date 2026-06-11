@@ -1,50 +1,16 @@
 """Tests for bi-temporal index (Improvement C)."""
 from __future__ import annotations
 
-import os
-import sys
-import tempfile
-import time
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.core.engine import Engine
 from pmb.reasoning.temporal import (
-    extract_event_time, is_temporal_query, temporal_proximity_boost,
+    extract_event_time,
+    is_temporal_query,
+    temporal_proximity_boost,
 )
-
-
-@pytest.fixture
-def tmp_pmb_home():
-    import gc, shutil, time as _t
-    tmp = tempfile.mkdtemp()
-    home = Path(tmp) / "pmb_home"
-    os.environ["PMB_HOME"] = str(home)
-    try:
-        yield home
-    finally:
-        os.environ.pop("PMB_HOME", None)
-        gc.collect()
-        for _ in range(3):
-            try:
-                shutil.rmtree(tmp, ignore_errors=False)
-                break
-            except (OSError, PermissionError):
-                _t.sleep(0.2)
-                gc.collect()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
-
-
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
-
 
 # ----------------------------------------------------------------------
 # Extraction
@@ -53,33 +19,33 @@ def tmp_workspace_dir():
 def test_extract_iso_date():
     t = extract_event_time("Migrated MySQL to Postgres on 2025-12-05")
     assert t is not None
-    d = datetime.fromtimestamp(t, tz=timezone.utc)
+    d = datetime.fromtimestamp(t, tz=UTC)
     assert d.year == 2025 and d.month == 12 and d.day == 5
 
 
 def test_extract_month_day():
-    ref = datetime(2025, 6, 1, tzinfo=timezone.utc).timestamp()
+    ref = datetime(2025, 6, 1, tzinfo=UTC).timestamp()
     t = extract_event_time("We met on December 5", reference_now=ref)
     assert t is not None
-    d = datetime.fromtimestamp(t, tz=timezone.utc)
+    d = datetime.fromtimestamp(t, tz=UTC)
     # Dec 5 > Jun 1 + 6 months → infer year is last year (2024)
     assert d.month == 12 and d.day == 5
     assert d.year in (2024, 2025)  # tolerance
 
 
 def test_extract_relative_yesterday():
-    ref = datetime(2025, 6, 10, 12, 0, tzinfo=timezone.utc).timestamp()
+    ref = datetime(2025, 6, 10, 12, 0, tzinfo=UTC).timestamp()
     t = extract_event_time("Came home yesterday", reference_now=ref)
     assert t is not None
-    d = datetime.fromtimestamp(t, tz=timezone.utc)
+    d = datetime.fromtimestamp(t, tz=UTC)
     assert d.year == 2025 and d.month == 6 and d.day == 9
 
 
 def test_extract_n_days_ago():
-    ref = datetime(2025, 6, 20, tzinfo=timezone.utc).timestamp()
+    ref = datetime(2025, 6, 20, tzinfo=UTC).timestamp()
     t = extract_event_time("Visited 5 days ago", reference_now=ref)
     assert t is not None
-    d = datetime.fromtimestamp(t, tz=timezone.utc)
+    d = datetime.fromtimestamp(t, tz=UTC)
     assert d.day == 15  # 20 - 5
 
 
@@ -131,7 +97,7 @@ def test_event_time_stored_on_write(tmp_pmb_home, tmp_workspace_dir):
     u = eng.record_fact("Trip to Paris on 2025-08-12 was great")
     ev = eng.events.get_by_ulid(u)
     assert ev.metadata.get("event_time") is not None
-    parsed = datetime.fromtimestamp(ev.metadata["event_time"], tz=timezone.utc)
+    parsed = datetime.fromtimestamp(ev.metadata["event_time"], tz=UTC)
     assert parsed.year == 2025 and parsed.month == 8 and parsed.day == 12
 
 

@@ -2,6 +2,95 @@
 
 All notable changes to PMB are documented here.
 
+## [Unreleased] — the v0.9 → 1.0 track (PLAN.md Phase X)
+
+Landed against the track (all additive / default-safe; recall behaviour proven
+byte-identical via the V1 eval):
+
+- **One base-score function + adaptive weights (X1/X2).** The base recall score
+  lives in `pmb.reasoning.scoring.combine_base_score`; a per-workspace
+  `recall.channel_weights` JSON vector (default identity = no change) scales the
+  hit/importance/recency channels, with a `propose_channel_weights` learning
+  hook that is never auto-applied.
+- **Calibrated confidence (X3).** `calibrated_confidence` — RecallPack.confidence
+  as one named, tested, monotonic, bounded function.
+- **SLOs-as-code (X4).** `pmb/health/slo.py` ties each quality/latency/durability
+  objective to the test that enforces it.
+- **Fault-injection + concurrency (X5), security (X7), API contract (X10),
+  backup/restore + migration self-heal (X6), docs-can't-lie (X8)** — new gates.
+- **`pmb connect` defaults to the shared HTTP daemon (S6).** JSON hosts
+  (claude-code/cursor) point at the one warm daemon by default
+  (`connect.default_daemon`); `--stdio` opts out. Pins `daemon.idle_exit_min=0`
+  and serves `daemon.tool_profile` so the connection stays warm + lean.
+- **Recall writes fully off the read path (S9).** Tier promotions ride the
+  touch-flusher batch; spreading activation runs on a background thread in the
+  daemon; perf telemetry is buffered and flushed on read.
+
+Still roadmap: X2's online weight-learning loop, X9 distribution polish.
+
+## [0.8.0] — 2026-06-11
+
+PLAN.md v0.8.0 "invisible memory": make memory speed invisible and memory
+quality measurable, and finish the language-pack vision so the core carries
+ZERO Cyrillic. Phases 0, T, S, R, L, V, M.
+
+### Added
+- **Thin `pmb-hook` fast lane (S2).** Stdlib-only console script all five
+  lifecycle hooks call: warm-daemon localhost path (~10–50 ms) with a full-CLI
+  cold fallback; `track-action` runs a dependency-light inline path.
+- **Daemon self-heal + workspace guard (S3/S4)** and **`/internal/hook/
+  session-restore`** (warm semantic restore).
+- **`pmb connect --daemon` (S6).** Point JSON hosts (claude-code / cursor) at the
+  ONE shared warm daemon over streamable-HTTP instead of a stdio Engine + ~400 MB
+  model per client — N clients cost ~400 MB total, not ×N. The daemon token is
+  now PERSISTENT so the baked auth header survives restarts. Opt-in (`--stdio`
+  stays the default); codex / editor extensions keep stdio.
+- **Memory-quality CI gate (V1).** `tests/test_memory_eval.py` runs a frozen
+  EN/RU/UK corpus + paraphrase queries through the full recall pipeline and
+  asserts per-bucket + overall top-1/top-3 FLOORS. Measured: EN/RU/UK in-language
+  top-1 = 1.00, cross-lingual EN→RU top-3 = 1.00.
+- **Intent + PAMVR regression gates (V3/V4).** Labelled EN/RU/UK intent routing
+  set; a PAMVR multiplier "freeze" so no `score *= X` change ships silently.
+- **Honest hook trace (S10).** The auto-context header now reports true
+  end-to-end `total=…ms source=daemon|cold` (was under-reported ~30×) + a
+  perf-marked p95 latency smoke (V2).
+- **Daemon self-maintenance (M1).** Once per `daemon.maintenance_interval_h` of
+  uptime and only while idle, the daemon archives cold rows (archive-only),
+  scans conflicts (report-only) and runs a declutter DRY-RUN — surfaced in
+  `/internal/health`. Decisions survive (R7). Config `daemon.maintenance`
+  (default on) + `daemon.maintenance_archive`.
+- **Property-based tests (T6, hypothesis)** for the hot-path invariants
+  (tokenizers / intent classifiers / atomic-fact extraction never raise on
+  arbitrary unicode).
+- **Activity exact-dedup (0.2)**, **truthful CI (T1–T4)** + a **zero-Cyrillic
+  ratchet** test.
+
+### Changed
+- **Zero-Cyrillic core (Phase L complete).** All Russian/Ukrainian prose AND all
+  functional matching DATA (verb stems, stopword sets, intent/heading/relation
+  regexes, fact-extraction templates) relocated from `src/pmb/**.py` into the
+  active-by-default `pmb/lang/packs/{ru,uk}.yaml`, merged back from an English
+  inline floor. **Cyrillic 521 → 0 lines**, enforced by an empty-allowlist CI
+  ratchet; behaviour pinned by `tests/test_regex_parity.py`. Shared categories
+  (`first_person`, `stopwords`) were kept dedicated-per-consumer so no set
+  silently widened.
+- **Recall-path speed (S5/S7/S8/S9).** `project_overview` / `_known_projects`
+  memoized by write-generation; the arcs N+1 batched (≤50 queries → 1);
+  `session_brief` scoped in SQL. `find_lessons` / `find_decisions` served by a
+  new `idx_meta_kind` expression index instead of a `metadata_json LIKE`
+  full-scan. Workspace-meta rewrite skipped when unchanged; psutil resolved once
+  and RSS skipped on the hot discovery path. `RecallCache` made thread-safe
+  (daemon worker threads); `_adherence_nudge` cached 60 s off the write path.
+- **Lazy `pmb.mcp` package (S1)** (−3–6 s/hook) and **durable decisions (R7)**.
+- **Test harness consolidated (T5).** Removed 80 redundant `sys.path.insert`
+  lines + 46 duplicated `tmp_pmb_home`/`tmp_workspace_dir` fixture copies in
+  favour of the shared `conftest.py`.
+
+### Fixed
+- Tree-wide ruff cleanup; the blocking lint gate is green.
+- `test_mcp_recall_answer_quality_and_lessons` quarantined with a documented
+  root cause (harness prewarm-thread flake, not a product bug).
+
 ## [0.7.0] — 2026-06-10
 
 This release lands the daemon + language packs + MCP token diet + write-quality

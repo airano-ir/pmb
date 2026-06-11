@@ -167,7 +167,7 @@ class BatchMixin:
         threading.Thread(target=_process, daemon=True,
                          name="pmb-async-batch").start()
 
-    def _outbox_enqueue(self, items: list[dict]) -> "int | None":
+    def _outbox_enqueue(self, items: list[dict]) -> int | None:
         """Synchronously persist a batch to write_outbox (the durability point)
         and wake the drainer. Returns the row id, or None on failure."""
         import json as _json
@@ -502,6 +502,8 @@ class BatchMixin:
                             importance=float(item.get("importance", 0.7)),
                             metadata=item.get("metadata"),
                         )
+                        # capture BEFORE atomic extraction resets the flag
+                        _fact_deduped = getattr(self, "_last_write_deduped", False)
                         if pin_after:
                             try:
                                 self.pin(ulid)
@@ -524,14 +526,15 @@ class BatchMixin:
                                 )
                             except Exception:
                                 pass
-                        results.append(
-                            {
-                                "type": "fact",
-                                "ulid": ulid,
-                                "pinned": pin_after,
-                                "atomic_facts": atoms_created,
-                            }
-                        )
+                        _fact_res = {
+                            "type": "fact",
+                            "ulid": ulid,
+                            "pinned": pin_after,
+                            "atomic_facts": atoms_created,
+                        }
+                        if _fact_deduped:
+                            _fact_res["deduped"] = True
+                        results.append(_fact_res)
                         n_ok += 1
                     elif t in ("fact_tree", "tree"):
                         res = self.record_fact_tree(
@@ -551,9 +554,9 @@ class BatchMixin:
                         n_ok += 1
                     elif t in ("goal", "plan"):
                         # "plan" is an alias for a goal — the natural home for
-                        # "remember, next we'll do X" / "запомни, что будем
-                        # делать дальше". Tagged kind=plan so it's still a goal
-                        # (surfaced by prepare / open-goals) but distinguishable.
+                        # "remember, next we'll do X". Tagged kind=plan so it's
+                        # still a goal (surfaced by prepare / open-goals) but
+                        # distinguishable.
                         goal_meta = dict(item.get("metadata") or {})
                         if t == "plan":
                             goal_meta.setdefault("kind", "plan")
@@ -579,12 +582,16 @@ class BatchMixin:
                             kind=item.get("kind", "action"),
                             importance=float(item.get("importance", 0.4)),
                         )
+                        _act_deduped = getattr(self, "_last_write_deduped", False)
                         if pin_after:
                             try:
                                 self.pin(ulid)
                             except Exception:
                                 pass
-                        results.append({"type": "activity", "ulid": ulid, "pinned": pin_after})
+                        _act_res = {"type": "activity", "ulid": ulid, "pinned": pin_after}
+                        if _act_deduped:
+                            _act_res["deduped"] = True
+                        results.append(_act_res)
                         n_ok += 1
                     elif t == "milestone":
                         ulid = self.record_milestone(

@@ -15,7 +15,7 @@ in tests predictable.
 
 from __future__ import annotations
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 # ---------------------------------------------------------------------------
 # Quiet third-party noise BEFORE any heavy module gets a chance to import.
@@ -41,6 +41,7 @@ _warnings.filterwarnings(
 
 # Silence the underlying logger too - some versions emit via logging, not warnings.
 import logging as _logging
+
 for _name in ("huggingface_hub", "huggingface_hub.utils._http", "transformers"):
     _logging.getLogger(_name).setLevel(_logging.ERROR)
 del _logging, _name

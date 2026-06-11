@@ -24,19 +24,24 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from pmb.graph.entities import (
-    EntityExtractor, ExtractedEntities,
-    extract_file_paths, extract_techs, _normalize_path, _STOPWORDS,
-    _WINPATH_RE, _POSIXPATH_RE,
+    _POSIXPATH_RE,
+    _STOPWORDS,
+    _WINPATH_RE,
+    EntityExtractor,
+    ExtractedEntities,
+    _normalize_path,
+    extract_file_paths,
+    extract_techs,
 )
 
 log = logging.getLogger(__name__)
 
 _NLP = None
 _NLP_LOCK = threading.Lock()
-_NLP_MODEL_NAME: Optional[str] = None
+_NLP_MODEL_NAME: str | None = None
 
 
 def _load_nlp():
@@ -111,8 +116,8 @@ class SpacyExtractor(EntityExtractor):
         techs = extract_techs(text)
 
         # Strip absolute paths before spaCy sees them — same rationale as the
-        # regex backend: AppData / Рабочий стол / home/user shouldn't end up
-        # as PROPN entities.
+        # regex backend: localized folder names (AppData / Desktop /
+        # home/user) shouldn't end up as PROPN entities.
         scrubbed = _WINPATH_RE.sub(" ", text)
         scrubbed = _POSIXPATH_RE.sub(" ", scrubbed)
         # Cap input to spaCy's default 1M-char limit even though we'll never

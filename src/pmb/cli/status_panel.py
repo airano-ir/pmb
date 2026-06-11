@@ -7,7 +7,6 @@ defensive — a missing or unreadable piece renders as "-" rather than raising.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 # Human-readable explanation of how the active workspace was resolved.
 _SOURCE_HELP = {
@@ -21,7 +20,7 @@ _SOURCE_HELP = {
 }
 
 
-def _human_size(n: Optional[int]) -> str:
+def _human_size(n: int | None) -> str:
     if n is None:
         return "-"
     f = float(n)
@@ -32,7 +31,7 @@ def _human_size(n: Optional[int]) -> str:
     return "-"
 
 
-def _path_size(p: Path) -> Optional[int]:
+def _path_size(p: Path) -> int | None:
     try:
         if not p.exists():
             return None
@@ -43,7 +42,7 @@ def _path_size(p: Path) -> Optional[int]:
         return None
 
 
-def _pinned_count(eng) -> Optional[int]:
+def _pinned_count(eng) -> int | None:
     """Count active pinned events. `pmb pin` pins by setting importance to
     1.0 (and clearing archived_at), so importance>=0.99 is the pin signal.
     Best-effort: returns None if the query fails."""

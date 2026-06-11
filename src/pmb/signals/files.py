@@ -1,24 +1,23 @@
 """
 File correlation tracking.
 
-Идея: какие файлы часто модифицируются вместе → они логически связаны.
-Когда юзер потом смотрит файл X, можно показать events связанные с files
-которые часто modified together with X.
+Idea: files that are often modified together → they are logically related.
+When the user later looks at file X, we can show events related to files
+that are frequently modified together with X.
 
-Подход: out-of-process наблюдение (нет hooks внутри Claude Code).
-Сейчас работает через git: смотрим какие файлы в одном commit'е,
-и считаем co-occurrence.
+Approach: out-of-process observation (no hooks inside Claude Code).
+For now it works via git: we look at which files are in the same commit
+and count their co-occurrence.
 
-В дальнейшем можно добавить:
-- Inotify/FSEvents наблюдение
-- Hook от Claude Code (если станет API)
+Possible future additions:
+- Inotify/FSEvents observation
+- A hook from Claude Code (if an API becomes available)
 """
 
 from __future__ import annotations
 
 import time
 from collections import Counter
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -26,9 +25,9 @@ if TYPE_CHECKING:
 
 
 class FileCorrelation:
-    """Анализ co-occurrence файлов в git commits."""
+    """Analysis of file co-occurrence in git commits."""
 
-    def __init__(self, engine: "Engine"):
+    def __init__(self, engine: Engine):
         self.engine = engine
 
     def _get_git_events(self) -> list:
@@ -38,7 +37,7 @@ class FileCorrelation:
 
     def correlations(self, file_path: str, top_k: int = 10) -> list[tuple[str, int]]:
         """
-        Найти файлы которые чаще всего модифицируются вместе с file_path.
+        Find the files most frequently modified together with file_path.
 
         Returns list of (file_path, count) sorted descending.
         """
@@ -57,7 +56,7 @@ class FileCorrelation:
         return co_occur.most_common(top_k)
 
     def all_files_touched(self, since_days: int = 30) -> list[tuple[str, int]]:
-        """Все файлы упомянутые в git events за последние N дней + count."""
+        """All files mentioned in git events over the last N days + count."""
         events = self._get_git_events()
         cutoff = time.time() - since_days * 86400
 
@@ -71,7 +70,7 @@ class FileCorrelation:
         return counter.most_common()
 
     def file_history(self, file_path: str) -> list[dict]:
-        """История commit'ов для одного файла."""
+        """Commit history for a single file."""
         target = file_path.replace("\\", "/").strip()
         events = self._get_git_events()
 

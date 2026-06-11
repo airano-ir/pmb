@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 
 class OverviewMixin:
@@ -51,13 +50,21 @@ class OverviewMixin:
                 """,
                 (ws,),
             ).fetchall()
+            # S5: one batched fetch of all candidate arcs' member ulids instead
+            # of a query PER arc (was up to 50 round-trips). Group in Python.
+            arc_ids = [ar["id"] for ar in arc_rows]
+            members: dict = {}
+            if arc_ids:
+                ph = ",".join("?" * len(arc_ids))
+                for mr in conn.execute(
+                    f"SELECT arc_id, event_ulid FROM arc_events "
+                    f"WHERE arc_id IN ({ph})",
+                    arc_ids,
+                ).fetchall():
+                    members.setdefault(mr["arc_id"], []).append(mr["event_ulid"])
             scored = []
             for ar in arc_rows:
-                mem = conn.execute(
-                    "SELECT event_ulid FROM arc_events WHERE arc_id = ?",
-                    (ar["id"],),
-                ).fetchall()
-                ulids = [r["event_ulid"] for r in mem]
+                ulids = members.get(ar["id"], [])
                 overlap = len([u for u in ulids if u in ev_ulids])
                 if overlap == 0:
                     continue
@@ -74,7 +81,7 @@ class OverviewMixin:
         scored.sort(key=lambda a: -a["overlap_count"])
         return scored[:limit]
 
-    def detect_project_in_text(self, text: str, min_mentions: int = 3) -> Optional[dict]:
+    def detect_project_in_text(self, text: str, min_mentions: int = 3) -> dict | None:
         """Look for an auto-detected project name inside arbitrary text.
         Returns the matching entity dict or None. Used to enrich recall:
         when the query mentions a known project, attach project_overview
@@ -129,10 +136,36 @@ class OverviewMixin:
 
         `name` is matched case-insensitively against entity names; we pick
         the highest-mention entity that contains the query as a substring.
+
+        S5: this is ~100 ms (500-row JOIN + bucket + a rescue LIKE scan) and
+        `prepare()` fires it on nearly every message, so the result is memoized
+        by (name, max_per_section, write-generation). The recall cache already
+        bumps that generation on every write, so a 0.3 ms staleness probe
+        replaces the full recompute and any write invalidates it correctly.
         """
+        nm = (name or "").strip().lower()
+        if not nm:
+            return {"empty": True, "error": "empty name"}
+        gen = getattr(self.recall_cache, "_generation", 0)
+        ckey = (nm, max_per_section)
+        cache = getattr(self, "_overview_cache", None)
+        if cache is None:
+            from collections import OrderedDict
+            cache = self._overview_cache = OrderedDict()
+        hit = cache.get(ckey)
+        if hit is not None and hit[0] == gen:
+            cache.move_to_end(ckey)
+            return hit[1]
+        result = self._project_overview_uncached(nm, name, max_per_section)
+        cache[ckey] = (gen, result)
+        while len(cache) > 16:
+            cache.popitem(last=False)
+        return result
+
+    def _project_overview_uncached(self, nm: str, name: str,
+                                   max_per_section: int = 8) -> dict:
         import sqlite3
         ws = self.workspace.id
-        nm = (name or "").strip().lower()
         if not nm:
             return {"empty": True, "error": "empty name"}
         with sqlite3.connect(self.workspace.db_path) as conn:
@@ -161,7 +194,7 @@ class OverviewMixin:
                   AND ev.workspace_id = ?
                   AND ev.archived_at IS NULL
                 ORDER BY ev.timestamp DESC
-                LIMIT 500
+                LIMIT 250
                 """,
                 (eid, ws),
             ).fetchall()
@@ -381,8 +414,8 @@ class OverviewMixin:
             "empty": len(results) == 0,
         }
 
-    def session_brief(self, session_id: Optional[str] = None,
-                      minutes: Optional[float] = None, limit: int = 100) -> dict:
+    def session_brief(self, session_id: str | None = None,
+                      minutes: float | None = None, limit: int = 100) -> dict:
         """Compact digest of the CURRENT (or given) work session - what was
         decided / done / learned so far.
 
@@ -420,15 +453,13 @@ class OverviewMixin:
         cutoff = now - minutes * 60.0
         if session_id and isinstance(sess_started, (int, float)):
             cutoff = min(cutoff, sess_started - 1.0)
-        events = self.events.list_active(self.workspace.id, limit=100000)
-        if session_id:
-            scoped = [e for e in events
-                      if e.source_session_id == session_id or e.timestamp >= cutoff]
-        else:
-            scoped = [e for e in events if e.timestamp >= cutoff]
+        # S5: push the (timestamp >= cutoff OR session-tagged) scope into SQL
+        # via idx_workspace_time instead of loading the whole table.
+        scoped = self.events.list_since(
+            self.workspace.id, cutoff, session_id=session_id, limit=5000)
         scoped.sort(key=lambda e: e.timestamp)
 
-        def _kind(meta) -> Optional[str]:
+        def _kind(meta) -> str | None:
             # `record_activity` stores the kind under `activity_kind`; lessons /
             # failures use `kind`. Read both so decisions/done classify.
             return meta.get("kind") or meta.get("activity_kind")

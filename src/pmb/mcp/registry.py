@@ -21,7 +21,6 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Optional
 
 
 def _pmb_home() -> Path:
@@ -32,14 +31,34 @@ def registry_path() -> Path:
     return _pmb_home() / "servers.json"
 
 
-def _pid_alive(pid: Optional[int]) -> bool:
+# S8: resolve psutil ONCE. _pid_alive / _rss_mb ran `import psutil` per entry —
+# when psutil isn't installed that's a failing import per call, twice per server
+# on every hook discovery. Cache the module (or its absence) at first use.
+_PSUTIL: object | None = None
+_PSUTIL_TRIED = False
+
+
+def _psutil():
+    global _PSUTIL, _PSUTIL_TRIED
+    if not _PSUTIL_TRIED:
+        _PSUTIL_TRIED = True
+        try:
+            import psutil as _p  # type: ignore
+            _PSUTIL = _p
+        except Exception:
+            _PSUTIL = None
+    return _PSUTIL
+
+
+def _pid_alive(pid: int | None) -> bool:
     if not pid:
         return False
-    try:
-        import psutil  # type: ignore
-        return psutil.pid_exists(int(pid))
-    except Exception:
-        pass
+    _ps = _psutil()
+    if _ps is not None:
+        try:
+            return bool(_ps.pid_exists(int(pid)))
+        except Exception:
+            pass
     if os.name == "nt":
         try:
             import ctypes
@@ -62,12 +81,14 @@ def _pid_alive(pid: Optional[int]) -> bool:
         return True
 
 
-def _rss_mb(pid: Optional[int]) -> Optional[float]:
+def _rss_mb(pid: int | None) -> float | None:
     if not pid:
         return None
+    _ps = _psutil()
+    if _ps is None:
+        return None
     try:
-        import psutil  # type: ignore
-        return psutil.Process(int(pid)).memory_info().rss / (1024 * 1024)
+        return _ps.Process(int(pid)).memory_info().rss / (1024 * 1024)
     except Exception:
         return None
 
@@ -99,11 +120,11 @@ def _prune(entries: list[dict]) -> list[dict]:
 
 def register_server(
     transport: str,
-    host: Optional[str] = None,
-    port: Optional[int] = None,
-    path: Optional[str] = None,
-    workspace: Optional[str] = None,
-    pid: Optional[int] = None,
+    host: str | None = None,
+    port: int | None = None,
+    path: str | None = None,
+    workspace: str | None = None,
+    pid: int | None = None,
     kind: str = "mcp",
 ) -> dict:
     """Record THIS process as a running PMB MCP server. Prunes dead entries
@@ -130,34 +151,39 @@ def register_server(
     return entry
 
 
-def unregister_server(pid: Optional[int] = None) -> None:
+def unregister_server(pid: int | None = None) -> None:
     target = int(pid if pid is not None else os.getpid())
     entries = [e for e in _load() if e.get("pid") != target]
     _save(entries)
 
 
-def list_servers(prune: bool = True) -> list[dict]:
+def list_servers(prune: bool = True, with_rss: bool = True) -> list[dict]:
     """Return registered servers, each annotated with `alive` and `rss_mb`.
-    When `prune` is True, dead entries are removed from the registry first."""
+    When `prune` is True, dead entries are removed from the registry first.
+    `with_rss=False` skips the per-entry psutil RSS syscall for hot callers
+    that only need liveness (S8)."""
     entries = _load()
     if prune:
         live = _prune(entries)
         if len(live) != len(entries):
-            _save(live)
+            _save(live)   # prune only removes -> equal length == unchanged content
         entries = live
     out = []
     for e in entries:
         d = dict(e)
         d["alive"] = _pid_alive(e.get("pid"))
-        d["rss_mb"] = _rss_mb(e.get("pid"))
+        # S8: RSS is a psutil.Process() syscall per entry; only `pmb status`
+        # needs it. The hot discovery callers (find_live_daemon / find_live_http,
+        # one per hook message) pass with_rss=False and skip it.
+        d["rss_mb"] = _rss_mb(e.get("pid")) if with_rss else None
         out.append(d)
     return out
 
 
-def find_live_http(host: str, port: int) -> Optional[dict]:
+def find_live_http(host: str, port: int) -> dict | None:
     """Return a live streamable-http server entry bound to host:port, if any.
     Used to avoid spawning a second heavy server on the same endpoint."""
-    for e in list_servers(prune=True):
+    for e in list_servers(prune=True, with_rss=False):
         if (
             e.get("transport") == "streamable-http"
             and e.get("host") == host
@@ -168,14 +194,14 @@ def find_live_http(host: str, port: int) -> Optional[dict]:
     return None
 
 
-def find_live_daemon(pmb_home: Optional[str] = None) -> Optional[dict]:
+def find_live_daemon(pmb_home: str | None = None) -> dict | None:
     """Return the live persistent-memory daemon entry for this PMB_HOME, if any.
 
     Hooks call this to decide whether to route prepare-context to a warm daemon
     instead of paying a cold per-process Engine. Matches on kind=='daemon' and
     (when given) the same pmb_home, newest first."""
     want_home = str(pmb_home or _pmb_home())
-    live = [e for e in list_servers(prune=True)
+    live = [e for e in list_servers(prune=True, with_rss=False)
             if e.get("kind") == "daemon" and e.get("alive")
             and e.get("port")]
     live = [e for e in live if str(e.get("pmb_home") or want_home) == want_home]

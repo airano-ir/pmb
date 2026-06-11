@@ -3,29 +3,50 @@ from __future__ import annotations
 import math
 import re
 import time
-from typing import Any, Optional
+from typing import Any
 
+from pmb import lang as _lang
+from pmb.core import circuit_breaker as _breaker
+from pmb.core.engine.types import (
+    RecallPack,
+    RecallResult,
+    _collapse_reflections,
+    _looks_multihop,
+)
 from pmb.core.events import (
     Event,
 )
 from pmb.core.recall_cache import make_recall_cache_key
-from pmb.core import circuit_breaker as _breaker
 from pmb.core.search import SearchHit
-from pmb.signals.decay import boost_on_recall
 from pmb.reasoning.pamvr import (
     apply_pamvr as _pamvr_apply,
+)
+from pmb.reasoning.pamvr import (
     prepare_query_features as _pamvr_prepare,
 )
+from pmb.reasoning.scoring import combine_base_score as _combine_base_score
+from pmb.reasoning.scoring import importance_factor as _imp_factor
 from pmb.reasoning.user_names import (
     mine_user_names_from_db as _mine_user_names,
 )
+from pmb.signals.decay import boost_on_recall
 
-from pmb.core.engine.types import (
-    RecallResult,
-    RecallPack,
-    _looks_multihop,
-    _collapse_reflections,
+# Personal-attribute intent gate (R6). EN question words / first-person markers
+# inline; the RU/UK equivalents (which/when/where/my in RU & UK) live in packs
+# (recall_qwords / recall_first_person) so this module stays Cyrillic-free (L1).
+# Built ONCE at import, not per recall.
+_QWORD_RE = re.compile(
+    r"\b(" + "|".join(["where", "when", "why", "what", "who", "which", "how"]
+                      + [str(x) for x in _lang.merged_list("recall_qwords")]) + r")\b",
+    re.IGNORECASE,
 )
+_ATTR_RE = re.compile(
+    r"\b(" + "|".join(["i", "my", "me", "mine", "myself", "user", "user_", "u", "user'?s"]
+                      + [str(x) for x in _lang.merged_list("recall_first_person")]) + r")\b",
+    re.IGNORECASE,
+)
+# Cyrillic letter range for the lexical-overlap tokenizer (also pack-sourced).
+_CYR = "".join(str(x) for x in _lang.merged_list("cyrillic_script_range"))
 
 
 def _result_in_project(r, project_lc: str) -> bool:
@@ -50,7 +71,7 @@ class RecallMixin:
 
     def _get_user_names(self) -> set[str]:
         """Lowercased set of names the user calls themselves, mined from
-        "My name is X" / "Меня зовут X" facts. Cached.
+        "My name is X" / "my name is …" facts (any language). Cached.
 
         Refreshed when: (a) first call, (b) a name-statement write marked the
         cache dirty — so a newly recorded name takes effect on the very NEXT
@@ -89,14 +110,27 @@ class RecallMixin:
         self._ensure_user_names_state()
         self._writes_since_names += 1
 
+    def _active_count_cached(self) -> int:
+        """S9: active-event COUNT(*) memoized by the recall-cache write
+        generation. recall() reads `n_total_in_workspace` several times per
+        call; the count only moves on a write, which already bumps the
+        generation, so this turns N COUNT(*) per recall into a dict lookup."""
+        gen = getattr(self.recall_cache, "_generation", 0)
+        cached = getattr(self, "_active_count_cache", None)
+        if cached is not None and cached[0] == gen:
+            return cached[1]
+        n = self.events.count(self.workspace.id, include_archived=False)
+        self._active_count_cache = (gen, n)
+        return n
+
     def recall(
         self,
         query: str,
-        top_k: Optional[int] = None,
-        recency_half_life_days: Optional[float] = None,
-        graph_boost: Optional[float] = None,
-        rerank: Optional[bool] = None,
-        rerank_top_n: Optional[int] = None,
+        top_k: int | None = None,
+        recency_half_life_days: float | None = None,
+        graph_boost: float | None = None,
+        rerank: bool | None = None,
+        rerank_top_n: int | None = None,
         _skip_decompose: bool = False,
     ) -> RecallPack:
         """D4 singleflight wrapper: collapse concurrent IDENTICAL top-level
@@ -146,11 +180,11 @@ class RecallMixin:
     def _recall_impl(
         self,
         query: str,
-        top_k: Optional[int] = None,
-        recency_half_life_days: Optional[float] = None,
-        graph_boost: Optional[float] = None,
-        rerank: Optional[bool] = None,
-        rerank_top_n: Optional[int] = None,
+        top_k: int | None = None,
+        recency_half_life_days: float | None = None,
+        graph_boost: float | None = None,
+        rerank: bool | None = None,
+        rerank_top_n: int | None = None,
         _skip_decompose: bool = False,
     ) -> RecallPack:
         # Resolve defaults from config (per-workspace > global > schema default)
@@ -187,7 +221,8 @@ class RecallMixin:
             # Fallthrough: decomposition failed → run original single-shot
 
         # Pattern-based query splitting (Improvement UU). Cheap, no LLM —
-        # catches compound queries like "why X and why Y" / "X потому что Y".
+        # catches compound queries like "why X and why Y" / "X because Y"
+        # (the RU/UK split markers live in the lang packs).
         # When a split fires, each sub-query runs through the normal recall
         # pipeline and results are fused via RRF. Saves ~30pp on compound
         # queries that single-shot recall would otherwise diffuse.
@@ -199,7 +234,7 @@ class RecallMixin:
         # accept (sub-recall raising, fusion edge cases). Constructor /
         # programmer errors propagate so tests catch them.
         if not _skip_decompose and self.config.get("recall.pattern_split"):
-            from pmb.reasoning.query_split import split_query, rrf_fuse
+            from pmb.reasoning.query_split import rrf_fuse, split_query
 
             sub_queries = split_query(query)
             self._pattern_split_last_fired = len(sub_queries) > 1
@@ -233,7 +268,6 @@ class RecallMixin:
                     # both sub-packs found, so the fusion isn't naive.
                     rank_lists = [[r.ulid for r in sp.results] for sp in sub_packs]
                     fused_scored = rrf_fuse(rank_lists, top_n=top_k * 4)
-                    rrf_rank = {u: i for i, (u, _s) in enumerate(fused_scored)}
 
                     # Resolve ulid -> result (use first occurrence across packs)
                     ulid_to_res: dict[str, Any] = {}
@@ -310,15 +344,15 @@ class RecallMixin:
         if cached is not None:
             return cached
         """
-        Поиск релевантной памяти по query.
+        Search relevant memory by query.
 
         Pipeline:
         1. HybridSearch returns top_k*5 candidates ranked by BM25+vec only.
         2. Graph expansion: extract entities from query, pull additional
            candidate ulids from `graph_event_entities` (1-hop traversal).
-        3. Batched SQL fetch для всех кандидатов c filter archived.
-        4. Importance multiplier + recency boost + graph_boost applied в Python.
-        5. Touch + reinforcement boost для финальных hits.
+        3. Batched SQL fetch for all candidates with the archived filter.
+        4. Importance multiplier + recency boost + graph_boost applied in Python.
+        5. Touch + reinforcement boost for the final hits.
 
         graph_boost: additive bonus for events surfaced by the graph
         (0..1, default 0.15). Set to 0 to disable graph augmentation.
@@ -332,8 +366,9 @@ class RecallMixin:
         typo_corrections = []
         if self.config.get("recall.typo_correction"):
             try:
-                from pmb.reasoning.typo_fix import correct_query
                 import sqlite3
+
+                from pmb.reasoning.typo_fix import correct_query
 
                 with sqlite3.connect(self.workspace.db_path) as conn:
                     rows = conn.execute(
@@ -348,7 +383,7 @@ class RecallMixin:
             except Exception:
                 pass
 
-        # User-name set (mined from "My name is X" / "Меня зовут X" facts,
+        # User-name set (mined from "My name is X" facts in any language,
         # cached, refreshed every 25 writes). Computed ONCE per recall and
         # reused by the router (identity-by-name), PAMVR self-reference
         # rescue, and the identity-marker boost — so no path hardcodes a
@@ -375,8 +410,8 @@ class RecallMixin:
         if self.config.get("recall.predictive_enabled"):
             try:
                 from pmb.reasoning.predictive import (
-                    load_entries,
                     best_match,
+                    load_entries,
                     mark_hit,
                 )
 
@@ -423,10 +458,7 @@ class RecallMixin:
                                 mark_hit(self.workspace.db_path, entry.id)
                             except Exception:
                                 pass
-                            n_total = self.events.count(
-                                self.workspace.id,
-                                include_archived=False,
-                            )
+                            n_total = self._active_count_cached()
                             pack = RecallPack(
                                 query=query,
                                 workspace_name=self.workspace.name,
@@ -442,7 +474,7 @@ class RecallMixin:
         # Stage 1: search by BM25+vec only (no importance/recency in search core)
         raw_hits: list[SearchHit] = self.search.search(
             query=query,
-            top_k=top_k * 5,  # запас под archived filter
+            top_k=top_k * 5,  # headroom for the archived filter
         )
 
         # Stage 2: graph expansion — entities in the query may surface events
@@ -452,12 +484,12 @@ class RecallMixin:
         # Improvement C: temporal anchor — parse a date reference from the
         # query when it looks temporal. Used later to boost candidates with
         # nearby event_time.
-        temporal_anchor: Optional[float] = None
+        temporal_anchor: float | None = None
         if self.config.get("recall.temporal_enabled"):
             try:
                 from pmb.reasoning.temporal import (
-                    is_temporal_query,
                     extract_event_time,
+                    is_temporal_query,
                 )
 
                 if is_temporal_query(query):
@@ -619,11 +651,13 @@ class RecallMixin:
         arc_summaries_hit: list[dict] = []
         if self.config.get("recall.arc_expansion"):
             try:
-                from pmb.reasoning.arcs import looks_narrative
                 from pmb.reasoning.arcs import (
-                    list_arcs as _list_arcs,
                     events_in_arc as _events_in_arc,
                 )
+                from pmb.reasoning.arcs import (
+                    list_arcs as _list_arcs,
+                )
+                from pmb.reasoning.arcs import looks_narrative
 
                 # Always try; the term-match below is cheap. But weight it
                 # more heavily if query 'looks narrative'.
@@ -672,7 +706,7 @@ class RecallMixin:
             and not arc_ulids
             and not ppr_top_ulids
         ):
-            n_total = self.events.count(self.workspace.id, include_archived=False)
+            n_total = self._active_count_cached()
             return RecallPack(
                 query=query,
                 workspace_name=self.workspace.name,
@@ -714,24 +748,14 @@ class RecallMixin:
         # "how does X work" should not inject keyed-facts (no personal
         # cue), and "user works on PMB" should not inject either (no
         # question cue).
-        _qword_re = getattr(self, "_qword_re", None)
-        _attr_re  = getattr(self, "_attr_re",  None)
-        if _qword_re is None:
-            import re as _re
-            _qword_re = _re.compile(
-                r"\b(where|when|why|what|who|which|how|какой|какая|какое|"
-                r"какие|когда|где|куда|откуда|сколько|чей|чья)\b",
-                _re.IGNORECASE,
-            )
-            _attr_re = _re.compile(
-                r"\b(i|my|me|mine|myself|user|user_|"
-                r"я|меня|мне|мой|моя|моё|моих|мою|моему|моих|"
-                r"u|user'?s)\b",
-                _re.IGNORECASE,
-            )
-            self._qword_re = _qword_re
-            self._attr_re = _attr_re
-        if _qword_re.search(query) and _attr_re.search(query):
+        _qword_re = _QWORD_RE
+        _attr_re = _ATTR_RE
+        # R6: the SAME personal-intent signal that gates keyed-fact INJECTION
+        # below also gates the keyed-fact BOOST in the scoring loop, so a
+        # topical query like "Warsaw deployment timezone" no longer rockets
+        # "user city: Warsaw" to the top just because it shares a token.
+        _personal_query = bool(_qword_re.search(query) and _attr_re.search(query))
+        if _personal_query:
             try:
                 import sqlite3 as _sql
                 with _sql.connect(str(self.workspace.db_path)) as _c:
@@ -828,7 +852,7 @@ class RecallMixin:
         }
         q_tokens = {
             t
-            for t in re.findall(r"[a-zA-Zа-яА-Я0-9]+", (query or "").lower())
+            for t in re.findall(r"[a-zA-Z" + _CYR + r"0-9]+", (query or "").lower())
             if len(t) > 2 and t not in _STOP
         }
 
@@ -860,7 +884,11 @@ class RecallMixin:
                     importance=ev.importance,
                     recency_score=0.0,
                 )
-            importance_factor = 0.5 + 0.5 * ev.importance
+            # X2: the importance factor carries the importance channel weight,
+            # computed ONCE here so the base score AND every boost term below use
+            # the SAME (consistently-weighted) factor. Identity weights →
+            # 0.5 + 0.5*importance (byte-identical to before).
+            importance_factor = _imp_factor(ev.importance, self._channel_weights)
             age_sec = max(0.0, now - ev.timestamp)
             recency = math.exp(-age_sec * math.log(2) / half_life_sec)
             # Historical-intent: when the user asks "what did we use before",
@@ -868,7 +896,13 @@ class RecallMixin:
             # recency reward (multiplier <1.0) and add a small bonus to OLDER
             # events. Both come from QueryRouter.classify().
             rec_mul = layer_weights.historical_recency_mul if layer_weights else 1.0
-            base = h.score * importance_factor * (1.0 + 0.2 * recency * rec_mul)
+            # X1/X2: the base channel combination lives in one explainable
+            # function, fed the already-weighted importance_factor so importance
+            # scaling is consistent with the boosts. Identity weights →
+            # byte-identical to `h.score * importance_factor * (1+0.2*recency*rec_mul)`.
+            base = _combine_base_score(
+                h.score, importance_factor, recency, rec_mul=rec_mul,
+                weights=self._channel_weights)
             if layer_weights and layer_weights.older_event_bonus > 0:
                 # invert recency: 1.0 for very old, 0.0 for fresh.
                 base += layer_weights.older_event_bonus * (1.0 - recency) * importance_factor
@@ -950,7 +984,15 @@ class RecallMixin:
             #   (c) MULTIPLICATIVE — keyed-facts answering personal
             #       questions are USUALLY the right answer. Bump above
             #       merely-topical hits.
-            if ev.metadata and isinstance(ev.metadata, dict) and ev.metadata.get("keyed_fact_key"):
+            _boost_keyed = (
+                ev.metadata and isinstance(ev.metadata, dict)
+                and ev.metadata.get("keyed_fact_key")
+                # R6: only boost on a personal-attribute query, unless the gate
+                # is disabled (then it's the old always-boost behaviour).
+                and (_personal_query
+                     or not self.config.get("recall.keyed_boost_personal_only"))
+            )
+            if _boost_keyed:
                 keyed_boost = self.config.get("recall.keyed_fact_boost") or 0.35
                 # (a) Floor — keyed-fact text is short ("user city: X")
                 # so vector + BM25 base often underestimates.
@@ -1127,6 +1169,7 @@ class RecallMixin:
                     vec_score=h.vec_score,
                     importance=ev.importance,
                     recency_score=recency,
+                    raw_vec=getattr(h, "raw_vec", 0.0),
                 )
                 for h, ev, score, recency in top_n
             ]
@@ -1141,7 +1184,6 @@ class RecallMixin:
             # only ACCEPT a swap of position 1 if the cross-encoder is
             # genuinely confident. Otherwise revert to the hybrid order
             # for that slot, leaving the rest of the rerank intact.
-            commit_swap = True
             if gated_rerank and not rerank and len(reranked) >= 2:
                 new_top1_score = float(reranked[0].score)
                 # find prev top-1's score in the reranked list (could be at any pos)
@@ -1154,7 +1196,6 @@ class RecallMixin:
                     swap_margin = float(self.config.get("recall.rerank_swap_margin") or 0.20)
                     if (new_top1_score - prev_top1_score) < swap_margin:
                         # CE not confident enough — restore prev top-1 at pos 0
-                        commit_swap = False
                         old_idx = prev_top1_in_rerank
                         reranked = [reranked[old_idx]] + [
                             h for i, h in enumerate(reranked) if i != old_idx
@@ -1169,11 +1210,11 @@ class RecallMixin:
         # hard queries where lexical+semantic+CE all give close scores.
         if self.config.get("recall.llm_rerank") and len(scored) >= 2:
             try:
-                from pmb.reasoning.llm_rerank import (
-                    llm_rerank_top_k,
-                    DEFAULT_LLM_RERANK_MODEL,
-                )
                 from pmb.health.consolidate import OllamaClient
+                from pmb.reasoning.llm_rerank import (
+                    DEFAULT_LLM_RERANK_MODEL,
+                    llm_rerank_top_k,
+                )
 
                 llm_top_n = int(self.config.get("recall.llm_rerank_top_n") or 10)
                 window = scored[:llm_top_n]
@@ -1208,11 +1249,11 @@ class RecallMixin:
         # can flush them in a single SQLite transaction at the end —
         # this is the biggest latency win on warm recall.
         from pmb.core.events import (
-            TIER_WORKING,
+            PROMOTE_EPISODIC_TO_SEMANTIC_ACCESS,
+            PROMOTE_WORKING_TO_EPISODIC_ACCESS,
             TIER_EPISODIC,
             TIER_SEMANTIC,
-            PROMOTE_WORKING_TO_EPISODIC_ACCESS,
-            PROMOTE_EPISODIC_TO_SEMANTIC_ACCESS,
+            TIER_WORKING,
         )
 
         results: list[RecallResult] = []
@@ -1244,22 +1285,24 @@ class RecallMixin:
                     vec_score=h.vec_score,
                     importance=ev.importance,
                     recency_score=recency,
+                    raw_vec=getattr(h, "raw_vec", 0.0),  # R3 absolute cosine
                 )
             )
         # Improvement #6: enqueue touches for the deferred flusher instead
         # of writing synchronously. Under concurrent recalls this turns
         # 16 lock-acquisitions per second into ~4 (one per flush tick).
-        self._enqueue_touches(touches, importance_updates)
+        # S9: tier promotions ride the touch-flusher batch (was one
+        # connection+txn per promoted ulid). They land in the SAME single
+        # transaction as the access_count / importance updates.
+        self._enqueue_touches(touches, importance_updates, tier_promotions)
         # ...unless touch_async is off: drain inline so access_count /
-        # importance / last_accessed are visible the instant recall() returns.
-        # Keeps tier promotion + importance boosts deterministic for tests and
-        # single-shot CLI callers that read side-effects right after recall.
+        # importance / last_accessed / tier are visible the instant recall()
+        # returns. Keeps side-effects deterministic for tests and single-shot
+        # CLI callers that read them right after recall.
         if not self.config.get("recall.touch_async"):
             self._drain_touch_buffer()
-        for ulid_p, new_tier in tier_promotions:
-            self.events.update_tier(ulid_p, new_tier)
 
-        n_total = self.events.count(self.workspace.id, include_archived=False)
+        n_total = self._active_count_cached()
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
         pack = RecallPack(
@@ -1274,19 +1317,31 @@ class RecallMixin:
         # priming in human associative memory: thinking about X makes
         # related concepts easier to retrieve next time.
         if self.config.get("recall.spreading_activation") and results:
-            try:
-                from pmb.graph.spreading import apply_spreading_activation
+            hit_evs = [ev for _, ev, _, _ in scored[: len(results)]]
+            _spread_boost = self.config.get("recall.spreading_boost")
+            _spread_hl = self.config.get("recall.spreading_half_life_hours")
 
-                hit_evs = [ev for _, ev, _, _ in scored[: len(results)]]
-                apply_spreading_activation(
-                    self,
-                    hit_events=hit_evs,
-                    boost=self.config.get("recall.spreading_boost"),
-                    half_life_hours=self.config.get("recall.spreading_half_life_hours"),
-                )
-            except Exception:
-                # Priming is best-effort; never block recall on it
-                pass
+            def _spread() -> None:
+                try:
+                    from pmb.graph.spreading import apply_spreading_activation
+                    apply_spreading_activation(
+                        self, hit_events=hit_evs,
+                        boost=_spread_boost, half_life_hours=_spread_hl)
+                except Exception:
+                    # Priming is best-effort; never block recall on it
+                    pass
+
+            # S9: the pack is already built, so priming is a pure side effect on
+            # FUTURE recalls — get it OFF the synchronous return in the long-lived
+            # daemon (touch_async on) by running it on a background thread. When
+            # touch_async is off (tests / one-shot CLI) run inline so priming is
+            # deterministic and visible immediately.
+            if self.config.get("recall.touch_async"):
+                import threading as _th
+                _th.Thread(target=_spread, daemon=True,
+                           name="pmb-spreading").start()
+            else:
+                _spread()
         # Stash for next time. Writes bump the generation so future stale
         # cache hits are dropped on read.
         self.recall_cache.put(cache_key, pack)
@@ -1304,10 +1359,10 @@ class RecallMixin:
     def recall_smart(
         self,
         query: str,
-        top_k: Optional[int] = None,
+        top_k: int | None = None,
         confidence_threshold: float = 0.5,
         max_escalations: int = 2,
-        deadline_ms: Optional[float] = None,
+        deadline_ms: float | None = None,
         **kwargs,
     ) -> RecallPack:
         """Deadline-bounded auto-escalating recall for the INTERACTIVE path.
@@ -1434,8 +1489,8 @@ class RecallMixin:
     def recall_deep(
         self,
         query: str,
-        top_k: Optional[int] = None,
-        deadline_ms: Optional[float] = None,
+        top_k: int | None = None,
+        deadline_ms: float | None = None,
         **kwargs,
     ) -> RecallPack:
         """Explicit DEEP recall: always ATTEMPTS LLM query-decomposition
@@ -1486,8 +1541,8 @@ class RecallMixin:
     def recall_scoped(
         self,
         query: str,
-        project: Optional[str] = None,
-        top_k: Optional[int] = None,
+        project: str | None = None,
+        top_k: int | None = None,
         **kwargs,
     ) -> RecallPack:
         """recall(), optionally scoped to a single project (issue #7).
@@ -1533,8 +1588,8 @@ class RecallMixin:
         graph_boost: float,
         rerank: bool,
         rerank_top_n: int,
-        budget_s: Optional[float] = None,
-    ) -> Optional[RecallPack]:
+        budget_s: float | None = None,
+    ) -> RecallPack | None:
         """Run query decomposition + sub-query retrieval + RRF merge.
         Returns None if decomposition couldn't run (LLM unavailable etc.)
         so caller can fall back to single-shot recall.
@@ -1548,8 +1603,8 @@ class RecallMixin:
         _thr = self.config.get("recall.breaker_threshold") or 2
         _cd = self.config.get("recall.breaker_cooldown_s") or 60.0
         try:
-            from pmb.reasoning.decompose import QueryDecomposer, reciprocal_rank_fuse
             from pmb.health.consolidate import resolve_llm_client
+            from pmb.reasoning.decompose import QueryDecomposer, reciprocal_rank_fuse
 
             try:
                 llm = resolve_llm_client(
@@ -1596,7 +1651,7 @@ class RecallMixin:
             fused = reciprocal_rank_fuse(rankings, k=60)[:top_k]
             results = [all_pack_results[u] for u, _ in fused if u in all_pack_results]
 
-            n_total = self.events.count(self.workspace.id, include_archived=False)
+            n_total = self._active_count_cached()
             return RecallPack(
                 query=query,
                 workspace_name=self.workspace.name,
@@ -1624,7 +1679,8 @@ class RecallMixin:
             if t is None:
                 return
             # Update metadata in-place via direct SQL
-            import sqlite3, json as _j
+            import json as _j
+            import sqlite3
 
             with sqlite3.connect(self.workspace.db_path) as conn:
                 row = conn.execute(

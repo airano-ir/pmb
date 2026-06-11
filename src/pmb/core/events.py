@@ -1,12 +1,12 @@
 """
-Event Store — SQLite-based append-only лог событий.
+Event Store — SQLite-based append-only event log.
 
 Event types:
-- "qa"      — Q/A пара от агента
-- "fact"    — извлечённый факт key=value
+- "qa"      — Q/A pair from the agent
+- "fact"    — extracted key=value fact
 - "pin"     — explicit user pin
 - "git"     — git event (commit, branch change)
-- "file"    — файл modification context
+- "file"    — file modification context
 - "test"    — test result context
 
 Schema (v1):
@@ -18,7 +18,7 @@ Schema (v1):
 Indexes:
 - workspace + recency
 - event_type
-- archived (для исключения из recall)
+- archived (to exclude from recall)
 """
 
 from __future__ import annotations
@@ -27,10 +27,10 @@ import json
 import sqlite3
 import time
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, Optional
 
 SCHEMA_VERSION = 6
 
@@ -71,9 +71,9 @@ PROMOTE_EPISODIC_TO_SEMANTIC_ACCESS = 7
 
 @dataclass
 class Event:
-    """Одна запись в memory."""
+    """One record in memory."""
 
-    id: Optional[int] = None
+    id: int | None = None
     ulid: str = field(default_factory=lambda: _ulid())
     workspace_id: str = ""
     event_type: str = "qa"
@@ -83,8 +83,8 @@ class Event:
     importance: float = 0.5
     access_count: int = 0
     last_accessed: float = field(default_factory=time.time)
-    archived_at: Optional[float] = None
-    source_session_id: Optional[str] = None
+    archived_at: float | None = None
+    source_session_id: str | None = None
     tier: str = TIER_WORKING
 
     def to_db_row(self) -> tuple:
@@ -104,7 +104,7 @@ class Event:
         )
 
     @classmethod
-    def from_db_row(cls, row: sqlite3.Row) -> "Event":
+    def from_db_row(cls, row: sqlite3.Row) -> Event:
         # `tier` may be absent in pre-v3 rows; default to "working"
         try:
             tier_val = row["tier"]
@@ -127,7 +127,7 @@ class Event:
         )
 
     def to_text(self) -> str:
-        """Текстовое представление для embedding."""
+        """Text representation for embedding."""
         if self.event_type == "qa":
             q = self.metadata.get("query", "")
             a = self.content
@@ -146,7 +146,7 @@ class Event:
 
 
 def _ulid() -> str:
-    """Простой ULID-like sortable ID."""
+    """Simple ULID-like sortable ID."""
     return f"{int(time.time() * 1000):013x}_{uuid.uuid4().hex[:8]}"
 
 
@@ -171,6 +171,17 @@ _DDL = [
     "CREATE INDEX IF NOT EXISTS idx_workspace_time ON events(workspace_id, timestamp DESC)",
     "CREATE INDEX IF NOT EXISTS idx_workspace_active ON events(workspace_id, archived_at) WHERE archived_at IS NULL",
     "CREATE INDEX IF NOT EXISTS idx_event_type ON events(workspace_id, event_type)",
+    # S7: expression index on metadata kind so find_lessons / find_decisions
+    # become an indexed lookup instead of a full-table `metadata_json LIKE
+    # '%"kind":"lesson"%'` scan on every recall + hook message. COALESCE folds
+    # both spellings (lessons use metadata.kind; activity-style decisions use
+    # metadata.activity_kind) into one indexed value. Pure additive DDL — no
+    # column, no write-path change, no backfill; also whitespace-robust where
+    # the old LIKE needed two spacing variants. The query expression MUST match
+    # this one verbatim for the planner to use the index.
+    "CREATE INDEX IF NOT EXISTS idx_meta_kind ON events(workspace_id, "
+    "COALESCE(json_extract(metadata_json, '$.kind'), "
+    "json_extract(metadata_json, '$.activity_kind')))",
     "CREATE INDEX IF NOT EXISTS idx_recency ON events(last_accessed DESC)",
     "CREATE INDEX IF NOT EXISTS idx_tier ON events(workspace_id, tier, archived_at) WHERE archived_at IS NULL",
     """
@@ -326,7 +337,7 @@ _GET_MANY_CHUNK = 500
 
 
 class EventStore:
-    """SQLite-based event store. Thread-safe через connection-per-call pattern."""
+    """SQLite-based event store. Thread-safe via the connection-per-call pattern."""
 
     def __init__(self, db_path: Path):
         self.db_path = db_path
@@ -364,7 +375,7 @@ class EventStore:
     # -----------------------------------------------------------------
 
     def append(self, event: Event) -> Event:
-        """Записать событие. Возвращает event с заполненным id."""
+        """Persist an event. Returns the event with its id populated."""
         with self._conn() as conn:
             cur = conn.execute(
                 """
@@ -406,7 +417,7 @@ class EventStore:
     # Read
     # -----------------------------------------------------------------
 
-    def get_by_ulid(self, ulid: str) -> Optional[Event]:
+    def get_by_ulid(self, ulid: str) -> Event | None:
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM events WHERE ulid = ?", (ulid,)
@@ -416,7 +427,7 @@ class EventStore:
     def get_many(
         self,
         ulids: list[str],
-        workspace_id: Optional[str] = None,
+        workspace_id: str | None = None,
         only_active: bool = True,
     ) -> dict[str, Event]:
         """
@@ -456,8 +467,8 @@ class EventStore:
         return out
 
     def list_active(self, workspace_id: str, limit: int = 100,
-                    event_type: Optional[str] = None) -> list[Event]:
-        """Активные (не archived) события для workspace."""
+                    event_type: str | None = None) -> list[Event]:
+        """Active (non-archived) events for the workspace."""
         with self._conn() as conn:
             if event_type:
                 rows = conn.execute(
@@ -476,6 +487,36 @@ class EventStore:
                     ORDER BY timestamp DESC LIMIT ?
                     """,
                     (workspace_id, limit),
+                ).fetchall()
+            return [Event.from_db_row(r) for r in rows]
+
+    def list_since(self, workspace_id: str, cutoff: float,
+                   session_id: str | None = None,
+                   limit: int = 5000) -> list[Event]:
+        """Active events newer than `cutoff` (epoch seconds), OR explicitly
+        tagged with `session_id`. Pushes the session_brief scope into SQL
+        (uses idx_workspace_time) instead of loading the whole table and
+        filtering in Python (S5)."""
+        with self._conn() as conn:
+            if session_id:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM events
+                    WHERE workspace_id = ? AND archived_at IS NULL
+                      AND (timestamp >= ? OR source_session_id = ?)
+                    ORDER BY timestamp DESC LIMIT ?
+                    """,
+                    (workspace_id, cutoff, session_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM events
+                    WHERE workspace_id = ? AND archived_at IS NULL
+                      AND timestamp >= ?
+                    ORDER BY timestamp DESC LIMIT ?
+                    """,
+                    (workspace_id, cutoff, limit),
                 ).fetchall()
             return [Event.from_db_row(r) for r in rows]
 
@@ -539,7 +580,7 @@ class EventStore:
     # -----------------------------------------------------------------
 
     def touch(self, ulid: str):
-        """Отметить событие как использованное (recall hit)."""
+        """Mark an event as used (recall hit)."""
         with self._conn() as conn:
             conn.execute(
                 """
@@ -598,7 +639,7 @@ class EventStore:
             )
 
     def pin(self, ulid: str, importance: float = 1.0):
-        """Закрепить — высокая importance, никогда не архивируется автоматически."""
+        """Pin — high importance, never auto-archived."""
         with self._conn() as conn:
             conn.execute(
                 """
@@ -631,7 +672,7 @@ class EventStore:
             )
 
     def list_all(self, workspace_id: str, limit: int = 100_000,
-                 event_type: Optional[str] = None,
+                 event_type: str | None = None,
                  include_archived: bool = True) -> list[Event]:
         """Like ``list_active`` but can include archived rows.
 

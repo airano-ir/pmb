@@ -28,18 +28,22 @@ Lifted ideas from:
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.reactive import reactive
 from textual.widgets import (
-    DataTable, Footer, Header, Input, Label, Static, TabbedContent, TabPane,
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    Label,
+    Static,
+    TabbedContent,
+    TabPane,
 )
 
 from pmb.core.engine import Engine
-
 
 # ────────────────────────────────────────────────────────────────────────
 # Tab 1: Memory browser
@@ -362,8 +366,8 @@ class TuneTab(Vertical):
             self._refresh_table()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        from pmb.config import SCHEMA
         from pmb.cli.tui_config import EditScreen
+        from pmb.config import SCHEMA
         key = event.row_key.value
         if not key or key not in SCHEMA:
             return

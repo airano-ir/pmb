@@ -1,23 +1,26 @@
 """
-User-name auto-detect — closes the "Where does Алексей live?" recall gap.
+User-name auto-detect — closes the "Where does <Name> live?" recall gap.
 
 Background: in assistant memory, the user's own name lives in ONE fact
-("Меня зовут Алексей") and their location in ANOTHER ("Я живу в Киеве").
-A query like "Where does Алексей live?" can't be answered by either fact
+("my name is <Name>") and their location in ANOTHER ("I live in <City>").
+A query like "Where does <Name> live?" can't be answered by either fact
 alone — it needs a JOIN. PAMVR's strict-entity check killed the location
-fact (no "Алексей") and the name fact (no "live").
+fact (no "<Name>") and the name fact (no "live").
 
 Fix: at recall time, if the query proper noun matches a known user name
-AND the candidate uses first-person ("Я", "I", "мене", …), accept it.
-The user-fact "Я живу в Киеве" answers "Where does Алексей live?" when
-we know Алексей = the user.
+AND the candidate uses a first-person marker ("I", localized equivalents),
+accept it. The user-fact "I live in <City>" answers "Where does <Name>
+live?" when we know <Name> = the user.
 
 Cheap implementation:
-  - At Engine init / refresh, scan facts for "Меня зовут X" / "My name is X"
-    / "Я Х" / "Мене звати X" patterns. Cache the set of names.
+  - At Engine init / refresh, scan facts for name-declaration patterns
+    ("my name is X" and the localized equivalents). Cache the set of names.
   - PAMVR's entity check, when penalising a missed proper noun, checks
     if (a) noun is in user_names AND (b) candidate has first-person marker.
     If both true → match instead of penalty.
+
+The name-declaration regexes and first-person markers for RU/UK live in the
+built-in ru.yaml / uk.yaml packs (L1); English is inline above.
 
 Cost: one regex pass over all active facts at refresh. ~10ms on 1000
 events. Set lookup at query time = O(1).
@@ -29,33 +32,32 @@ import re
 import sqlite3
 from pathlib import Path
 
+from pmb import lang as _lang
 
-# Patterns that declare a name: extract group "name"
+# Patterns that declare a name: extract group "name". The English patterns are
+# inline; the RU/UK ones live in the built-in ru.yaml / uk.yaml packs under
+# `name_statement_patterns` (L1 — keeps this module Cyrillic-free). Order is
+# irrelevant; all patterns are tried.
 _NAME_PATTERNS = [
-    re.compile(r"\bменя\s+зовут\s+(?P<name>[А-ЯЁA-Z][\w]+)", re.IGNORECASE),
-    re.compile(r"\bмене\s+звати\s+(?P<name>[А-ЯЁІЇЄҐA-Z][\w]+)", re.IGNORECASE),
     re.compile(r"\bmy\s+name\s+is\s+(?P<name>[A-Z][\w]+)", re.IGNORECASE),
     re.compile(r"\bi\s+am\s+(?P<name>[A-Z][a-z]{2,})\b"),
     re.compile(r"\bI'?m\s+(?P<name>[A-Z][a-z]{2,})\b"),
     re.compile(r"\buser'?s?\s+name\s+is\s+(?P<name>[A-Z][\w]+)", re.IGNORECASE),
-    # "Я Алексей" — bare assertion
-    re.compile(r"^Я\s+(?P<name>[А-ЯЁ][а-яё]{2,})\b", re.IGNORECASE | re.MULTILINE),
-]
+] + _lang.compile_patterns("name_statement_patterns")
 
 
 # Self-reference markers in content — when candidate has these, it's a
-# first-person fact about the user.
+# first-person fact about the user. EN inline; RU/UK reflexives from the packs.
 SELF_MARKERS = {
-    "я", "меня", "мне", "мной", "обо", "i", "i'm", "im", "ive", "my",
-    "мене", "мені", "мною", "i've", "myself",
-}
+    "i", "i'm", "im", "ive", "my", "i've", "myself",
+} | _lang.merged_set("self_markers", set())
 
 
-# Extra explicit RU/UK reflexives common in first-person fact phrasing
-_SELF_RE = re.compile(
-    r"\b(?:я|меня|мне|мной|i|i'm|i've|my|мене|мені|мною|myself)\b",
-    re.IGNORECASE,
-)
+# Explicit reflexives for the first-person regex; EN inline + RU/UK from packs
+# (`self_re_markers`). Whole-word alternation, so order does not matter.
+_SELF_ALTS = ["i", "i'm", "i've", "my", "myself"] + sorted(
+    _lang.merged_set("self_re_markers", set()))
+_SELF_RE = re.compile(r"\b(?:" + "|".join(_SELF_ALTS) + r")\b", re.IGNORECASE)
 
 
 def detect_user_names(events: list[str]) -> set[str]:
@@ -74,7 +76,8 @@ def detect_user_names(events: list[str]) -> set[str]:
 
 
 def looks_like_name_statement(content: str) -> bool:
-    """True if CONTENT declares a user name ("My name is X", "Меня зовут X").
+    """True if CONTENT declares a user name ("My name is X" or a localized
+    equivalent).
     Cheap regex check used by the write path to mark the user-name cache dirty
     so a freshly-recorded name takes effect on the very NEXT recall instead of
     waiting for the periodic refresh."""

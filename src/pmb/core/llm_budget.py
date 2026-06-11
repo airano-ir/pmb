@@ -46,7 +46,7 @@ class LLMBudget:
 
 
 def budget_from_config(config, default_calls: int = 40,
-                       default_wall_s: float = 120.0) -> "LLMBudget":
+                       default_wall_s: float = 120.0) -> LLMBudget:
     """Build an LLMBudget from the additive config keys, tolerant of a missing
     config object (tests, bare callers)."""
     calls = default_calls

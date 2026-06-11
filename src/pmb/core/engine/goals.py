@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from pmb.core.events import (
     Event,
@@ -14,16 +13,16 @@ class GoalsMixin:
         self,
         title: str,
         status: str = "pending",  # pending / in_progress / done / cancelled
-        parent_goal_ulid: Optional[str] = None,
-        due_at: Optional[float] = None,
+        parent_goal_ulid: str | None = None,
+        due_at: float | None = None,
         importance: float = 0.7,
-        session_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        session_id: str | None = None,
+        metadata: dict | None = None,
     ) -> str:
         """Create a goal/intent event. Goals have status + optional hierarchy.
 
         Use when user says they want / plan / intend to do something:
-          "Хочу выучить Rust к концу года"
+          "I want to learn Rust by year-end"
           "Need to ship v1.0 by Q3"
           "Plan: refactor auth module first, then frontend"
 
@@ -114,9 +113,9 @@ class GoalsMixin:
     def update_goal(
         self,
         goal_ulid: str,
-        status: Optional[str] = None,
-        progress: Optional[int] = None,  # 0..100
-        note: Optional[str] = None,
+        status: str | None = None,
+        progress: int | None = None,  # 0..100
+        note: str | None = None,
     ) -> dict:
         """Update a goal's status / progress. Creates a linked update event
         recording the transition (so history of changes is preserved).
@@ -132,7 +131,8 @@ class GoalsMixin:
         if progress is not None:
             meta["goal_progress"] = max(0, min(100, int(progress)))
         # Persist updated metadata in-place
-        import sqlite3, json as _j
+        import json as _j
+        import sqlite3
 
         with sqlite3.connect(self.workspace.db_path) as conn:
             conn.execute(
@@ -186,11 +186,12 @@ class GoalsMixin:
 
     def list_goals(
         self,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         """List goals (optionally filtered by status)."""
-        import sqlite3, json as _j
+        import json as _j
+        import sqlite3
 
         with sqlite3.connect(self.workspace.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -229,8 +230,8 @@ class GoalsMixin:
         self,
         chain_name: str,
         title: str,
-        state: Optional[dict] = None,
-        triggered_by_ulid: Optional[str] = None,
+        state: dict | None = None,
+        triggered_by_ulid: str | None = None,
         importance: float = 0.6,
     ) -> str:
         """Record a milestone in a named state-chain.
@@ -253,7 +254,7 @@ class GoalsMixin:
         # Find the previous milestone in this chain (latest by timestamp)
         import sqlite3
 
-        prev_ulid: Optional[str] = None
+        prev_ulid: str | None = None
         with sqlite3.connect(self.workspace.db_path) as conn:
             row = conn.execute(
                 "SELECT ulid FROM events WHERE workspace_id = ? "
@@ -336,7 +337,8 @@ class GoalsMixin:
         and trigger events. Reconstructs the evolution: 6 → 7 → ... → 11
         with the reason at each step.
         """
-        import sqlite3, json as _j
+        import json as _j
+        import sqlite3
 
         with sqlite3.connect(self.workspace.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -366,7 +368,7 @@ class GoalsMixin:
             )
         return out
 
-    def chain_current(self, chain_name: str) -> Optional[dict]:
+    def chain_current(self, chain_name: str) -> dict | None:
         """Latest milestone of a chain — the "current state"."""
         hist = self.chain_history(chain_name, limit=200)
         return hist[-1] if hist else None
@@ -376,9 +378,9 @@ class GoalsMixin:
         summary: str,
         actor: str = "agent",
         kind: str = "action",
-        details: Optional[dict] = None,
+        details: dict | None = None,
         importance: float = 0.4,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> str:
         """Log an action / activity. Used by the AI to record what it
         just did (made an edit, ran a tool, gave advice). Lighter than
@@ -409,6 +411,34 @@ class GoalsMixin:
         except Exception:
             pass
 
+        # R7: decisions are durable "why" memory. The documented agent pattern
+        # records them as {"type":"activity","kind":"decision"}, but the working
+        # tier decays with a ~2-day half-life, so a decision auto-archives within
+        # a week — even though events.py reserves the SEMANTIC tier for
+        # "decision / rule". Land kind=decision in the semantic tier so the
+        # rationale survives; everything else stays working memory.
+        _tier = "semantic" if kind == "decision" else "working"
+
+        # 0.2 (former E6): exact-duplicate suppression for activities. Agents
+        # re-log the same action seconds apart (live workspaces showed identical
+        # activities ~60s apart). Within write.dedup_window_h, bump the existing
+        # row instead of inserting a twin. Pure SQL probe — safe inside a batch.
+        self._last_write_deduped = False
+        if not getattr(self, "_bulk_mode", False):
+            try:
+                _win = float(self.config.get("write.dedup_window_h") or 0.0)
+            except Exception:
+                _win = 0.0
+            if _win > 0:
+                _hit = self._exact_dup_within_window(clean_summary, "activity", _win)
+                if _hit is not None:
+                    try:
+                        self._bump_for_dup(_hit.canonical_ulid)
+                    except Exception:
+                        pass
+                    self._last_write_deduped = True
+                    return _hit.canonical_ulid
+
         # Bulk-import shortcut: skip graph + L2.5 queue, just persist
         if getattr(self, "_bulk_mode", False):
             ev = Event(
@@ -418,7 +448,7 @@ class GoalsMixin:
                 metadata=meta,
                 importance=importance,
                 source_session_id=session_id,
-                tier="working",
+                tier=_tier,
             )
             ev = self.events.append(ev)
             self._embed_or_defer(ev.ulid, ev.to_text())
@@ -435,7 +465,7 @@ class GoalsMixin:
             metadata=meta,
             importance=importance,
             source_session_id=session_id,
-            tier="working",  # activity = working memory by default
+            tier=_tier,  # working by default; semantic for kind=decision (R7)
         )
         ev = self.events.append(ev)
         # Synchronous unless inside batch.
@@ -463,15 +493,15 @@ class GoalsMixin:
         self,
         minutes: float = 60.0,
         limit: int = 20,
-        actor: Optional[str] = None,
-        kind: Optional[str] = None,
+        actor: str | None = None,
+        kind: str | None = None,
     ) -> list[dict]:
         """Working memory dump — recent activity events, chronological.
 
         NO BM25/vector search — just SQL by timestamp. Instant.
 
         Use this BEFORE recall when answering "what did we just do",
-        "что последнее", "show recent changes" type questions.
+        "what's the latest", "show recent changes" type questions.
 
         Filters:
           minutes: how far back (default 60)
@@ -520,7 +550,7 @@ class GoalsMixin:
 
     def session_timeline(
         self,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         limit: int = 100,
     ) -> list[dict]:
         """Chronological events of a session. If session_id is None,
@@ -535,7 +565,8 @@ class GoalsMixin:
             if not sess:
                 return []
             session_id = sess.id
-        import sqlite3, json as _j
+        import json as _j
+        import sqlite3
 
         with sqlite3.connect(self.workspace.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -568,8 +599,8 @@ class GoalsMixin:
     def what_just_happened(self, n: int = 5) -> list[dict]:
         """Last N events of ANY type, newest first.
 
-        Used by AI to answer 'что только что сделали?' / 'what did we just do?'
-        without going through recall search.
+        Used by AI to answer 'what did we just do?' without going through
+        recall search.
 
         Returns activities AND facts AND any other event types — just the
         most recent stuff regardless of session binding. For session-only

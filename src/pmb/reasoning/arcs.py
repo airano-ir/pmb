@@ -39,10 +39,9 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pmb.core.engine import Engine
     from pmb.core.events import Event
 
 
@@ -55,13 +54,13 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class Arc:
-    id: Optional[int]
+    id: int | None
     workspace_id: str
     title: str
     summary: str = ""
     status: str = "active"  # active | closed
-    first_event_ulid: Optional[str] = None
-    last_event_ulid: Optional[str] = None
+    first_event_ulid: str | None = None
+    last_event_ulid: str | None = None
     n_events: int = 0
     created_at: float = field(default_factory=time.time)
     last_updated: float = field(default_factory=time.time)
@@ -127,7 +126,7 @@ def add_event_to_arc(db_path, arc_id: int, event_ulid: str) -> bool:
 
 
 def list_arcs(
-    db_path, workspace_id: str, status: Optional[str] = "active", limit: int = 50,
+    db_path, workspace_id: str, status: str | None = "active", limit: int = 50,
 ) -> list[Arc]:
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
@@ -146,7 +145,7 @@ def list_arcs(
     return [_row_to_arc(r) for r in rows]
 
 
-def get_arc(db_path, arc_id: int) -> Optional[Arc]:
+def get_arc(db_path, arc_id: int) -> Arc | None:
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT * FROM arcs WHERE id = ?", (arc_id,)).fetchone()
@@ -237,7 +236,7 @@ class ArcManager:
 
     def assign_event(
         self,
-        event: "Event",
+        event: Event,
         candidate_arcs: list[Arc],
         workspace_id: str,
     ) -> dict:
@@ -278,7 +277,7 @@ class ArcManager:
             out["new_title"] = title
         return out
 
-    def write_summary(self, arc: Arc, events: list["Event"]) -> str:
+    def write_summary(self, arc: Arc, events: list[Event]) -> str:
         ev_text = "\n".join(
             f"  - [{int(e.timestamp)}] {(e.content or '')[:180]}" for e in events[:20]
         )

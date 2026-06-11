@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 
 class HealthMixin:
     def apply_daily_decay(self, days_since: float = 1.0) -> dict:
@@ -11,8 +9,8 @@ class HealthMixin:
 
     def archive_cold(
         self,
-        days: Optional[int] = None,
-        max_importance: Optional[float] = None,
+        days: int | None = None,
+        max_importance: float | None = None,
         dry_run: bool = True,
     ) -> dict:
         """Time-based forgetting (#6): archive ACTIVE facts/activities that are
@@ -116,7 +114,7 @@ class HealthMixin:
         self, n_samples: int = 20, min_age_days: float = 1.0, apply_adaptive: bool = True
     ) -> dict:
         """
-        Запустить self-test и опционально применить adaptive boost.
+        Run a self-test and optionally apply an adaptive boost.
 
         Adaptive integrates two signals:
           1) self-test failures (synthetic, closed-loop, fallback)
@@ -186,8 +184,8 @@ class HealthMixin:
         self,
         ulid: str,
         verdict: str,
-        query: Optional[str] = None,
-        expected_ulid: Optional[str] = None,
+        query: str | None = None,
+        expected_ulid: str | None = None,
     ) -> dict:
         from pmb.health.feedback import record_feedback
 

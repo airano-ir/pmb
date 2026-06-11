@@ -1,21 +1,21 @@
 """
 Git signals capture.
 
-Захватывает в memory:
-- git commits с сообщением, автором, файлами
+Captures into memory:
+- git commits with message, author, files
 - branch changes
-- diff summary (не полный diff — слишком большой)
+- diff summary (not the full diff — too large)
 
-Хранит в EventStore с event_type="git".
+Stored in EventStore with event_type="git".
 
 Tracking:
-- last_sync_timestamp хранится в meta (workspace.last_git_sync)
-- При вызове sync захватываем коммиты со last_sync_timestamp
-- Default first sync — последние 7 дней
+- last_sync_timestamp is stored in meta (workspace.last_git_sync)
+- On each sync call we capture commits since last_sync_timestamp
+- Default first sync — the last 7 days
 
 Idempotency:
-- Каждый commit имеет stable hash → используем как часть metadata
-- Перед добавлением проверяем не записан ли уже этот SHA
+- Each commit has a stable hash → we use it as part of the metadata
+- Before appending we check whether this SHA has already been recorded
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import yaml
 
@@ -43,7 +43,7 @@ class CommitInfo:
     timestamp: float
     subject: str
     body: str
-    branch: Optional[str]
+    branch: str | None
     files_changed: list[str]
     files_added: int
     files_modified: int
@@ -69,7 +69,7 @@ def _is_git_repo(path: Path) -> bool:
     return rc == 0
 
 
-def _current_branch(path: Path) -> Optional[str]:
+def _current_branch(path: Path) -> str | None:
     rc, out, _ = _run_git(["branch", "--show-current"], path, timeout=2)
     if rc == 0:
         return out.strip() or None
@@ -77,7 +77,7 @@ def _current_branch(path: Path) -> Optional[str]:
 
 
 def _commit_files_stat(path: Path, sha: str) -> dict:
-    """Получить статистику файлов для commit'а через --shortstat и --name-status."""
+    """Get file statistics for a commit via --shortstat and --name-status."""
     rc, out, _ = _run_git(["show", "--name-status", "--format=", sha], path)
     files_added, files_modified, files_deleted = 0, 0, 0
     files_changed: list[str] = []
@@ -100,7 +100,7 @@ def _commit_files_stat(path: Path, sha: str) -> dict:
     rc2, out2, _ = _run_git(["show", "--shortstat", "--format=", sha], path)
     insertions, deletions = 0, 0
     if rc2 == 0 and out2.strip():
-        # пример: " 3 files changed, 45 insertions(+), 12 deletions(-)"
+        # example: " 3 files changed, 45 insertions(+), 12 deletions(-)"
         for token in out2.strip().split(","):
             token = token.strip()
             if "insertion" in token:
@@ -120,10 +120,10 @@ def _commit_files_stat(path: Path, sha: str) -> dict:
 
 def capture_recent_commits(
     repo_path: Path,
-    since_timestamp: Optional[float] = None,
+    since_timestamp: float | None = None,
     max_commits: int = 100,
 ) -> list[CommitInfo]:
-    """Захватить commit'ы с указанной даты (или за неделю по умолчанию)."""
+    """Capture commits since the given date (or the last week by default)."""
     if not _is_git_repo(repo_path):
         return []
 
@@ -147,7 +147,7 @@ def capture_recent_commits(
         return []
 
     commits: list[CommitInfo] = []
-    # Записи разделены 0x1e (RS char), поля внутри 0x09 (TAB)
+    # Records are separated by 0x1e (RS char), fields within by 0x09 (TAB)
     for record in out.split("\x1e"):
         record = record.strip("\n").strip()
         if not record:
@@ -186,25 +186,25 @@ def capture_recent_commits(
 
 class GitSync:
     """
-    Синхронизация git событий в PMB memory.
+    Synchronize git events into PMB memory.
 
-    Использование:
+    Usage:
         sync = GitSync(engine)
-        n = sync.sync()  # синхронизировать новое
+        n = sync.sync()  # synchronize new commits
     """
 
-    def __init__(self, engine: "Engine"):
+    def __init__(self, engine: Engine):
         self.engine = engine
 
     def _state_file(self) -> Path:
         return self.engine.workspace.storage_dir / "git_sync.yaml"
 
-    def get_last_sync(self) -> Optional[float]:
+    def get_last_sync(self) -> float | None:
         f = self._state_file()
         if not f.exists():
             return None
         try:
-            with open(f, "r", encoding="utf-8") as fp:
+            with open(f, encoding="utf-8") as fp:
                 data = yaml.safe_load(fp) or {}
             return data.get("last_sync_timestamp")
         except Exception:
@@ -217,7 +217,7 @@ class GitSync:
             yaml.safe_dump({"last_sync_timestamp": ts}, fp)
 
     def already_imported_shas(self) -> set[str]:
-        """Получить SHA коммитов которые уже в EventStore."""
+        """Get the SHAs of commits that are already in the EventStore."""
         active = self.engine.events.list_active(
             self.engine.workspace.id, limit=10000, event_type="git",
         )
@@ -228,9 +228,9 @@ class GitSync:
                 shas.add(sha)
         return shas
 
-    def sync(self, since_timestamp: Optional[float] = None) -> dict:
+    def sync(self, since_timestamp: float | None = None) -> dict:
         """
-        Захватить git commits с last_sync (или since_timestamp если передан).
+        Capture git commits since last_sync (or since_timestamp if provided).
 
         Returns: {"captured": int, "skipped_existing": int, "branch": str}
         """
@@ -275,7 +275,7 @@ class GitSync:
             # Redact secrets that may have leaked into commit messages
             content, _ = redact(content)
             metadata, _ = redact_metadata(metadata)
-            # importance proportional к scope изменения
+            # importance proportional to the scope of the change
             importance = self._compute_importance(c)
 
             ev = Event(
@@ -327,7 +327,7 @@ class GitSync:
     @staticmethod
     def _compute_importance(c: CommitInfo) -> float:
         """
-        Importance based на размер изменения.
+        Importance based on the size of the change.
 
         Tiny (< 10 lines)    → 0.4
         Small (< 100 lines)  → 0.5

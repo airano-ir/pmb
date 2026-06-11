@@ -30,11 +30,8 @@ from __future__ import annotations
 
 import json
 import os
-import platform
 import sys
 from pathlib import Path
-from typing import Optional
-
 
 _HOOK_SCRIPT_NAME = "pmb-session-start"
 
@@ -42,7 +39,7 @@ _HOOK_SCRIPT_NAME = "pmb-session-start"
 # idempotent and uninstall can find every one we added.
 _PMB_MARKERS = (
     "prepare-context", "session-restore", "lesson-followcheck",
-    "track-action", "autowrite",
+    "track-action", "autowrite", "pretool",
 )
 
 
@@ -56,34 +53,59 @@ def _pmb_entry() -> str:
     return "pmb"
 
 
+def _pmb_hook_entry() -> str:
+    """Absolute path to the stdlib-only `pmb-hook` fast lane (S2). Falls back to
+    the full `pmb` binary if pmb-hook isn't installed (older wheels), so an
+    upgrade is seamless either way."""
+    py = Path(sys.executable)
+    for candidate in (py.parent / "pmb-hook.exe", py.parent / "pmb-hook"):
+        if candidate.exists():
+            return str(candidate)
+    return "pmb-hook"
+
+
 def _claude_hook_specs() -> list[dict]:
-    """The three hooks we install for claude-code, as
-    (event, command) specs. `event` is the Claude Code hook event name."""
-    pmb = _pmb_entry()
+    """The hooks we install for claude-code, as (event, command) specs.
+    `event` is the Claude Code hook event name.
+
+    All five route through `pmb-hook` (S2) — the stdlib-only fast lane that
+    talks to the warm daemon (≈10–50 ms) and falls back to the full CLI cold
+    path only when the daemon is absent. The old `pmb <sub>` lines keep working
+    and are upgraded in place on the next `pmb hooks install` (markers match
+    both)."""
+    h = _pmb_hook_entry()
     return [
         {
             "event": "UserPromptSubmit",
-            "command": f'"{pmb}" prepare-context --stdin --max-chars 4000 --quiet',
+            "command": f'"{h}" prepare-context --max-chars 4000 --quiet',
         },
         {
             "event": "SessionStart",
-            "command": f'"{pmb}" session-restore --max-chars 3000 --quiet',
+            "command": f'"{h}" session-restore --max-chars 3000 --quiet',
+        },
+        # PreToolUse: R11 lesson guard — fire a matching rule ("use pnpm, never
+        # npm") at tool-call time, even if the agent never called memory.
+        # Daemon-served + advisory (never blocks); no-op without a daemon.
+        {
+            "event": "PreToolUse",
+            "matcher": "Bash|Edit|Write|NotebookEdit",
+            "command": f'"{h}" pretool --quiet',
         },
         # PostToolUse: ambient observer — log the agent's action (instant).
         {
             "event": "PostToolUse",
-            "command": f'"{pmb}" track-action --quiet',
+            "command": f'"{h}" track-action --quiet',
         },
         {
             "event": "Stop",
-            "command": f'"{pmb}" lesson-followcheck --window 30 --quiet',
+            "command": f'"{h}" lesson-followcheck --window 30 --quiet',
         },
         # Stop: ambient auto-write — journal the turn if the agent didn't.
         # No-op unless `autowrite.enabled` is true in config, so installing
         # the hook is safe; it stays silent until the user opts in.
         {
             "event": "Stop",
-            "command": f'"{pmb}" autowrite --window 30 --quiet',
+            "command": f'"{h}" autowrite --window 30 --quiet',
         },
     ]
 
@@ -93,11 +115,11 @@ def hook_command_for(agent: str) -> str:
 
     Older callers / tests use this to get "the hook line". It now returns
     specifically the prepare-context (auto-recall) command, which is the
-    per-turn context injector.
+    per-turn context injector — via the `pmb-hook` fast lane (S2).
     """
-    pmb = _pmb_entry()
+    h = _pmb_hook_entry()
     if agent in ("claude-code", "codex"):
-        return f'"{pmb}" prepare-context --stdin --max-chars 4000 --quiet'
+        return f'"{h}" prepare-context --max-chars 4000 --quiet'
     raise ValueError(f"no hook support for agent {agent!r}")
 
 
@@ -144,7 +166,7 @@ def _install_claude_hook() -> dict:
             actions.append({"event": event, "action": "updated"})
         else:
             entries.append({
-                "matcher": "*",
+                "matcher": spec.get("matcher", "*"),
                 "hooks": [{"type": "command", "command": cmd}],
             })
             actions.append({"event": event, "action": "created"})

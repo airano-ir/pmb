@@ -42,12 +42,10 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pmb.core.engine import Engine
     from pmb.core.events import Event
 
 
@@ -157,8 +155,8 @@ class Reflector:
         self.max_context_events = max_context_events
 
     def reflect(
-        self, event: "Event", context_events: Optional[list["Event"]] = None
-    ) -> Optional[Reflection]:
+        self, event: Event, context_events: list[Event] | None = None
+    ) -> Reflection | None:
         if not event or not event.content or not event.content.strip():
             return None
         prompt = self._build_prompt(event, context_events or [])
@@ -192,7 +190,7 @@ class Reflector:
     # Internals
     # ------------------------------------------------------------------
 
-    def _build_prompt(self, event: "Event", context: list["Event"]) -> str:
+    def _build_prompt(self, event: Event, context: list[Event]) -> str:
         meta = event.metadata or {}
         meta_summary = json.dumps(
             {k: v for k, v in meta.items() if k in (

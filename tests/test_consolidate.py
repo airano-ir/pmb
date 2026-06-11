@@ -1,47 +1,11 @@
 """Tests for LLM-based consolidation. Uses MockLLM — no API calls."""
 from __future__ import annotations
 
-import os
-import sys
-import tempfile
-from pathlib import Path
-
-import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pmb.core.engine import Engine
 from pmb.health.consolidate import (
-    cluster_events, run_consolidation, _parse_llm_json,
+    _parse_llm_json,
+    cluster_events,
 )
-
-
-@pytest.fixture
-def tmp_pmb_home():
-    import gc, shutil, time as _t
-    tmp = tempfile.mkdtemp()
-    home = Path(tmp) / "pmb_home"
-    os.environ["PMB_HOME"] = str(home)
-    try:
-        yield home
-    finally:
-        os.environ.pop("PMB_HOME", None)
-        gc.collect()
-        for _ in range(3):
-            try:
-                shutil.rmtree(tmp, ignore_errors=False)
-                break
-            except (OSError, PermissionError):
-                _t.sleep(0.2)
-                gc.collect()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
-
-
-@pytest.fixture
-def tmp_workspace_dir():
-    with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
 
 
 class MockLLM:
@@ -241,7 +205,9 @@ def test_ollama_ping_failure_returns_false(monkeypatch):
 
 def test_ollama_consolidate_via_mocked_urlopen(monkeypatch):
     """Drive OllamaClient.consolidate with a mocked HTTP layer — no network."""
-    import io, json as _json, urllib.request
+    import json as _json
+    import urllib.request
+
     from pmb.health.consolidate import OllamaClient
 
     expected = {
@@ -275,7 +241,9 @@ def test_ollama_consolidate_via_mocked_urlopen(monkeypatch):
 
 
 def test_ollama_unreachable_raises_runtimeerror(monkeypatch):
-    import urllib.request, urllib.error
+    import urllib.error
+    import urllib.request
+
     from pmb.health.consolidate import OllamaClient
 
     def _fail(req, timeout=None):
@@ -330,6 +298,7 @@ def test_resolve_explicit_ollama_when_down(monkeypatch):
 
 def test_claude_cli_available_check(monkeypatch):
     import shutil
+
     from pmb.health.consolidate import ClaudeCLIClient
     monkeypatch.setattr(shutil, "which", lambda cmd: "/fake/path/claude" if cmd == "claude" else None)
     assert ClaudeCLIClient.available() is True
@@ -340,6 +309,7 @@ def test_claude_cli_available_check(monkeypatch):
 def test_claude_cli_consolidate_via_mocked_subprocess(monkeypatch):
     """Mock subprocess so we never spawn a real claude process."""
     import subprocess as sp
+
     from pmb.health.consolidate import ClaudeCLIClient
 
     expected = '{"consolidate": true, "summary": "User prefers no comments.", "confidence": 0.9, "reasoning": "all three say so"}'
@@ -370,6 +340,7 @@ def test_claude_cli_consolidate_via_mocked_subprocess(monkeypatch):
 
 def test_claude_cli_propagates_exit_code(monkeypatch):
     import subprocess as sp
+
     from pmb.health.consolidate import ClaudeCLIClient
     class _R:
         returncode = 1
@@ -388,6 +359,7 @@ def test_claude_cli_propagates_exit_code(monkeypatch):
 
 def test_claude_cli_handles_missing_binary(monkeypatch):
     import subprocess as sp
+
     from pmb.health.consolidate import ClaudeCLIClient
     def _fail(*a, **kw):
         raise FileNotFoundError("claude not found")
@@ -402,6 +374,7 @@ def test_claude_cli_handles_missing_binary(monkeypatch):
 
 def test_claude_cli_handles_timeout(monkeypatch):
     import subprocess as sp
+
     from pmb.health.consolidate import ClaudeCLIClient
     def _timeout(*a, **kw):
         raise sp.TimeoutExpired(cmd="claude", timeout=1)

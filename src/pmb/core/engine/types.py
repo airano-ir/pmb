@@ -5,14 +5,13 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from pmb.reference_data import override_dict as _override_dict
 
 
 @dataclass
 class RecallResult:
-    """Результат recall — событие + signals от ranking."""
+    """A recall result — an event plus ranking signals."""
 
     ulid: str
     event_type: str
@@ -24,6 +23,9 @@ class RecallResult:
     vec_score: float
     importance: float
     recency_score: float
+    # R3: absolute vector similarity 1/(1+dist) in [0,1] — un-normalized, so it
+    # carries real meaning across queries (unlike the min-maxed score/vector).
+    raw_vec: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -37,13 +39,14 @@ class RecallResult:
             "signals": {
                 "bm25": self.bm25_score,
                 "vector": self.vec_score,
+                "raw_cosine": self.raw_vec,
                 "importance": self.importance,
                 "recency": self.recency_score,
             },
         }
 
     @property
-    def resolved_date(self) -> Optional[str]:
+    def resolved_date(self) -> str | None:
         """Human-readable date this result REFERS to.
 
         Prefers the parsed `event_time` (the date *inside* the content), then a
@@ -70,7 +73,7 @@ class RecallResult:
 
 @dataclass
 class RecallPack:
-    """Структурированный ответ от recall — формат для LLM."""
+    """Structured response from recall — formatted for an LLM."""
 
     query: str
     workspace_name: str
@@ -83,7 +86,7 @@ class RecallPack:
     #    "elapsed_ms": ..., "deadline_ms": ..., "confidence": ...}
     # Lets a caller see what ran and why it stopped, so it doesn't fan out
     # redundant recalls after a low-confidence / timed-out result (#10).
-    escalation: Optional[dict] = None
+    escalation: dict | None = None
 
     def to_dict(self) -> dict:
         d = {
@@ -110,15 +113,14 @@ class RecallPack:
         to surface results or ask for clarification."""
         if not self.results:
             return 0.0
-        top1 = max(0.0, min(1.0, float(self.results[0].score)))
-        if len(self.results) > 1:
-            top2 = max(0.0, min(1.0, float(self.results[1].score)))
-            gap = top1 - top2
-            return min(1.0, top1 * 0.7 + gap * 0.3 + 0.1)
-        return min(1.0, top1 * 0.7 + 0.1)
+        # X3: calibration math lives in one named, tested function.
+        from pmb.reasoning.scoring import calibrated_confidence
+        top1 = float(self.results[0].score)
+        top2 = float(self.results[1].score) if len(self.results) > 1 else None
+        return calibrated_confidence(top1, top2)
 
     def to_text(self, max_results: int = 5) -> str:
-        """Текстовое представление для injection в промпт."""
+        """Text representation for injection into a prompt."""
         if not self.results:
             return f"[Memory] No relevant memories found in workspace '{self.workspace_name}'."
 
