@@ -222,8 +222,15 @@ def test_get_many_dedups_input(tmp_engine):
 
 
 # -------------------- P0-1: RU/UK atomic fact extraction --------------------
+# G3: RU/UK atomic-fact extraction was removed with the ru/uk packs. RU/UK facts
+# are still recalled WHOLE via the multilingual vector channel, and personal
+# attributes via the warm C2 hypothesis extractor; general RU/UK atomization has
+# no cold-path replacement, so these two pin removed behaviour and are skipped.
+
+import pytest as _pytest
 
 
+@_pytest.mark.skip(reason="G3: RU atomic extraction removed with the ru pack")
 def test_ru_atomic_facts_extracted():
     """Reviewer feedback (Alternix 2026-05-27): English-only extraction was
     a critical blocker for personal-assistant use. RU patterns must fire.
@@ -244,6 +251,7 @@ def test_ru_atomic_facts_extracted():
     assert "ru_birthday" in kinds, f"missing ru_birthday: {kinds}"
 
 
+@_pytest.mark.skip(reason="G3: UK atomic extraction removed with the uk pack")
 def test_uk_atomic_facts_extracted():
     """Same coverage but Ukrainian."""
     from pmb.reasoning.fact_extract import extract_atomic_facts

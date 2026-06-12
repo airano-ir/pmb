@@ -451,6 +451,26 @@ def run_auto_context(
     intents = detect_intents(msg, known_projects=known, min_chars=min_chars)
     res.intents = intents
 
+    # D3 shadow-T1 (sampled): when the COLD lexical tier fired a recall intent,
+    # occasionally check the WARM anchor and log whether they agreed, so the
+    # distiller can prune an auto.yaml category that misleads the cold path.
+    # Warm-only, gated (lang.anchor_log), ~5% sample — negligible cost.
+    try:
+        import random as _rnd
+        if (intents != [Intent.SKIP] and _rnd.random() < 0.05
+                and hasattr(engine, "is_warm") and engine.is_warm()
+                and engine.config.get("lang.anchor_log")):
+            from pmb.maintenance.distill import (
+                _INTENT_TO_CATEGORY,
+                record_shadow_t1,
+            )
+            t0 = next((i for i in intents if i in _INTENT_TO_CATEGORY), None)
+            if t0:
+                from pmb.hooks.semantic_intent import classify_anchor_intent
+                record_shadow_t1(engine, t0, classify_anchor_intent(engine, msg) == t0)
+    except Exception:
+        pass
+
     if intents == [Intent.SKIP]:
         # C5: lexical detection found nothing. If semantic intents are enabled
         # AND the engine is warm (daemon-served — never load the model on the
@@ -459,7 +479,14 @@ def run_auto_context(
         sem = None
         try:
             warm = hasattr(engine, "is_warm") and engine.is_warm()
-            if warm and engine.config.get("hooks.semantic_intents"):
+            # B1: the calibrated anchor tier (`lang.anchors`, on by default) is
+            # the multilingual fallback; the legacy centroid tier still honours
+            # the explicit `hooks.semantic_intents` opt-in. Either way we only
+            # touch the model when WARM (daemon-served) — never on the cold hook.
+            want_sem = warm and (
+                engine.config.get("lang.anchors")
+                or engine.config.get("hooks.semantic_intents"))
+            if want_sem:
                 from pmb.hooks.semantic_intent import classify_semantic_intent
                 sem = classify_semantic_intent(
                     engine, msg,

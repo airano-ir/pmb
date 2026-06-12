@@ -166,6 +166,16 @@ class EmbedMixin:
         self._warmed_at = _t.time()
         self._is_warm = True
 
+        # 6. Kick the embed-queue worker now that the model is ready. The
+        # passive worker (see _drain_embed_queue) may have timed out and
+        # exited while the process was cold; anything still queued (in-memory
+        # or durable embed_queue_pending) gets drained here instead of waiting
+        # for the next process restart.
+        try:
+            self._kick_embed_drain()
+        except Exception:
+            pass
+
         return {
             "total_ms": round((_t.time() - t0) * 1000, 1),
             "model_load_ms": round(t_model * 1000, 1),
@@ -180,6 +190,49 @@ class EmbedMixin:
         (CLI `pmb stats`, MCP `health`) use this to show readiness state.
         """
         return bool(getattr(self, "_is_warm", False))
+
+    def anchor_index(self):
+        """v0.9 Semantic Anchor Engine — built lazily and ONLY when the engine
+        is warm, so the cold path never loads the embedder for it. Returns the
+        AnchorIndex or None (cold engine / anchors disabled). Cached per engine;
+        the AnchorIndex itself caches embedded exemplars to disk."""
+        if not getattr(self, "_is_warm", False):
+            return None
+        try:
+            if not bool(self.config.get("lang.anchors")):
+                return None
+        except Exception:
+            pass
+        if self._anchor_index is None:
+            try:
+                from pmb.lang.anchors import ALL_ANCHORS, AnchorIndex
+                self._anchor_index = AnchorIndex(
+                    self.search.embed_batch,
+                    getattr(self.search, "model_name", "default"),
+                    ALL_ANCHORS,
+                    self.workspace.storage_dir / "anchors",
+                )
+            except Exception:
+                self._anchor_index = None
+        return self._anchor_index
+
+    def anchor_fires(self, text: str, name: str) -> bool:
+        """B2 warm-only single-anchor check (`is_lesson_intent` /
+        `looks_like_future_intent`). Returns False when cold, when anchors are
+        disabled, or when the set doesn't fire — and NEVER loads the model
+        (anchor_index() is warm-gated), so a cold write path stays lexical."""
+        try:
+            if not self.config.get("lang.anchors"):
+                return False
+        except Exception:
+            return False
+        idx = self.anchor_index()
+        if idx is None:
+            return False
+        try:
+            return bool(idx.fires(text, name))
+        except Exception:
+            return False
 
     def wait_for_embed_queue(self, timeout_seconds: float = 120.0) -> dict:
         """Block until the embed queue has drained (or timeout). Used by
@@ -314,23 +367,112 @@ class EmbedMixin:
                     name="pmb-embed-drain",
                 ).start()
 
+    def _drain_embed_inline(self, max_items: int = 64) -> None:
+        """Bounded SYNCHRONOUS drain — read-your-writes for recall. A recall
+        is a legitimate model consumer (it embeds the query in a moment
+        anyway), so flushing parked embeds here keeps 'record then recall'
+        consistent in-process without reintroducing the cold-WRITE-path model
+        load. Bounded so a giant backlog can't stall a recall; leftovers stay
+        for the worker/warmup kick."""
+        for _ in range(max_items):
+            with self._embed_queue_lock or _DUMMY_LOCK:
+                if not self._embed_queue:
+                    return
+                ulid, text = self._embed_queue.pop(0)
+            try:
+                self.search.add(ulid, text)
+            except Exception:
+                return  # stays in the durable queue for recover_on_start
+            if self._durable_embed_queue is not None:
+                try:
+                    with self._durable_embed_queue._conn() as conn:
+                        conn.execute(
+                            "DELETE FROM embed_queue_pending WHERE ulid = ?",
+                            (ulid,))
+                except Exception:
+                    pass
+
+    def _kick_embed_drain(self) -> None:
+        """Drain any embeds left queued while the process was cold. Called at
+        the end of warmup(): the passive worker may have deadline-exited
+        before the model became ready, so anything still in the in-memory
+        queue (or the durable embed_queue_pending table) is picked up HERE
+        rather than waiting for the next process restart."""
+        import threading as _th
+        spawn = False
+        with self._embed_queue_lock or _DUMMY_LOCK:
+            if self._embed_queue and not self._embed_worker_started:
+                self._embed_worker_started = True
+                spawn = True
+        if spawn:
+            _th.Thread(target=self._drain_embed_queue, daemon=True,
+                       name="pmb-embed-drain").start()
+        elif self._durable_embed_queue is not None:
+            try:
+                self._durable_embed_queue.drain_once(
+                    lambda u, t: self.search.add(u, t), max_items=200)
+            except Exception:
+                pass
+
     def _drain_embed_queue(self) -> None:
-        """Background worker: wait for the model to load (poll every 500ms),
-        then drain the queue. After fully draining, exits — re-spawned on
-        next enqueue if needed.
-        """
+        """Background worker: wait for the model to be ready (poll every
+        500ms), then drain the queue. After fully draining, exits — re-spawned
+        on next enqueue (or by warmup(), see below) if needed.
+
+        The worker is PASSIVE by default: it WAITS for `is_ready()` but never
+        triggers the model load itself. The old eager `_ = self.search.model`
+        was the Codex 120s-timeout bomb: a write in a COLD stdio MCP server
+        spawned this worker, the worker started the full torch model load in a
+        background thread, and under memory pressure (a second ~400MB model
+        next to the warm daemon → paging) the load's long GIL bursts starved
+        the server's asyncio loop, so the NEXT tools/call wasn't even read
+        before the client's 120s deadline. Writes are already durable without
+        the model (SQLite row + embed_queue_pending), and the queue is drained
+        by whoever legitimately warms the engine (prewarm thread, a recall,
+        warmup(), or the next process via recover_on_start) — so a write-only
+        cold process now NEVER pays (or inflicts) a model load. Set
+        `embed.queue_autoload=true` to restore the old eager behavior."""
         import time as _t
 
-        # Wait up to ~10 min for model load
-        deadline = _t.time() + 600.0
-        # Trigger model load if nothing else has yet (idempotent thanks to
-        # the lazy `model` property + _ModelCache singleton)
         try:
-            _ = self.search.model
+            autoload = bool(self.config.get("embed.queue_autoload"))
         except Exception:
-            pass
+            autoload = False
+        if autoload:
+            # Old eager behavior (idempotent thanks to the lazy `model`
+            # property + _ModelCache singleton).
+            try:
+                _ = self.search.model
+            except Exception:
+                pass
+        # Eager mode: the load is in flight — wait it out (old semantics).
+        # Passive mode: only a SHORT grace (covers a prewarm already in
+        # flight). Parking for minutes is pointless AND harmful: the thread
+        # pins the whole Engine (BM25/LanceDB handles) against GC, and a
+        # test-suite-scale fleet of parked workers raises peak memory on the
+        # already-constrained Windows box. If the model warms later, the
+        # drain is re-triggered by warmup()'s _kick_embed_drain() or by the
+        # next _enqueue_embed; a process that never warms leaves the durable
+        # embed_queue_pending rows for recover_on_start.
+        deadline = _t.time() + (600.0 if autoload else 15.0)
         while not self.search.is_ready() and _t.time() < deadline:
+            # Attach instantly if ANOTHER consumer in this process already
+            # constructed the model (process-wide _ModelCache) — a peek, never
+            # a load. This is what the old eager `_ = self.search.model` was
+            # implicitly doing mid-suite/mid-daemon; without it, vectors queued
+            # before a recall-triggered lazy load would sit until warmup().
+            try:
+                if self.search.attach_cached_model():
+                    break
+            except Exception:
+                pass
             _t.sleep(0.5)
+        if not self.search.is_ready():
+            # Re-arm the spawn flag so a later enqueue / warmup-kick can
+            # start a fresh worker.
+            with self._embed_queue_lock or _DUMMY_LOCK:
+                self._embed_worker_started = False
+            return
         # Drain (Hardening H3: failure no longer silently drops the
         # work — the row stays in `embed_queue_pending` and the next
         # process restart picks it up via `recover_on_start`).

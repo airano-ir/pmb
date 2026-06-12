@@ -45,8 +45,9 @@ _ATTR_RE = re.compile(
                       + [str(x) for x in _lang.merged_list("recall_first_person")]) + r")\b",
     re.IGNORECASE,
 )
-# Cyrillic letter range for the lexical-overlap tokenizer (also pack-sourced).
-_CYR = "".join(str(x) for x in _lang.merged_list("cyrillic_script_range"))
+# E2: lexical-overlap tokenizer uses a Unicode letters+digits class (`[^\W_]` =
+# word char minus underscore — any script), so no enumerated Cyrillic range.
+_WORD_NUM = r"[^\W_]+"
 
 
 def _result_in_project(r, project_lc: str) -> bool:
@@ -471,6 +472,18 @@ class RecallMixin:
             except Exception:
                 pass  # cache failure → normal recall
 
+        # Read-your-writes: embeds parked while the process was cold (the
+        # passive worker never loads the model — the Codex-timeout fix) are
+        # flushed HERE, because recall is a legitimate model consumer: it
+        # embeds the query on the next line anyway. Bounded inline drain so a
+        # record→recall sequence sees its own vectors; big backlogs finish via
+        # the worker / warmup kick.
+        try:
+            if self._embed_queue:
+                _ = self.search.model   # recall pays this load regardless
+                self._drain_embed_inline(max_items=64)
+        except Exception:
+            pass
         # Stage 1: search by BM25+vec only (no importance/recency in search core)
         raw_hits: list[SearchHit] = self.search.search(
             query=query,
@@ -852,7 +865,7 @@ class RecallMixin:
         }
         q_tokens = {
             t
-            for t in re.findall(r"[a-zA-Z" + _CYR + r"0-9]+", (query or "").lower())
+            for t in re.findall(_WORD_NUM, (query or "").lower())
             if len(t) > 2 and t not in _STOP
         }
 
@@ -865,6 +878,8 @@ class RecallMixin:
                     query,
                     vocab_bridges=self._vocab_bridges,
                     user_names=user_names,
+                    # B4: drop the lexical verb-synonym boost in anchors mode.
+                    verb_match=(self.config.get("lang.mode") != "anchors"),
                 )
             except Exception:
                 pamvr_features = None
@@ -994,14 +1009,23 @@ class RecallMixin:
             )
             if _boost_keyed:
                 keyed_boost = self.config.get("recall.keyed_fact_boost") or 0.35
+                # F1: scale the boost by EXTRACTION CONFIDENCE when present. A
+                # hypothesis-extracted keyed fact (C2) carries metadata.extract.
+                # margin; a low-margin extraction gets a smaller boost. Regex /
+                # manual keyed facts have no margin → conf 1.0 (unchanged).
+                conf = 1.0
+                if self.config.get("extract.confidence_recall") and isinstance(ev.metadata, dict):
+                    _ex = ev.metadata.get("extract")
+                    if isinstance(_ex, dict) and isinstance(_ex.get("margin"), (int, float)):
+                        conf = 0.7 + 0.3 * min(1.0, max(0.0, float(_ex["margin"])) / 0.15)
                 # (a) Floor — keyed-fact text is short ("user city: X")
                 # so vector + BM25 base often underestimates.
                 base = max(base, 0.50)
-                # (b) additive — recency and importance scaled.
-                base += keyed_boost * importance_factor * (1.0 + 0.3 * recency)
+                # (b) additive — recency and importance scaled, confidence-weighted.
+                base += keyed_boost * importance_factor * (1.0 + 0.3 * recency) * conf
                 # (c) multiplicative — keyed-fact-on-personal-query is
-                # almost always the right answer.
-                base *= 1.4
+                # almost always the right answer (full 1.4 at conf=1.0).
+                base *= 1.0 + 0.4 * conf
             # Improvement B: query-keyword overlap boost. If most of the
             # meaningful tokens of the query are present in this event's
             # content, this event is a likely DIRECT match - boost it.
@@ -1103,7 +1127,7 @@ class RecallMixin:
             try:
                 from pmb.memory_quality import is_lesson_intent
 
-                if is_lesson_intent(query):
+                if is_lesson_intent(query, engine=self):
                     lf = float(self.config.get("recall.lesson_boost_factor") or 1.3)
                     scored = [
                         (
@@ -1342,9 +1366,33 @@ class RecallMixin:
                            name="pmb-spreading").start()
             else:
                 _spread()
+        # The model is necessarily loaded by this point (we just searched).
+        # If embeds queued while the process was cold are still parked (the
+        # passive worker may have deadline-exited before this lazy load),
+        # kick the drain now so their vectors land without waiting for
+        # warmup() or the next write.
+        try:
+            if self._embed_queue:
+                self._kick_embed_drain()
+        except Exception:
+            pass
         # Stash for next time. Writes bump the generation so future stale
         # cache hits are dropped on read.
         self.recall_cache.put(cache_key, pack)
+        # F3 (gated, off by default): log the TOP result's channels as a sample;
+        # a later 'useful' feedback flips it positive and the tick proposes
+        # channel weights. One cheap insert per recall when on; zero cost off.
+        try:
+            if self.config.get("recall.weight_learning") and results and scored:
+                from pmb.reasoning.weight_learning import record_channel_sample
+                top_ev = scored[0][1]
+                record_channel_sample(
+                    self,
+                    {"hit": float(getattr(results[0], "score", 0.0) or 0.0),
+                     "importance": float(getattr(top_ev, "importance", 0.0) or 0.0)},
+                    ulid=getattr(top_ev, "ulid", None), useful=False)
+        except Exception:
+            pass
         return pack
 
     def pin(self, ulid: str, importance: float = 1.0):

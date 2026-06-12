@@ -81,4 +81,41 @@ def run_maintenance_tick(engine: Any, *, archive: bool = True,
         return {"would_archive": int(r.get("n", 0))}
     _step("declutter_dryrun", _declutter_dryrun)
 
+    # 4. ALD (Phase D) — distil the anchor-fire log into $PMB_HOME/lang/auto.yaml
+    # so the COLD lexical path learns this machine's languages from its own
+    # traffic. Writes only when n-grams clear support/precision; safe + local.
+    def _distill() -> dict:
+        try:
+            if not engine.config.get("lang.anchor_log"):
+                return {"skipped": "lang.anchor_log=off"}
+        except Exception:
+            pass
+        from pmb.maintenance.distill import distill_lexicon
+        return distill_lexicon(engine)
+    _step("distill", _distill)
+
+    # 5. E1 — refresh corpus-derived stopwords (document frequency) for this
+    # workspace and apply them to the live tokenizer. Gated; additive.
+    def _corpus_stopwords() -> dict:
+        try:
+            if not engine.config.get("lang.corpus_stopwords"):
+                return {"skipped": "lang.corpus_stopwords=off"}
+        except Exception:
+            pass
+        from pmb.maintenance.corpus_stopwords import refresh_corpus_stopwords
+        return refresh_corpus_stopwords(engine)
+    _step("corpus_stopwords", _corpus_stopwords)
+
+    # 6. F3 — propose channel weights from collected feedback samples (X2 loop).
+    # Suggestion only; `pmb doctor` surfaces it, never auto-applied.
+    def _weight_learning() -> dict:
+        try:
+            if not engine.config.get("recall.weight_learning"):
+                return {"skipped": "recall.weight_learning=off"}
+        except Exception:
+            pass
+        from pmb.reasoning.weight_learning import propose_from_samples
+        return propose_from_samples(engine)
+    _step("weight_learning", _weight_learning)
+
     return summary

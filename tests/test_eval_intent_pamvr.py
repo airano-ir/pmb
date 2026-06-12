@@ -18,18 +18,16 @@ import pytest
 from pmb.hooks.auto_recall import detect_intents
 from pmb.reasoning.pamvr import apply_pamvr
 
-# ── V3: message -> an intent that MUST be present in the classification ──────
+# ── V3: message -> an intent that MUST be present in the COLD classification ──
+# G3: the cold lexical tier is EN-only now — RU/UK intents are WARM-anchor
+# classified (test_semantic_intent::test_anchor_intent_real_multilingual covers
+# ru/uk goals/past/self). A non-EN message that matches no pattern still SKIPs,
+# which the SKIP cases below pin.
 INTENT_CASES = [
-    # RU
-    ("что я делал вчера", "PAST_QUERY"),
-    ("какие у меня цели", "GOALS_QUERY"),
-    ("что мы только что обсуждали", "RECENT_QUERY"),
-    ("какие правила проекта", "LESSONS_QUERY"),
+    # non-EN with no cold lexical pattern → SKIP (warm anchors classify these)
     ("привет", "SKIP"),
-    # UK
-    ("які у мене цілі", "GOALS_QUERY"),
     ("дякую", "SKIP"),
-    # EN
+    # EN cold lexical matrix
     ("what did I do yesterday", "PAST_QUERY"),
     ("what is left to do", "GOALS_QUERY"),
     ("do we have a rule about commits", "LESSONS_QUERY"),

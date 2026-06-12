@@ -153,10 +153,43 @@ def _clean(s: str | None) -> str:
     return re.sub(r"\s+", " ", s).strip(" ,.!?;:")
 
 
-def _atomic_from_match(m: re.Match, kind: str, template: str) -> AtomicFact | None:
-    """Build an AtomicFact from a regex match using a template."""
+# C3: keyed kinds → canonical (attr, value-group). The VALUE keeps the user's
+# language; the STRUCTURE is language-neutral, so "city: Kieve" is searchable by
+# both "city" and "Kieve" and carries no localized verb template.
+_CANON_KEYED: dict[str, tuple[str, str]] = {
+    "location": ("city", "place"),
+    "relationship_status": ("relationship", "status"),
+    "attribute_age": ("age", "n"),
+}
+
+
+def _canonical_atom(d: dict, kind: str) -> AtomicFact | None:
+    """C3: a canonical 'attr: value' atom for the USER's own current-state
+    statement (first-person or implied subject). Third-party subjects ("Alice
+    lives in Paris") return None so they keep the descriptive template."""
+    spec = _CANON_KEYED.get(kind)
+    if not spec:
+        return None
+    attr, vgroup = spec
+    val = d.get(vgroup)
+    if not val:
+        return None
+    subj = (d.get("subj") or "").strip().lower()
+    if subj and subj != "i":          # explicit third-party subject → not the user
+        return None
+    return AtomicFact(content=f"{attr}: {val}", kind=kind, confidence=0.85)
+
+
+def _atomic_from_match(m: re.Match, kind: str, template: str,
+                       canonical: bool = False) -> AtomicFact | None:
+    """Build an AtomicFact from a regex match using a template (or, when
+    `canonical` is on, a language-neutral 'attr: value' atom for user facts)."""
     try:
         d = {k: _clean(v) for k, v in m.groupdict().items() if v}
+        if canonical:
+            ca = _canonical_atom(d, kind)
+            if ca is not None:
+                return ca
         # Synthesise optional bits
         d["at_org"] = (" at " + d["org"]) if d.get("org") else ""
         d["for_purpose"] = (" for " + d["purpose"]) if d.get("purpose") else ""
@@ -187,6 +220,7 @@ def extract_atomic_facts(
     min_len: int = MIN_LEN_FOR_EXTRACT,
     min_sentences: int = MIN_SENTENCES,
     max_facts: int = MAX_ATOMIC_FACTS,
+    canonical: bool = False,
 ) -> list[AtomicFact]:
     """Run the pattern bank over a paragraph and return atomic facts.
 
@@ -206,7 +240,7 @@ def extract_atomic_facts(
     for sent in sentences:
         for pat, kind, template in _PATTERNS:
             for m in pat.finditer(sent):
-                af = _atomic_from_match(m, kind, template)
+                af = _atomic_from_match(m, kind, template, canonical=canonical)
                 if af is None:
                     continue
                 key = af.content.lower()

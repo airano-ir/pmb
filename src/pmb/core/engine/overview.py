@@ -20,21 +20,45 @@ class OverviewMixin:
             return []
         with sqlite3.connect(self.workspace.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            ent = conn.execute(
+            # Prefer exact structured project metadata for legacy graphs that
+            # do not yet contain a project-kind entity.
+            ev_rows = conn.execute(
+                """
+                SELECT ulid AS event_ulid FROM events
+                WHERE workspace_id = ? AND archived_at IS NULL
+                  AND LOWER(COALESCE(
+                    json_extract(metadata_json, '$.project_name'),
+                    json_extract(metadata_json, '$.project'),
+                    ''
+                  )) = ?
+                """,
+                (ws, nm),
+            ).fetchall()
+            ent = None if ev_rows else conn.execute(
                 """
                 SELECT id FROM graph_entities
                 WHERE workspace_id = ? AND LOWER(name) LIKE ?
-                ORDER BY n_mentions DESC LIMIT 1
+                ORDER BY
+                  CASE
+                    WHEN LOWER(name) = ?
+                         AND kind IN ('project', 'repo', 'repository') THEN 0
+                    WHEN LOWER(name) = ? THEN 1
+                    WHEN kind IN ('project', 'repo', 'repository') THEN 2
+                    ELSE 3
+                  END,
+                  n_mentions DESC
+                LIMIT 1
                 """,
-                (ws, f"%{nm}%"),
+                (ws, f"%{nm}%", nm, nm),
             ).fetchone()
-            if not ent:
+            if not ent and not ev_rows:
                 return []
             # Project events
-            ev_rows = conn.execute(
-                "SELECT event_ulid FROM graph_event_entities WHERE entity_id = ?",
-                (ent["id"],),
-            ).fetchall()
+            if ent:
+                ev_rows = conn.execute(
+                    "SELECT event_ulid FROM graph_event_entities WHERE entity_id = ?",
+                    (ent["id"],),
+                ).fetchall()
             ev_ulids = {r["event_ulid"] for r in ev_rows}
             if not ev_ulids:
                 return []
@@ -170,48 +194,121 @@ class OverviewMixin:
             return {"empty": True, "error": "empty name"}
         with sqlite3.connect(self.workspace.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            # Pick the dominant entity matching the name.
-            ent = conn.execute(
+            # Structured project metadata is authoritative. Legacy graphs may
+            # not have a project:pmb node yet, while a noisy concept such as
+            # tmp_pmb_home has many mentions. Prefer the exact metadata match
+            # and synthesize a project entity when needed; regraph will create
+            # the real node later, but reads are correct immediately.
+            project_meta = conn.execute(
                 """
-                SELECT id, kind, name, n_mentions FROM graph_entities
-                WHERE workspace_id = ? AND LOWER(name) LIKE ?
-                ORDER BY n_mentions DESC LIMIT 1
+                SELECT
+                  COALESCE(
+                    json_extract(metadata_json, '$.project_name'),
+                    json_extract(metadata_json, '$.project')
+                  ) AS name,
+                  COUNT(*) AS n_mentions
+                FROM events
+                WHERE workspace_id = ?
+                  AND archived_at IS NULL
+                  AND LOWER(COALESCE(
+                    json_extract(metadata_json, '$.project_name'),
+                    json_extract(metadata_json, '$.project'),
+                    ''
+                  )) = ?
+                GROUP BY name
+                ORDER BY n_mentions DESC
+                LIMIT 1
                 """,
-                (ws, f"%{nm}%"),
+                (ws, nm),
             ).fetchone()
+            if project_meta:
+                ent = conn.execute(
+                    """
+                    SELECT id, kind, name, n_mentions FROM graph_entities
+                    WHERE workspace_id = ? AND LOWER(name) = ?
+                      AND kind IN ('project', 'repo', 'repository')
+                    ORDER BY n_mentions DESC LIMIT 1
+                    """,
+                    (ws, nm),
+                ).fetchone()
+                if not ent:
+                    ent = {
+                        "id": None,
+                        "kind": "project",
+                        "name": project_meta["name"],
+                        "n_mentions": project_meta["n_mentions"],
+                    }
+            else:
+                # No structured project match: use the dominant graph entity.
+                ent = conn.execute(
+                    """
+                    SELECT id, kind, name, n_mentions FROM graph_entities
+                    WHERE workspace_id = ? AND LOWER(name) LIKE ?
+                    ORDER BY
+                      CASE
+                        WHEN LOWER(name) = ?
+                             AND kind IN ('project', 'repo', 'repository') THEN 0
+                        WHEN LOWER(name) = ? THEN 1
+                        WHEN kind IN ('project', 'repo', 'repository') THEN 2
+                        ELSE 3
+                      END,
+                      n_mentions DESC
+                    LIMIT 1
+                    """,
+                    (ws, f"%{nm}%", nm, nm),
+                ).fetchone()
             if not ent:
                 return {"empty": True, "name_query": name,
                         "hint": "no entity matched; try a shorter name or use overview() for hybrid search"}
             eid = ent["id"]
             # All linked events (cheap SQL JOIN, no recall).
-            ev_rows = conn.execute(
-                """
-                SELECT ev.ulid, ev.event_type, ev.content, ev.timestamp,
-                       ev.importance, ev.metadata_json
-                FROM graph_event_entities ee
-                JOIN events ev ON ev.ulid = ee.event_ulid
-                WHERE ee.entity_id = ?
-                  AND ev.workspace_id = ?
-                  AND ev.archived_at IS NULL
-                ORDER BY ev.timestamp DESC
-                LIMIT 250
-                """,
-                (eid, ws),
-            ).fetchall()
+            if eid is None:
+                ev_rows = conn.execute(
+                    """
+                    SELECT ulid, event_type, content, timestamp, importance,
+                           metadata_json
+                    FROM events
+                    WHERE workspace_id = ?
+                      AND archived_at IS NULL
+                      AND LOWER(COALESCE(
+                        json_extract(metadata_json, '$.project_name'),
+                        json_extract(metadata_json, '$.project'),
+                        ''
+                      )) = ?
+                    ORDER BY timestamp DESC
+                    LIMIT 250
+                    """,
+                    (ws, nm),
+                ).fetchall()
+            else:
+                ev_rows = conn.execute(
+                    """
+                    SELECT ev.ulid, ev.event_type, ev.content, ev.timestamp,
+                           ev.importance, ev.metadata_json
+                    FROM graph_event_entities ee
+                    JOIN events ev ON ev.ulid = ee.event_ulid
+                    WHERE ee.entity_id = ?
+                      AND ev.workspace_id = ?
+                      AND ev.archived_at IS NULL
+                    ORDER BY ev.timestamp DESC
+                    LIMIT 250
+                    """,
+                    (eid, ws),
+                ).fetchall()
             # Top related entities — neighbours in the co-occurrence graph,
             # by edge weight. Gives the "tech stack" feel without LLM.
-            nbr_rows = conn.execute(
-                """
-                SELECT e.id, e.kind, e.name, e.n_mentions, ed.weight
-                FROM graph_edges ed
-                JOIN graph_entities e
-                  ON (e.id = CASE WHEN ed.entity_a = ? THEN ed.entity_b ELSE ed.entity_a END)
-                WHERE ed.workspace_id = ?
-                  AND (ed.entity_a = ? OR ed.entity_b = ?)
-                ORDER BY ed.weight DESC LIMIT 30
-                """,
-                (eid, ws, eid, eid),
-            ).fetchall()
+            nbr_rows = [] if eid is None else conn.execute(
+                    """
+                    SELECT e.id, e.kind, e.name, e.n_mentions, ed.weight
+                    FROM graph_edges ed
+                    JOIN graph_entities e
+                      ON (e.id = CASE WHEN ed.entity_a = ? THEN ed.entity_b ELSE ed.entity_a END)
+                    WHERE ed.workspace_id = ?
+                      AND (ed.entity_a = ? OR ed.entity_b = ?)
+                    ORDER BY ed.weight DESC LIMIT 30
+                    """,
+                    (eid, ws, eid, eid),
+                ).fetchall()
 
         # Bucket events by event_type / metadata.kind.
         facts, lessons, decisions, completed, goals_open, goals_done, activity, other = [], [], [], [], [], [], [], []
@@ -230,6 +327,12 @@ class OverviewMixin:
                 "kind": kind,
             }
             timestamps.append(r["timestamp"])
+            # Per-file project-index rows are machine-generated lookup
+            # artifacts, not project facts. Keep them searchable through
+            # recall/graph, but do not let hundreds of file summaries crowd
+            # the human-facing project overview.
+            if md.get("source") == "project" and md.get("file_path"):
+                continue
             if r["event_type"] == "lesson" or kind == "lesson":
                 lessons.append(item)
             elif kind == "decision":
@@ -237,8 +340,9 @@ class OverviewMixin:
             elif kind == "completed":
                 completed.append(item)
             elif r["event_type"] == "goal":
-                status = md.get("status", "in_progress")
-                (goals_open if status == "in_progress" else goals_done).append({**item, "status": status})
+                status = md.get("goal_status") or md.get("status") or "in_progress"
+                bucket = goals_open if status in ("pending", "in_progress") else goals_done
+                bucket.append({**item, "status": status})
             elif r["event_type"] == "fact":
                 facts.append(item)
             elif r["event_type"] == "activity":
@@ -307,10 +411,12 @@ class OverviewMixin:
 
         # Related entities — keep variety across kinds, prune the project
         # entity itself.
+        related_noise = {"file", "files", "symbol", "symbols", "import", "imports"}
         related = [
             {"name": r["name"], "kind": r["kind"],
              "mentions": r["n_mentions"], "weight": r["weight"]}
             for r in nbr_rows
+            if (r["name"] or "").strip().lower() not in related_noise
         ]
 
         return {
@@ -508,4 +614,3 @@ class OverviewMixin:
             "other": other[:10],
             "empty": len(scoped) == 0,
         }
-

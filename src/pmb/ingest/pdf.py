@@ -111,19 +111,25 @@ def _import_backend():
 # Chunking — keep paragraphs together, respect heading boundaries
 # ----------------------------------------------------------------------
 
-# Heading words: EN inline; localized equivalents (RU/UK "Chapter"/"Section")
-# come from the packs (pdf_heading_words). The uppercase-Cyrillic char-class
-# reuses the packs' `sentence_uppercase` ranges so this module is Cyrillic-free
-# while still detecting Russian/Ukrainian ALL-CAPS headings (L1).
+# Heading words: EN inline; localized equivalents (RU/UK/DE "Chapter"/"Section")
+# come from the packs (pdf_heading_words). E2: the ALL-CAPS heading test is now
+# str.isupper() in Python — Unicode-correct for every script — so this module no
+# longer needs the packs' `sentence_uppercase` char-class ranges.
 _HEAD_WORDS = "|".join(["Chapter", "Section", "Part", "Appendix"]
                        + [str(w) for w in _lang.merged_list("pdf_heading_words")])
-_UP = "".join(str(x) for x in _lang.merged_list("sentence_uppercase"))
-_HEADING_RE = re.compile(
-    r"^(?:\s*(?:" + _HEAD_WORDS + r")\s+[\dIVXLCM.]+\s*[:\-—]?\s*[^\n]+|"
-    r"\s*\d{1,2}(?:\.\d{1,2}){0,3}\s+[A-Z" + _UP + r"][^\n]{2,120}|"
-    r"\s*[A-Z" + _UP + r"][A-Z" + _UP + r"0-9 ,;:!\-—]{4,80})$",
-    re.MULTILINE,
-)
+_HEAD_WORD_RE = re.compile(
+    r"^\s*(?:" + _HEAD_WORDS + r")\s+[\dIVXLCM.]+\b", re.IGNORECASE)
+_NUMBERED_HEAD_RE = re.compile(r"^\s*\d{1,2}(?:\.\d{1,2}){0,3}\s+(\S[^\n]{2,120})$")
+
+
+def _looks_allcaps_heading(line: str) -> bool:
+    """A short line whose letters are ALL uppercase, in ANY script (str.isupper()
+    handles Cyrillic / Greek / accented Latin). Digits + punctuation ignored."""
+    s = line.strip()
+    if not (5 <= len(s) <= 80):
+        return False
+    letters = [c for c in s if c.isalpha()]
+    return len(letters) >= 3 and "".join(letters).isupper()
 
 
 def _split_into_chunks(text: str, target: int = CHUNK_TARGET_CHARS) -> list[str]:
@@ -150,10 +156,20 @@ def _split_into_chunks(text: str, target: int = CHUNK_TARGET_CHARS) -> list[str]
 
 
 def _detect_section(chunk: str) -> str | None:
-    """Best-effort heuristic: first heading-looking line in the chunk."""
-    m = _HEADING_RE.search(chunk[:400])
-    if m:
-        return m.group(0).strip()[:120]
+    """Best-effort heuristic: first heading-looking line in the chunk —
+    a 'Chapter N …' / 'Section N …' marker, a numbered 'N.M Title', or an
+    ALL-CAPS line (any script via str.isupper(), E2)."""
+    for raw in chunk[:400].splitlines():
+        ls = raw.strip()
+        if not ls:
+            continue
+        if _HEAD_WORD_RE.match(ls):
+            return ls[:120]
+        m = _NUMBERED_HEAD_RE.match(ls)
+        if m and m.group(1)[:1].isupper():
+            return ls[:120]
+        if _looks_allcaps_heading(ls):
+            return ls[:120]
     return None
 
 

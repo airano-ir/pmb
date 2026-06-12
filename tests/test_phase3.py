@@ -29,11 +29,13 @@ from pmb.maintenance.scheduler import generate_scheduler_config
 # ---------------------------------------------------------------------------
 
 def test_significant_tokens_filters_stopwords():
-    text = "User: что нам нужно сделать с Postgres deployment в проекте"
+    # G3: EN probe (RU stopwords lived in the deleted ru pack; corpus stopwords
+    # are E1's per-workspace path now).
+    text = "User: what do we need to do with the Postgres deployment"
     toks = _significant_tokens(text)
     assert "postgres" in toks
     assert "deployment" in toks
-    assert "что" not in toks  # stopword
+    assert "the" not in toks   # stopword
     assert "user" not in toks  # custom stopword
 
 

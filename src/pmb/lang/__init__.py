@@ -41,14 +41,16 @@ from pathlib import Path
 
 _BUILTIN_DIR = Path(__file__).parent / "packs"
 
-# Built-in packs that are ACTIVE BY DEFAULT — they hold the RU/UK lexical floor
-# that used to be hardcoded in the .py modules (Phase L1). Relocating that data
-# here is what lets `src/pmb/**.py` stay Cyrillic-free while EN+RU+UK matching
-# behaves byte-identically (the modules keep their EN entries inline and merge
-# these). Other built-in templates (de, es) stay OPT-IN: active only when copied
-# into $PMB_HOME/lang/, because Latin-script packs would pollute an English
-# workspace (the recorded language-pack design decision).
-_DEFAULT_ACTIVE: tuple[str, ...] = ("ru", "uk")
+# G3 (v0.9): NO built-in default-active packs. The RU/UK lexical floor that used
+# to live in ru.yaml/uk.yaml is now carried by the anchor tier (WARM: English
+# exemplars + cross-lingual embedder) and the ALD-distilled
+# $PMB_HOME/lang/auto.yaml (COLD: grows from the user's own traffic), so the two
+# packs were DELETED. The loader still merges any pack a user drops into
+# $PMB_HOME/lang/ (override escape hatch) and the opt-in de/es TEMPLATES under
+# packs/ — but nothing is active by default. RU/UK intents/keyed-extraction are
+# WARM-anchor classified now (the cold path self-heals via ALD); the regex/pack
+# tests below were migrated to assert that path.
+_DEFAULT_ACTIVE: tuple[str, ...] = ()
 
 
 def _pmb_home() -> Path:
@@ -91,8 +93,11 @@ def active_packs() -> dict[str, dict]:
     the built-in one (extend-only union, like reference.yaml). Cached; call
     clear_cache() after enabling one."""
     out: dict[str, dict] = {}
-    # Built-in floor packs (ru, uk) — always active, shipped in packs/.
-    for code in _DEFAULT_ACTIVE:
+    # Built-in floor packs (ru, uk) — always active, shipped in packs/. The
+    # G2 packs-off ratchet sets PMB_DISABLE_DEFAULT_PACKS=1 to prove the anchor
+    # tier carries recall with NO built-in packs active (deletion soak, pre-G3).
+    _defaults = () if os.environ.get("PMB_DISABLE_DEFAULT_PACKS") else _DEFAULT_ACTIVE
+    for code in _defaults:
         p = _BUILTIN_DIR / f"{code}.yaml"
         if p.exists():
             data = _load_yaml(p)

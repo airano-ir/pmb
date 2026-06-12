@@ -176,3 +176,43 @@ jobs:
       - run: pmb stats
       - run: pmb doctor
       - run: pmb daemon status
+
+  # --------------------------------------------------------------
+  # Packs-off gate (G2/G3) — multilingual recall eval + keyed extraction
+  # with NO built-in language packs (they were DELETED in G3, so this is
+  # now the production default; PMB_DISABLE_DEFAULT_PACKS is redundant but
+  # kept as belt-and-suspenders). BLOCKING: RU/UK/de/es/fr recall must hold
+  # via the embedder + anchor tier, or CI fails.
+  # --------------------------------------------------------------
+  packs-off-ratchet:
+    name: Packs-off gate (G3)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+      OMP_NUM_THREADS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      PYTHONFAULTHANDLER: "1"
+      PMB_DISABLE_DEFAULT_PACKS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+          key: hf-ratchet-${{ hashFiles('pyproject.toml') }}
+          restore-keys: hf-ratchet-
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,crypto]"
+      - name: Multilingual eval + keyed extraction with packs OFF
+        run: >
+          pytest -q --tb=short
+          tests/test_packs_off_ratchet.py
+          tests/test_memory_eval_multilingual.py
+          tests/test_extract_anchor.py
+          tests/test_anchors.py

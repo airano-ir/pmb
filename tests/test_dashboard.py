@@ -130,8 +130,8 @@ def test_dashboard_api_lessons(running_dashboard):
     eng.record_fact("Pin numpy below 2.x for lancedb compatibility",
                     metadata={"kind": "lesson", "source": "lesson"})
 
-    r1 = run_auto_context(eng, "какие правила про pnpm и npm")
-    r2 = run_auto_context(eng, "какие правила про numpy lancedb")
+    r1 = run_auto_context(eng, "do we have a rule about pnpm and npm")
+    r2 = run_auto_context(eng, "do we have a rule about numpy and lancedb")
     eng.mark_lesson_followed(r1.lessons[0]["surface_id"], followed=True, note="ok")
     eng.mark_lesson_followed(r2.lessons[0]["surface_id"], followed=False, note="legacy")
 
@@ -154,7 +154,7 @@ def test_dashboard_api_adherence(running_dashboard):
 
     eng.record_fact("Dashboard SVG overlay uses requestAnimationFrame",
                     metadata={"kind": "lesson", "source": "lesson"})
-    res = run_auto_context(eng, "какие правила про dashboard svg overlay")
+    res = run_auto_context(eng, "do we have a rule about dashboard svg overlay")
     eng.mark_lesson_followed(res.lessons[0]["surface_id"], followed=True, note="x")
 
     data = _get_json(port, "/api/adherence?days=1")

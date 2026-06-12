@@ -18,9 +18,9 @@ from collections import defaultdict
 
 from pmb import lang as _lang
 
-# Cyrillic letter range for word tokenizers — lives in the ru pack (L1) so this
-# module stays Cyrillic-free while still tokenizing Russian/Ukrainian content.
-_CYR = "".join(str(x) for x in _lang.merged_list("cyrillic_script_range"))
+# E2: word tokenizer uses a Unicode letters+digits class (`[^\W_]`, any script)
+# plus apostrophe — no enumerated Cyrillic range, still tokenizes RU/UK content.
+_WORD_TOK = r"(?:[^\W_]|')+"
 
 # Keys/content that scream "test data". Content markers are deliberately
 # HIGH-PRECISION (declutter ARCHIVES): we dropped collision-prone keyboard
@@ -51,7 +51,7 @@ def _meta(raw) -> dict:
 
 
 def _is_pure_stopwords(content: str) -> bool:
-    toks = re.findall(r"[0-9a-zA-Z" + _CYR + r"']+", (content or "").lower())
+    toks = re.findall(_WORD_TOK, (content or "").lower())
     return bool(toks) and all(t in _STOPWORDS for t in toks)
 
 
@@ -115,6 +115,19 @@ def find_heuristic_candidates(engine) -> list[dict]:
         # 1. test artifacts (keyed test keys OR test-y content)
         if (key and _TEST_KEY_RE.search(key)) or _TEST_CONTENT_RE.search(content):
             out.append({"ulid": r["ulid"], "reason": "test_artifact",
+                        "content": content[:100]})
+            chosen.add(r["ulid"])
+            continue
+        # 1b. Old project indexes stored one fact for every file, even when
+        # there were no symbols or imports. Those rows carry only a path + LOC
+        # count, pollute overview/recall, and can be recreated by index_project.
+        if (
+            meta.get("source") == "project"
+            and meta.get("file_path")
+            and not meta.get("symbols")
+            and not meta.get("imports")
+        ):
+            out.append({"ulid": r["ulid"], "reason": "project_index_empty",
                         "content": content[:100]})
             chosen.add(r["ulid"])
             continue
@@ -236,7 +249,7 @@ def _llm_judge(engine, pool: list[dict]) -> list[dict]:
 # is deliberately NOT here: short content is surfaced for human review only.
 _APPLYABLE_REASONS = frozenset({
     "quality_flag", "test_artifact", "near_empty", "exact_duplicate",
-    "negation_obsolete", "llm",
+    "negation_obsolete", "project_index_empty", "llm",
 })
 
 

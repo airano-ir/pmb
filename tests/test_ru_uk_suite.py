@@ -292,6 +292,9 @@ def test_off_topic_does_not_promote_personal_fact(voice_engine):
 # ------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="G3: RU/UK atomic-fact extraction removed with the "
+                  "packs; RU/UK facts recalled whole via vector, keyed attrs via "
+                  "warm C2 anchors.")
 def test_paragraph_extracts_ru_uk_atoms():
     """Single function-level test (no engine) — sanity check that the
     pattern bank handles a representative mix."""

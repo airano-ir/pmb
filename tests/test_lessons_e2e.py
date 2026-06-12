@@ -40,7 +40,7 @@ def test_lesson_surfaces_get_logged_with_id(engine):
     from pmb.hooks import run_auto_context
 
     _seed_lesson(engine, "This repo uses pnpm, never npm — lockfile is pnpm-lock")
-    res = run_auto_context(engine, "какие правила про pnpm и npm")
+    res = run_auto_context(engine, "do we have a rule about pnpm and npm")
     assert res.lessons, "lesson should surface"
     sid = res.lessons[0]["surface_id"]
     assert isinstance(sid, int)
@@ -57,7 +57,7 @@ def test_explicit_follow_updates_stats(engine):
     from pmb.hooks import run_auto_context
 
     _seed_lesson(engine, "Always pin numpy below 2.x for lancedb compatibility")
-    res = run_auto_context(engine, "какие правила про numpy и lancedb")
+    res = run_auto_context(engine, "do we have a rule about numpy and lancedb")
     sid = res.lessons[0]["surface_id"]
 
     engine.mark_lesson_followed(sid, followed=True, note="pinned numpy to 1.26")
@@ -78,7 +78,7 @@ def test_explicit_ignore_counts_as_ignored_not_followed(engine):
     from pmb.hooks import run_auto_context
 
     _seed_lesson(engine, "Prefer ruff over flake8 for linting in this repo")
-    res = run_auto_context(engine, "какие правила про ruff и линтер")
+    res = run_auto_context(engine, "do we have a rule about ruff and the linter")
     sid = res.lessons[0]["surface_id"]
 
     engine.mark_lesson_followed(sid, followed=False, note="used flake8, legacy CI")
@@ -102,7 +102,7 @@ def test_unconfirmed_surface_counts_as_unknown_not_ignored(engine):
     # Surface it 3 times in one session, never mark it. R1 dedups same-session
     # surfaces within the hour, so this is ONE surface (counting shows, not rows).
     for _ in range(3):
-        run_auto_context(engine, "какие правила про websocket reconnect backoff")
+        run_auto_context(engine, "do we have a rule about websocket reconnect backoff")
 
     stats = engine.lesson_follow_stats(days=1.0)
     assert stats["ignored"] == 0, "nothing was explicitly ignored"
@@ -127,7 +127,7 @@ def test_followcheck_inferred_follow_shows_in_stats(engine):
 
     _seed_lesson(engine,
                  "Use record_batch for multi-fact writes, never many record_fact calls")
-    res = run_auto_context(engine, "какие правила про record_batch запись")
+    res = run_auto_context(engine, "do we have a rule about record_batch writes")
     sid = res.lessons[0]["surface_id"]
 
     # Agent records what it did, naming the lesson's distinctive tokens.
@@ -204,7 +204,7 @@ def test_adherence_stats_works_without_mcp_calls_table(engine):
     from pmb.hooks import run_auto_context
 
     _seed_lesson(engine, "Dashboard SVG overlay uses requestAnimationFrame, not setTimeout")
-    res = run_auto_context(engine, "какие правила про dashboard svg overlay")
+    res = run_auto_context(engine, "do we have a rule about dashboard svg overlay")
     engine.mark_lesson_followed(res.lessons[0]["surface_id"], followed=True, note="x")
 
     stats = engine.adherence_stats(days=1.0)

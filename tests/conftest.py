@@ -132,6 +132,13 @@ def _isolate_test_env(monkeypatch):
         pass
     for _k in ("PMB_WORKSPACE", "PMB_TOOL_PROFILE"):
         monkeypatch.delenv(_k, raising=False)
+    # (3) E1 corpus-stopwords global is process-wide; reset it before every test
+    # so a test that enables it can't leak high-DF stopwords into later tests.
+    try:
+        from pmb.core.text_match import apply_corpus_stopwords
+        apply_corpus_stopwords(set())
+    except Exception:
+        pass
 
 
 @pytest.fixture

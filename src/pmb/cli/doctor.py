@@ -360,6 +360,30 @@ def check_graph_extractor() -> dict:
     return {"status": "warn", "msg": f"unknown graph.extractor={backend!r} → falls back to regex"}
 
 
+def check_channel_weights() -> dict:
+    """F3: surface the X2 channel-weights SUGGESTION the tick proposed (never
+    auto-applied — the user inspects and applies it explicitly)."""
+    try:
+        import json as _json
+
+        from pmb.core.workspace import detect_workspace
+        ws = detect_workspace()
+        p = ws.storage_dir / "channel_weights_suggestion.json"
+        if not p.exists():
+            return {"status": "ok",
+                    "msg": "no suggestion yet (recall.weight_learning off or "
+                           "too little feedback)"}
+        s = _json.loads(p.read_text(encoding="utf-8"))
+        w = s.get("weights", {})
+        wtxt = ", ".join(f"{k}:{float(v):.2f}" for k, v in w.items())
+        return {"status": "warn",
+                "msg": f"learned {{{wtxt}}} from {s.get('n_useful')}/"
+                       f"{s.get('n_samples')} useful samples — apply with: "
+                       f"pmb config set recall.channel_weights '{_json.dumps(w)}'"}
+    except Exception:
+        return {"status": "ok", "msg": "channel-weights check skipped"}
+
+
 def run_doctor(remote: str | None = None) -> list[tuple[str, dict]]:
     """Run all checks. Returns list of (label, result_dict)."""
     checks: list[tuple[str, dict]] = [
@@ -374,6 +398,7 @@ def run_doctor(remote: str | None = None) -> list[tuple[str, dict]]:
         ("Current workspace", check_current_workspace()),
         ("Recent errors (24h)", check_recent_errors()),
         ("Quality gate (30d)", check_quality_flags()),
+        ("Channel weights (F3)", check_channel_weights()),
         ("MCP config hint", mcp_config_hint()),
     ]
     if remote:

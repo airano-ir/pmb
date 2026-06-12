@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pmb.core.engine import Engine
+from pmb.core.events import Event
 
 # ----------------------------------------------------------------------
 # Goals
@@ -27,6 +28,49 @@ def test_update_goal_creates_update_event(tmp_pmb_home, tmp_workspace_dir):
     upd = eng.events.get_by_ulid(update_ulid)
     assert upd.event_type == "goal_update"
     assert upd.metadata.get("goal_ulid") == g
+
+
+def test_done_status_implies_100_percent(tmp_pmb_home, tmp_workspace_dir):
+    eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home)
+    g = eng.record_goal("Finish release notes", status="in_progress")
+    result = eng.update_goal(g, status="done")
+    assert result["status"] == "done"
+    assert result["progress"] == 100
+
+
+def test_completed_activity_closes_unique_matching_goal(tmp_pmb_home, tmp_workspace_dir):
+    eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home)
+    goal = eng.record_goal(
+        "Execute PMB PLAN.md v0.8.0 and Phase X track",
+        status="pending",
+    )
+    eng.record_activity(
+        "FINISHED the entire PMB PLAN.md v0.8.0 + Phase X track",
+        kind="completed",
+    )
+    current = {g["ulid"]: g for g in eng.list_goals()}
+    assert current[goal]["status"] == "done"
+    assert current[goal]["progress"] == 100
+
+
+def test_goal_reconcile_backfills_old_completed_activity(tmp_pmb_home, tmp_workspace_dir):
+    eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home)
+    goal = eng.record_goal("Auth service Postgres migration rollout", status="pending")
+    completed = eng.events.append(Event(
+        workspace_id=eng.workspace.id,
+        event_type="activity",
+        content="Completed auth service Postgres migration rollout",
+        metadata={"activity_kind": "completed", "actor": "agent"},
+    ))
+
+    dry = eng.reconcile_goals(dry_run=True)
+    assert dry["n"] == 1
+    assert dry["matches"][0]["completed_ulid"] == completed.ulid
+    assert {g["ulid"]: g for g in eng.list_goals()}[goal]["status"] == "pending"
+
+    applied = eng.reconcile_goals(dry_run=False)
+    assert applied["n_applied"] == 1
+    assert {g["ulid"]: g for g in eng.list_goals()}[goal]["status"] == "done"
 
 
 def test_list_goals_filters_by_status(tmp_pmb_home, tmp_workspace_dir):

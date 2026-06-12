@@ -530,6 +530,11 @@ def merge_codex_entry(
         codex_entry["env"] = dict(entry["env"])
     # Codex-specific: timeout in case PMB cold start is slow (model load)
     codex_entry["startup_timeout_sec"] = 120
+    # Per-call timeout: Codex defaults to 120s per tools/call, which a
+    # legitimately slow FIRST warm call (cold model load under memory
+    # pressure — paging on a machine already hosting the daemon's model) can
+    # exceed. 300s gives the cold path headroom; normal calls are ms.
+    codex_entry["tool_timeout_sec"] = 300
     servers[name] = codex_entry
     cfg["mcp_servers"] = servers
     return cfg, action
