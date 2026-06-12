@@ -1,9 +1,11 @@
 """Language packs — extend PMB's lexical fast-paths to new languages as DATA.
 
 PMB's stopwords / function-words / verb-synonyms / attribute-aliases ship in
-code as defaults covering EN + RU + UK (the "floor"). A language pack is a YAML
-file that EXTENDS those lists for another language. Packs are **opt-in and
-file-based**, exactly like ``reference.yaml``:
+code as a small **English** bootstrap floor. RU/UK (and every other language)
+are carried by the anchor tier + ALD, not by a pack (see the G3 note below). A
+language pack is an optional YAML file that EXTENDS the lexical lists for a
+language's COLD path. Packs are **opt-in and file-based**, exactly like
+``reference.yaml``:
 
   * Built-in templates live in ``pmb/lang/packs/*.yaml`` (de, es, …) — NOT
     active by themselves.
@@ -16,8 +18,8 @@ auto-activating ``de`` on any Latin corpus would pollute an English workspace's
 stopwords. Activation is therefore explicit (``pmb lang enable``); ``pmb lang
 detect`` SUGGESTS packs from the corpus but never silently changes behaviour.
 
-Because packs are EXTEND-ONLY and the EN/RU/UK floor stays in code, a workspace
-with no ``$PMB_HOME/lang/`` files behaves byte-identically to before.
+Because packs are EXTEND-ONLY and the English floor stays in code, a workspace
+with no ``$PMB_HOME/lang/`` files behaves byte-identically to the shipped core.
 
 Pack schema (all keys optional):
 
