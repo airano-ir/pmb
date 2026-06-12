@@ -70,7 +70,8 @@ def test_confidence_label_buckets():
 def test_lesson_intent_detection():
     assert is_lesson_intent("how should I set up the build") is True
     assert is_lesson_intent("what's the convention for imports here") is True
-    assert is_lesson_intent("какое правило по тестам") is True
+    # G3: RU lesson-intent ("какое правило …") is the warm query.lesson_intent
+    # anchor now (test_statement_anchors); cold is_lesson_intent is EN-only.
     assert is_lesson_intent("what should we avoid in deploys") is True
     # NOT lesson-intent - plain factual/personal queries
     assert is_lesson_intent("where do I live") is False

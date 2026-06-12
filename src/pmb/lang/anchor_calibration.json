@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "key": "04fcfe5fe9fd4afd",
+  "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "max_fpr": 0.01,
+  "tau_floor": 0.04,
+  "generated_by": "scripts/calibrate_anchors.py",
+  "corpus": {
+    "n_positives": 215,
+    "n_distractors": 38,
+    "languages": [
+      "en",
+      "ru",
+      "uk",
+      "de",
+      "es",
+      "fr",
+      "pl",
+      "it",
+      "pt",
+      "ja",
+      "zh"
+    ]
+  },
+  "macro": {
+    "recall": 0.8506,
+    "fpr": 0.0035
+  },
+  "sets": {
+    "intent.goals_query": {
+      "tau": 0.04,
+      "floor": 0.35,
+      "recall": 0.9167,
+      "fpr": 0.0,
+      "n_pos": 24,
+      "n_neg": 171
+    },
+    "intent.past_query": {
+      "tau": 0.0789,
+      "floor": 0.35,
+      "recall": 0.9524,
+      "fpr": 0.0057,
+      "n_pos": 21,
+      "n_neg": 174
+    },
+    "intent.recent_query": {
+      "tau": 0.04,
+      "floor": 0.35,
+      "recall": 0.9444,
+      "fpr": 0.0056,
+      "n_pos": 18,
+      "n_neg": 177
+    },
+    "intent.lessons_query": {
+      "tau": 0.0887,
+      "floor": 0.35,
+      "recall": 0.7222,
+      "fpr": 0.0056,
+      "n_pos": 18,
+      "n_neg": 177
+    },
+    "intent.work_request": {
+      "tau": 0.1343,
+      "floor": 0.35,
+      "recall": 0.6957,
+      "fpr": 0.0058,
+      "n_pos": 23,
+      "n_neg": 172
+    },
+    "intent.self_intent": {
+      "tau": 0.1032,
+      "floor": 0.35,
+      "recall": 1.0,
+      "fpr": 0.0058,
+      "n_pos": 23,
+      "n_neg": 172
+    },
+    "intent.trivial_ack": {
+      "tau": 0.1923,
+      "floor": 0.45,
+      "recall": 0.9667,
+      "fpr": 0.0061,
+      "n_pos": 30,
+      "n_neg": 165
+    },
+    "query.lesson_intent": {
+      "tau": 0.2168,
+      "floor": 0.35,
+      "recall": 0.8824,
+      "fpr": 0.0,
+      "n_pos": 17,
+      "n_neg": 38
+    },
+    "statement.future_intent": {
+      "tau": 0.2692,
+      "floor": 0.35,
+      "recall": 0.5556,
+      "fpr": 0.0,
+      "n_pos": 18,
+      "n_neg": 38
+    },
+    "statement.about_self": {
+      "tau": 0.2548,
+      "floor": 0.35,
+      "recall": 0.8696,
+      "fpr": 0.0,
+      "n_pos": 23,
+      "n_neg": 38
+    }
+  }
+}

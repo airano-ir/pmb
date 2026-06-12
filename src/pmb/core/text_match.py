@@ -55,15 +55,27 @@ STOPWORDS = _lang.merged_set("stopwords", STOPWORDS)
 # DEDICATED category so they never bleed into pamvr's `stopwords` consumer.
 STOPWORDS = _lang.merged_set("text_match_stopwords", STOPWORDS)
 
-# A "distinctive" token: a word char start (incl. unicode), then word chars /
-# - . — so identifiers like record_batch / qwen2.5 / paraphrase-multilingual
-# survive intact. Length and stopword filtering happen in distinctive_tokens.
-# The Cyrillic-block range lives in the ru pack (cyrillic_script_range) so this
-# module is Cyrillic-free; with an active ru pack it reproduces the U+0400-04FF
-# range the inline class used to spell out.
-_TOKEN = re.compile(
-    r"[A-Za-z0-9_À-ɏ" + "".join(str(x) for x in _lang.merged_list("cyrillic_script_range"))
-    + r"][\w\-.]{2,}", re.UNICODE)
+# E1: corpus-derived stopwords (high document-frequency tokens) for THIS
+# workspace, populated by the maintenance tick / engine init when
+# `lang.corpus_stopwords` is on. Empty by default → zero behaviour change.
+# Kept SEPARATE from STOPWORDS (which is the English+pack floor) so it can be
+# refreshed/cleared without rebuilding the floor.
+_CORPUS_STOPWORDS: set[str] = set()
+
+
+def apply_corpus_stopwords(words) -> None:
+    """Replace the live corpus-stopword set (E1). Best-effort; idempotent."""
+    global _CORPUS_STOPWORDS
+    _CORPUS_STOPWORDS = {str(w).strip().lower() for w in (words or ()) if str(w).strip()}
+
+# A "distinctive" token: a word-char start, then word chars / - . — so
+# identifiers like record_batch / qwen2.5 / paraphrase-multilingual survive
+# intact. Length and stopword filtering happen in distinctive_tokens.
+# E2: the start class is now `\w` (str-level Unicode word char) — letters of ANY
+# script, digits, underscore — so Cyrillic / Greek / accented Latin / CJK all
+# tokenize with NO enumerated script range. Identical to the old explicit class
+# for Latin/Cyrillic/digit starts; only additive for other scripts.
+_TOKEN = re.compile(r"\w[\w\-.]{2,}", re.UNICODE)
 
 
 def is_strong(tok: str) -> bool:
@@ -97,7 +109,8 @@ def distinctive_tokens(text: str) -> set[str]:
 
     def _emit(t: str) -> None:
         t = t.strip("-._")
-        if len(t) >= 4 and not t.isdigit() and t not in STOPWORDS:
+        if (len(t) >= 4 and not t.isdigit()
+                and t not in STOPWORDS and t not in _CORPUS_STOPWORDS):
             out.add(t)
 
     for m in _TOKEN.finditer((text or "").lower()):

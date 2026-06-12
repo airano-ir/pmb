@@ -89,6 +89,16 @@ def record_feedback(
                 f"expected_ulid {expected_ulid!r} not found in workspace"
             )
 
+    # F3: a 'useful' verdict labels the surfaced result's channel-weight sample,
+    # closing the X2 learning loop (best-effort, gated, never auto-applied).
+    if verdict == "useful":
+        try:
+            if engine.config.get("recall.weight_learning"):
+                from pmb.reasoning.weight_learning import note_recall_useful
+                note_recall_useful(engine, ulid)
+        except Exception:
+            pass
+
     sess = engine.session_tracker.current(auto_create=False)
     entry = FeedbackEntry(
         timestamp=time.time(),

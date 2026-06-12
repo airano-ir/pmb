@@ -34,18 +34,14 @@ from pmb.hooks.auto_recall import (
     "kk",
     "got it",
     "nice",
-    "привет",
-    "спасибо",
-    "ок",
-    "круто",
-    "понятно",
+    "ок",        # length-trivial (< min_chars) regardless of language
     "ага",
-    "привіт",
-    "дякую",
     "🚀",
     "🤔🤔",
 ])
 def test_trivial_messages(msg):
+    # G3: multi-char RU/UK acks (привет/спасибо/…) are now WARM trivial_ack
+    # anchors, not a cold pack list; cold is_trivial keeps the EN + length floor.
     assert is_trivial(msg) is True
     assert detect_intents(msg) == [Intent.SKIP]
 
@@ -63,14 +59,10 @@ def test_non_trivial_messages(msg):
 # ─── PAST_QUERY ─────────────────────────────────────────────────────────
 
 
+# G3: the COLD lexical tier is now EN-only — RU/UK intents are WARM-anchor
+# classified (see test_semantic_intent::test_anchor_intent_real_multilingual,
+# which covers ru/uk). These cold cases keep the English regex matrix honest.
 @pytest.mark.parametrize("msg", [
-    "когда я делал ремонт?",
-    "что я говорил про Postgres вчера",
-    "почему мы выбрали SQLite",
-    "почему мы отказались от Mongo",
-    "какой у меня домашний адрес",
-    "где я хранил api ключи",
-    "кто такой Максим",
     "what did I just decide about auth",  # also matches RECENT
     "when did we switch to pnpm",
     "why did we choose Vite",
@@ -79,9 +71,6 @@ def test_non_trivial_messages(msg):
     "what's my postgres port",
     "have I ever used Tailscale",
     "do we have a rule about logging",
-    "коли я тестував docker",
-    "що я робив у понеділок",
-    "хто такий Максим",
 ])
 def test_past_query(msg):
     intents = detect_intents(msg)
@@ -92,15 +81,10 @@ def test_past_query(msg):
 
 
 @pytest.mark.parametrize("msg", [
-    "что мы только что обсуждали",
-    "что я сейчас делал",
     "what did I just do",
     "what are we currently working on",
     "what's happening",
     "what's going on",
-    "что я недавно правил",
-    "що ми щойно робили",
-    "на чём я остановился",
 ])
 def test_recent_query(msg):
     assert Intent.RECENT_QUERY in detect_intents(msg)
@@ -110,24 +94,14 @@ def test_recent_query(msg):
 
 
 @pytest.mark.parametrize("msg", [
-    "какие у меня цели на этой неделе",
-    "мои задачи",
-    "что я планировал",
-    "открытые цели",
     "my open goals",
     "open goals",
     "current goals",
     "what am I working on",
-    "які у мене цілі",
-    # 'what's left to do' phrasings (regression: usefulness-bench finding)
-    "что мне доделать по auth",
-    "что осталось сделать",
-    "что делать дальше",
     "todo list",
     "what's left to do",
     "what should I do next",
     "remaining tasks",
-    "що залишилось зробити",
 ])
 def test_goals_query(msg):
     assert Intent.GOALS_QUERY in detect_intents(msg)
@@ -137,15 +111,10 @@ def test_goals_query(msg):
 
 
 @pytest.mark.parametrize("msg", [
-    "какие правила в проекте",
-    "правила проекта PMB",
-    "какие есть уроки по тестам",
-    "что я учил про docker",
     "what lessons do we have for testing",
     "do we use pnpm here",
     "do we have a rule about logging",
     "conventions for this repo",
-    "які правила у нас",
 ])
 def test_lessons_query(msg):
     assert Intent.LESSONS_QUERY in detect_intents(msg)
@@ -161,18 +130,21 @@ def test_project_prep_with_work_verb():
     assert Intent.PROJECT_PREP in intents
 
 
-def test_project_prep_ru():
+def test_project_overview_ru_project_name():
+    # G3: project NAME detection is language-agnostic (substring), so a RU
+    # sentence still finds the project — but the RU work VERB ("почини") is a
+    # warm-anchor signal now, so cold detection yields OVERVIEW, not PREP.
     intents = detect_intents(
         "почини docker-compose в LeanBoard", known_projects={"LeanBoard"},
     )
-    assert Intent.PROJECT_PREP in intents
+    assert Intent.PROJECT_OVERVIEW in intents
 
 
-def test_project_prep_uk():
+def test_project_overview_uk_project_name():
     intents = detect_intents(
         "виправ assertion у LoadGuard", known_projects={"LoadGuard"},
     )
-    assert Intent.PROJECT_PREP in intents
+    assert Intent.PROJECT_OVERVIEW in intents
 
 
 def test_project_overview_without_work_verb():
@@ -209,13 +181,13 @@ def test_no_question_no_generic_factual():
 
 
 def test_multiple_intents_combined():
-    # Both PAST_QUERY and project mention.
+    # Both PAST_QUERY and project mention (EN cold path).
     intents = detect_intents(
-        "когда я последний раз правил PMB recall?",
+        "when did I last fix PMB recall?",
         known_projects={"PMB"},
     )
     assert Intent.PAST_QUERY in intents
-    # Verb of doing? "правил" → matches WORK_VERB.
+    # Verb of doing? "fix" → matches WORK_VERB.
     assert Intent.PROJECT_PREP in intents
 
 
@@ -316,7 +288,7 @@ def test_dispatch_cold_skip_for_recall():
         recall_results=[{"content": "should not show", "score": 0.9}],
         lessons_result=[{"content": "L1", "surface_id": 1}],
     )
-    res = run_auto_context(eng, "когда я последний раз тестировал docker")
+    res = run_auto_context(eng, "when did I last test docker")
     assert Intent.PAST_QUERY in res.intents
     assert "RECALL_COLD_SKIP" in res.intents
     assert res.recall_hits == []  # cold → skipped
@@ -338,7 +310,7 @@ def test_dispatch_warm_allows_recall():
         recall_results=[{"content": "found it", "score": 0.85}],
         confidence=0.85,
     )
-    res = run_auto_context(eng, "когда я последний раз тестировал docker")
+    res = run_auto_context(eng, "when did I last test docker")
     assert "RECALL_COLD_SKIP" not in res.intents
     assert res.recall_hits and res.recall_hits[0]["content"] == "found it"
 
@@ -404,14 +376,14 @@ def test_dispatch_recent_query_calls_what_just_happened():
     eng = FakeEngine(
         recent_result=[{"content": "fixed JWT bug"}],
     )
-    res = run_auto_context(eng, "что мы только что делали")
+    res = run_auto_context(eng, "what did we just do")
     assert Intent.RECENT_QUERY in res.intents
     assert res.recent and res.recent[0]["content"] == "fixed JWT bug"
 
 
 def test_dispatch_goals_query():
     eng = FakeEngine(goals_result=[{"title": "ship v1", "status": "in_progress"}])
-    res = run_auto_context(eng, "какие у меня цели")
+    res = run_auto_context(eng, "what are my open goals")
     assert Intent.GOALS_QUERY in res.intents
     assert res.open_goals
 
@@ -423,7 +395,7 @@ def test_dispatch_lessons_always_surface():
         recall_results=[{"content": "X", "score": 0.5}],
         lessons_result=[{"content": "pnpm only", "surface_id": 1}],
     )
-    res = run_auto_context(eng, "когда я выбрал pnpm")
+    res = run_auto_context(eng, "when did I choose pnpm")
     assert res.lessons
     # And surface-log fired once.
     assert eng.surface_log and eng.surface_log[0][1] == "hook.auto_recall"
@@ -433,7 +405,7 @@ def test_dispatch_lessons_skip_log_when_disabled():
     eng = FakeEngine(
         lessons_result=[{"content": "pnpm only", "surface_id": 1}],
     )
-    res = run_auto_context(eng, "что я учил про deploy", log_surfaces=False)
+    res = run_auto_context(eng, "what did I learn about deploy", log_surfaces=False)
     assert res.lessons
     assert eng.surface_log == []
 
@@ -445,7 +417,7 @@ def test_dispatch_surfaces_decisions():
             {"ulid": "d1", "content": "Chose Playwright over Cypress for e2e"},
         ],
     )
-    res = run_auto_context(eng, "когда я выбирал e2e фреймворк")
+    res = run_auto_context(eng, "when did I choose the e2e framework")
     assert res.decisions and res.decisions[0]["content"].startswith("Chose Playwright")
     assert any(c.startswith("find_decisions(") for c in eng.calls)
     text = format_context(res)
@@ -458,7 +430,7 @@ def test_dispatch_decisions_disabled():
         lessons_result=[{"content": "L", "surface_id": 1}],
         decisions_result=[{"ulid": "d1", "content": "some decision"}],
     )
-    res = run_auto_context(eng, "что я учил про deploy", surface_decisions=False)
+    res = run_auto_context(eng, "what did I learn about deploy", surface_decisions=False)
     assert res.decisions == []
     assert not any(c.startswith("find_decisions(") for c in eng.calls)
 

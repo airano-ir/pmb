@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import pickle
 import re
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -267,8 +268,27 @@ class _ModelCache:
     _model = None  # type: ignore[var-annotated]
     _name: str | None = None
     _backend: str | None = None
-
     _base_url: str | None = None
+    _lock = threading.RLock()
+
+    @classmethod
+    def peek(
+        cls, model_name: str = DEFAULT_MODEL,
+        backend: str = "sentence-transformers",
+        base_url: str | None = None,
+    ):
+        """Return the cached model ONLY if already constructed for this exact
+        (name, backend, base_url) — NEVER triggers a load. Lets the passive
+        embed-queue worker attach instantly when another consumer in this
+        process already paid the load, while a truly cold process stays
+        load-free (the Codex 120s-timeout fix)."""
+        with cls._lock:
+            if (cls._model is not None
+                    and cls._name == model_name
+                    and cls._backend == backend
+                    and cls._base_url == base_url):
+                return cls._model
+            return None
 
     @classmethod
     def get(
@@ -276,23 +296,24 @@ class _ModelCache:
         backend: str = "sentence-transformers",
         base_url: str | None = None,
     ):
-        if (cls._model is None
-                or cls._name != model_name
-                or cls._backend != backend
-                or cls._base_url != base_url):
-            if backend == "fastembed":
-                cls._model = _FastEmbedAdapter(model_name)
-            elif backend == "ollama":
-                cls._model = _OllamaEmbedAdapter(
-                    model_name, base_url or "http://localhost:11434")
-            elif backend == "openai":
-                cls._model = _OpenAIEmbedAdapter(model_name)
-            else:
-                cls._model = _SentenceTransformer()(model_name)
-            cls._name = model_name
-            cls._backend = backend
-            cls._base_url = base_url
-        return cls._model
+        with cls._lock:
+            if (cls._model is None
+                    or cls._name != model_name
+                    or cls._backend != backend
+                    or cls._base_url != base_url):
+                if backend == "fastembed":
+                    cls._model = _FastEmbedAdapter(model_name)
+                elif backend == "ollama":
+                    cls._model = _OllamaEmbedAdapter(
+                        model_name, base_url or "http://localhost:11434")
+                elif backend == "openai":
+                    cls._model = _OpenAIEmbedAdapter(model_name)
+                else:
+                    cls._model = _SentenceTransformer()(model_name)
+                cls._name = model_name
+                cls._backend = backend
+                cls._base_url = base_url
+            return cls._model
 
 
 class _CrossEncoderCache:
@@ -300,13 +321,15 @@ class _CrossEncoderCache:
 
     _model = None  # type: ignore[var-annotated]
     _name: str | None = None
+    _lock = threading.RLock()
 
     @classmethod
     def get(cls, model_name: str = DEFAULT_RERANK_MODEL):
-        if cls._model is None or cls._name != model_name:
-            cls._model = _CrossEncoder()(model_name)
-            cls._name = model_name
-        return cls._model
+        with cls._lock:
+            if cls._model is None or cls._name != model_name:
+                cls._model = _CrossEncoder()(model_name)
+                cls._name = model_name
+            return cls._model
 
 
 class HybridSearch:
@@ -429,6 +452,20 @@ class HybridSearch:
                 base_url=self.embedding_base_url,
             )
         return self._model
+
+    def attach_cached_model(self) -> bool:
+        """Adopt the process-wide cached model if (and only if) it is ALREADY
+        constructed — never triggers a load. True when ready afterwards."""
+        if self._model is not None:
+            return True
+        cached = _ModelCache.peek(
+            self.model_name, self.embedding_backend,
+            base_url=self.embedding_base_url,
+        )
+        if cached is not None:
+            self._model = cached
+            return True
+        return False
 
     def is_ready(self) -> bool:
         """True if the embedding model is loaded into memory and ready.

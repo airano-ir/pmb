@@ -730,6 +730,80 @@ SCHEMA: dict[str, _Setting] = {
         "(deterministic tests, single-shot CLI scripts) — recall then drains "
         "the touch buffer inline before returning.",
     ),
+    "embed.queue_autoload": _Setting(
+        bool, False,
+        "If true, the background embed-queue worker EAGERLY triggers the "
+        "embedding-model load to drain pending embeds (pre-fix behavior). "
+        "Default false: the worker passively waits for the model to be loaded "
+        "by a legitimate consumer (prewarm/recall/warmup). Eager loading in a "
+        "cold stdio MCP process was the cause of Codex 'timed out awaiting "
+        "tools/call after 120s' — a write spawned a full torch model load "
+        "whose GIL bursts starved the server's event loop under memory "
+        "pressure. Writes are durable without the model (embed_queue_pending).",
+    ),
+    "lang.mode": _Setting(
+        str, "hybrid",
+        "v0.9 Anchor Engine. 'packs' = lexical lang packs only (v0.8 behaviour); "
+        "'hybrid' = packs first, then English semantic anchors when the lexical "
+        "tier finds nothing AND the engine is warm (additive, cannot regress the "
+        "pack path); 'anchors' = anchors are authoritative (migration end-state). "
+        "Default 'hybrid'.",
+        choices=("packs", "hybrid", "anchors"),
+    ),
+    "lang.anchors": _Setting(
+        bool, True,
+        "v0.9: master switch for the Semantic Anchor Engine tier. False forces "
+        "pack-only behaviour regardless of lang.mode (kill switch).",
+    ),
+    "lang.anchor_log": _Setting(
+        bool, True,
+        "v0.9: log which character n-grams co-fire with each anchor so the "
+        "maintenance tick can distil them into a per-workspace lexical cache "
+        "($PMB_HOME/lang/auto.yaml) — this is what keeps the COLD path "
+        "multilingual without any hand-written language data (ALD, Phase D).",
+    ),
+    "extract.anchor_keyed": _Setting(
+        bool, False,
+        "v0.9 C2: warm-only keyed-fact extraction by hypothesis margin when the "
+        "regex/pack tier misses (multilingual: RU 'Ya zhivu v Kieve' -> city=Kieve). "
+        "Default OFF — additive, gated on by the F4 keyed-parity eval. Never "
+        "loads the model on a cold write path.",
+    ),
+    "extract.confidence_recall": _Setting(
+        bool, True,
+        "v0.9 F1: scale a keyed fact's recall boost by its extraction confidence "
+        "(0.7 + 0.3·min(1, margin/0.15)) when metadata.extract.margin is present. "
+        "No-op for regex/manual keyed facts (no margin → factor 1.0).",
+    ),
+    "extract.canonical_atoms": _Setting(
+        bool, False,
+        "v0.9 C3: emit language-neutral 'attr: value' atomic facts (e.g. "
+        "'city: Kieve') for the USER's own current-state statements instead of a "
+        "localized template (RU 'Zhivyot v ...'). Value keeps the user's language; "
+        "structure is canonical. Default OFF; full default-flip + template "
+        "removal is post-soak (the pack-removal discipline, like ru/uk deletion).",
+    ),
+    "lang.anchor_log_retention_days": _Setting(
+        int, 30,
+        "v0.9 D3: the ALD distiller only mines anchor-fire rows newer than this, "
+        "and the tick deletes older rows — so the auto.yaml lexical cache reflects "
+        "RECENT traffic and phrasings the user stopped using age out (recency "
+        "self-healing, complementing D2's per-tick precision rebuild).",
+    ),
+    "lang.corpus_stopwords": _Setting(
+        bool, False,
+        "v0.9 E1: derive stopwords from this workspace's own document frequency "
+        "(>25%) in the maintenance tick instead of a hand list, and union them "
+        "into distinctive_tokens / lesson matching (IDF made explicit). Default "
+        "OFF — additive; the English+pack floor stays the bootstrap.",
+    ),
+    "recall.weight_learning": _Setting(
+        bool, False,
+        "v0.9 F3: collect weak-labelled (channel_scores, useful) samples and let "
+        "the tick propose channel weights, surfaced in `pmb doctor`. NEVER "
+        "auto-applied (the X2 contract); the user applies via "
+        "`pmb config set recall.channel_weights`. Default OFF.",
+    ),
     "recall.channel_weights": _Setting(
         str, "",
         "X2 adaptive scoring weights — a JSON object scaling the base recall "

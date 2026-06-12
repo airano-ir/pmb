@@ -69,6 +69,25 @@ def test_test_artifact_keyed_key(eng):
     assert cand.get(u) == "test_artifact"
 
 
+def test_empty_project_index_artifact_is_decluttered(eng):
+    u = _seed(
+        eng,
+        "File: docs/empty.md (markdown, 8 lines)\n"
+        "Symbols: (no symbols)\nImports: (no imports)",
+        imp=0.55,
+        meta={
+            "source": "project",
+            "project_name": "acme",
+            "file_path": "docs/empty.md",
+            "symbols": [],
+            "imports": [],
+        },
+    )
+    res = declutter(eng, apply=True)
+    assert _by_ulid(res).get(u) == "project_index_empty"
+    assert not _is_active(eng, u)
+
+
 def test_real_tool_names_are_not_test_artifacts(eng):
     """Regression (caught on the real personal corpus): a fact mentioning the
     `asdf` version manager must NOT be flagged as a test artifact."""

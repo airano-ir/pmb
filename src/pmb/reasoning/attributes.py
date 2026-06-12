@@ -377,14 +377,26 @@ _FUTURE_INTENT_RE = re.compile(
 )
 
 
-def looks_like_future_intent(content: str) -> bool:
+def looks_like_future_intent(content: str, engine=None) -> bool:
     """True if CONTENT reads like a forward-looking PLAN ("next we'll do X")
     rather than a settled fact. Used only to FLAG (metadata.suggest_goal),
     never to auto-convert — past statements ("we decided X yesterday") and
-    plain facts must not trip it."""
+    plain facts must not trip it.
+
+    Lexical regex first; then, when a warm `engine` is supplied, the B2
+    `statement.future_intent` anchor adds non-English coverage. Warm-only, so a
+    cold write path (engine=None / cold engine) stays purely lexical and never
+    loads the model."""
     if not content:
         return False
-    return bool(_FUTURE_INTENT_RE.match(content[:60]))
+    if _FUTURE_INTENT_RE.match(content[:60]):
+        return True
+    if engine is not None:
+        try:
+            return engine.anchor_fires(content[:120], "statement.future_intent")
+        except Exception:
+            return False
+    return False
 
 
 def detect_negated_state(content: str) -> str | None:

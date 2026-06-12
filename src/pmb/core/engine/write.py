@@ -34,7 +34,11 @@ class WriteMixin:
             from pmb.reasoning.fact_extract import extract_atomic_facts
         except Exception:
             return []
-        atoms = extract_atomic_facts(text)
+        try:
+            _canon = bool(self.config.get("extract.canonical_atoms"))
+        except Exception:
+            _canon = False
+        atoms = extract_atomic_facts(text, canonical=_canon)
         if not atoms:
             return []
         out: list[str] = []
@@ -215,10 +219,30 @@ class WriteMixin:
                 and not _m.get("keyed_fact_key")
                 and not _m.get("kind")
                 and not _m.get("is_subfact")
-                and looks_like_future_intent(clean_fact)
+                and looks_like_future_intent(clean_fact, engine=self)
             ):
                 clean_metadata = dict(_m)
                 clean_metadata["suggest_goal"] = True
+        except Exception:
+            pass
+
+        # B3: precompute the first-person flag at WRITE time so the per-candidate
+        # PAMVR loop reads metadata.fp instead of re-deriving it. Lexical (free);
+        # the warm `statement.about_self` anchor extends it to NON-ENGLISH personal
+        # statements ("ich wohne in …") when anchor extraction is enabled (gated,
+        # so a cold/default write pays no embed). Stored only when TRUE so
+        # non-first-person facts stay metadata-clean and the lexical fallback
+        # yields the same answer.
+        try:
+            if isinstance(clean_metadata, dict) and "fp" not in clean_metadata:
+                from pmb.reasoning.pamvr import _has_first_person
+                fp = _has_first_person(clean_fact)
+                if (not fp and self.config.get("extract.anchor_keyed")
+                        and getattr(self, "_is_warm", False)):
+                    fp = self.anchor_fires(clean_fact[:120], "statement.about_self")
+                if fp:
+                    clean_metadata = dict(clean_metadata)
+                    clean_metadata["fp"] = 1
         except Exception:
             pass
 
@@ -309,6 +333,9 @@ class WriteMixin:
                 return  # only user-origin facts, never internal pipelines
             hit = detect_current_state(content)
             if not hit:
+                # C2 (warm-only, gated): the regex/pack tier missed — try the
+                # multilingual hypothesis-margin extractor before giving up.
+                self._anchor_promote_keyed(content, meta, importance)
                 return
             attribute, value = hit
             self.record_keyed_fact(
@@ -323,6 +350,35 @@ class WriteMixin:
             )
         except Exception:
             pass  # promotion is best-effort
+
+    def _anchor_promote_keyed(self, content, meta, importance) -> None:
+        """C2 + F1: warm-only keyed extraction by hypothesis margin when the
+        regex tier missed. Records each candidate with extraction-confidence
+        metadata (`extract={tier,margin,pos,model}`). Gated on
+        `extract.anchor_keyed`; best-effort, never raises, never loads the model
+        on a cold engine (the extractor's anchor_index() is warm-gated)."""
+        try:
+            if not self.config.get("extract.anchor_keyed"):
+                return
+            from pmb.reasoning.extract_anchor import extract_keyed_anchor
+            cands = extract_keyed_anchor(content, self)
+            if not cands:
+                return
+            model = getattr(self.search, "model_name", "default")
+            subject = (meta or {}).get("keyed_fact_subject") or "user"
+            for c in cands:
+                self.record_keyed_fact(
+                    subject=subject, attribute=c.attr, value=c.value,
+                    importance=max(float(importance), 0.7),
+                    metadata={
+                        "source": "anchor_extract",
+                        "derived_from": content[:200],
+                        "extract": {"tier": "anchor", "margin": c.margin,
+                                    "pos": c.pos, "model": model},
+                    },
+                )
+        except Exception:
+            pass  # extraction augmentation is best-effort
 
     def _maybe_close_on_negation(self, content, metadata, new_ulid, now_ts) -> None:
         """If CONTENT is the user negating an attribute they currently have a
@@ -343,39 +399,93 @@ class WriteMixin:
                 return
             attr = detect_negated_state(content)  # post-A1: user-subject only
             if not attr:
+                # F2: the regex tier missed — try the anchor anti-hypothesis
+                # against the user's CURRENT keyed values (warm-only, gated).
+                self._anchor_close_on_negation(content, new_ulid, now_ts)
                 return
-            import json as _json
-            import sqlite3 as _sql
-            key = keyed_fact_key("user", attr)
-            with _sql.connect(str(self.workspace.db_path)) as conn:
-                conn.row_factory = _sql.Row
-                rows = conn.execute(
-                    "SELECT ulid, metadata_json, timestamp FROM events "
-                    "WHERE workspace_id=? AND archived_at IS NULL "
-                    "AND event_type='fact' AND metadata_json LIKE ? "
-                    "ORDER BY timestamp DESC",
-                    (self.workspace.id, f'%"keyed_fact_key": "{key}"%'),
-                ).fetchall()
-            for r in rows:
-                if r["timestamp"] >= now_ts:
-                    continue  # never close a value newer than the negation
-                self.events.archive(r["ulid"])
-                m = _json.loads(r["metadata_json"] or "{}")
-                if not isinstance(m, dict):
-                    m = {}
-                m["valid_to"] = now_ts
-                m["closed_by"] = new_ulid
-                m["closed_reason"] = "negated_by_user"
-                with _sql.connect(str(self.workspace.db_path)) as conn:
-                    conn.execute("UPDATE events SET metadata_json=? WHERE ulid=?",
-                                 (_json.dumps(m), r["ulid"]))
-                break  # only the current value
+            self._close_keyed_attr(attr, new_ulid, now_ts, "negated_by_user")
         except Exception as e:
             try:
                 from pmb.core.errlog import log_error
                 log_error(self.workspace.db_path, "keyed_close_negation", e)
             except Exception:
                 pass
+
+    def _close_keyed_attr(self, attr: str, new_ulid, now_ts,
+                          reason: str) -> bool:
+        """Archive the user's CURRENT keyed value for `attr`, stamping
+        valid_to / closed_by / closed_reason. Returns True if it closed one.
+        Shared by the regex (`_maybe_close_on_negation`) and anchor (F2) paths."""
+        import json as _json
+        import sqlite3 as _sql
+        key = keyed_fact_key("user", attr)
+        with _sql.connect(str(self.workspace.db_path)) as conn:
+            conn.row_factory = _sql.Row
+            rows = conn.execute(
+                "SELECT ulid, metadata_json, timestamp FROM events "
+                "WHERE workspace_id=? AND archived_at IS NULL "
+                "AND event_type='fact' AND metadata_json LIKE ? "
+                "ORDER BY timestamp DESC",
+                (self.workspace.id, f'%"keyed_fact_key": "{key}"%'),
+            ).fetchall()
+        for r in rows:
+            if r["timestamp"] >= now_ts:
+                continue  # never close a value newer than the negation
+            self.events.archive(r["ulid"])
+            m = _json.loads(r["metadata_json"] or "{}")
+            if not isinstance(m, dict):
+                m = {}
+            m["valid_to"] = now_ts
+            m["closed_by"] = new_ulid
+            m["closed_reason"] = reason
+            with _sql.connect(str(self.workspace.db_path)) as conn:
+                conn.execute("UPDATE events SET metadata_json=? WHERE ulid=?",
+                             (_json.dumps(m), r["ulid"]))
+            return True  # only the current value
+        return False
+
+    def _anchor_close_on_negation(self, content, new_ulid, now_ts) -> None:
+        """F2: detect a contradiction of the user's CURRENT keyed value via the
+        anti-hypothesis. For each live keyed attr, embed the pos/anti hypotheses
+        of the CURRENT value against the new sentence in ONE batch; if the anti
+        side clearly wins, the user is negating that value → close it. Warm-only,
+        gated on extract.anchor_keyed; best-effort, never raises/loads cold."""
+        try:
+            if not self.config.get("extract.anchor_keyed"):
+                return
+            idx = self.anchor_index()
+            if idx is None:
+                return
+            if not idx.fires(content, "statement.about_self"):
+                return
+            import numpy as np
+
+            from pmb.reasoning.extract_anchor import HYPOTHESES
+            targets: list[tuple[str, str]] = []
+            for attr in ("city", "employer"):
+                if attr not in HYPOTHESES:
+                    continue
+                cur = [h for h in self.get_keyed_fact_history("user", attr)
+                       if h.get("is_current") and h.get("value")]
+                if cur:
+                    targets.append((attr, str(cur[0]["value"])))
+            if not targets:
+                return
+            texts = [content]
+            for attr, val in targets:
+                pos_t, neg_t = HYPOTHESES[attr]
+                texts.append(pos_t.format(v=val))
+                texts.append(neg_t.format(v=val))
+            vecs = np.asarray(self.search.embed_batch(texts), dtype=np.float32)
+            vecs = vecs / (np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-9)
+            s = vecs[0]
+            for i, (attr, _val) in enumerate(targets):
+                pos = float(vecs[1 + 2 * i] @ s)
+                anti = float(vecs[2 + 2 * i] @ s)
+                if anti - pos > 0.05 and anti > 0.45:
+                    self._close_keyed_attr(attr, new_ulid, now_ts, "anchor_negation")
+        except Exception:
+            pass  # contradiction check is best-effort
 
     def record_keyed_fact(
         self,
@@ -428,8 +538,43 @@ class WriteMixin:
                     "AND metadata_json LIKE ?",
                     (self.workspace.id, f'%"keyed_fact_key": "{key}"%'),
                 ).fetchall()
+            import json as _json
+            prior_values: list[str] = []
             for r in rows:
                 prior_ulids.append(r["ulid"])
+                try:
+                    pv = (_json.loads(r["metadata_json"] or "{}") or {}).get("keyed_fact_value")
+                    if pv:
+                        prior_values.append(str(pv))
+                except Exception:
+                    pass
+        except Exception:
+            prior_values = []
+
+        # C2 cosine-merge: if the new value is an INFLECTION of a prior value
+        # (RU "Kieve" vs "Kiev", a German dative), converge them — store the
+        # shorter / nominative-looking form so one fact doesn't churn into two
+        # competing keyed values. Warm-only + gated (extract.anchor_keyed);
+        # byte-identical values already collapse for free upstream.
+        try:
+            if (prior_values and self.config.get("extract.anchor_keyed")
+                    and getattr(self, "_is_warm", False)):
+                from pmb.reasoning.extract_anchor import values_are_alias
+                for pv in prior_values:
+                    if pv.lower() != value.lower() and values_are_alias(self, value, pv):
+                        value = min(value, pv, key=len)   # shorter ≈ nominative
+                        break
+                # If the merge converged onto an existing value, this is a pure
+                # inflected RESTATEMENT — keep the current fact as-is instead of
+                # churning it into an archived duplicate (identical content would
+                # otherwise dedup-collide with the very row we'd archive).
+                if any(pv.lower() == value.lower() for pv in prior_values):
+                    cur = [h for h in self.get_keyed_fact_history(subject, attribute)
+                           if h.get("is_current")]
+                    if cur:
+                        return {"ulid": cur[0].get("ulid"),
+                                "superseded_ulids": [], "key": key,
+                                "value": value, "merged_restatement": True}
         except Exception:
             pass
 

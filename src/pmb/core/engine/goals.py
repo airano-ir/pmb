@@ -2,10 +2,23 @@ from __future__ import annotations
 
 import time
 
-from pmb.core.events import (
-    Event,
-)
+from pmb.core.events import Event
+from pmb.core.text_match import distinctive_tokens
 from pmb.security.redact import redact, redact_metadata
+
+
+def _completion_match_score(goal_title: str, completed_summary: str) -> float:
+    """High-precision goal coverage score used for automatic reconciliation."""
+    # Reuse PMB's language-pack-aware matching primitive instead of growing a
+    # separate English completion-verb list here.
+    goal = distinctive_tokens(goal_title)
+    done = distinctive_tokens(completed_summary)
+    if len(goal) < 3 or len(done) < 3:
+        return 0.0
+    overlap = goal & done
+    if len(overlap) < 3:
+        return 0.0
+    return len(overlap) / len(goal)
 
 
 class GoalsMixin:
@@ -128,6 +141,8 @@ class GoalsMixin:
         old_progress = meta.get("goal_progress", 0)
         if status is not None:
             meta["goal_status"] = status
+            if status == "done" and progress is None:
+                progress = 100
         if progress is not None:
             meta["goal_progress"] = max(0, min(100, int(progress)))
         # Persist updated metadata in-place
@@ -225,6 +240,101 @@ class GoalsMixin:
                 }
             )
         return out
+
+    def reconcile_goals(
+        self,
+        dry_run: bool = True,
+        completed_ulid: str | None = None,
+    ) -> dict:
+        """Match completed activities to open goals and optionally close them.
+
+        Explicit ``activity.metadata.goal_ulid`` links always match. Unlinked
+        activities are applied only when one open goal has >=80% token coverage
+        and no competing goal clears the threshold. This is deliberately
+        conservative: a stale open goal is preferable to closing the wrong one.
+        """
+        import json as _j
+        import sqlite3
+
+        open_goals = self.list_goals(limit=1000)
+        open_goals = [
+            g for g in open_goals
+            if (g.get("status") or "pending") in ("pending", "in_progress")
+        ]
+        if not open_goals:
+            return {"matches": [], "n": 0, "n_applied": 0, "dry_run": dry_run}
+
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            sql = (
+                "SELECT ulid, content, metadata_json, timestamp FROM events "
+                "WHERE workspace_id=? AND archived_at IS NULL "
+                "AND event_type='activity' "
+                "AND json_extract(metadata_json, '$.activity_kind')='completed'"
+            )
+            params: list = [self.workspace.id]
+            if completed_ulid:
+                sql += " AND ulid=?"
+                params.append(completed_ulid)
+            sql += " ORDER BY timestamp DESC LIMIT 1000"
+            rows = conn.execute(sql, params).fetchall()
+
+        matches: list[dict] = []
+        already_matched: set[str] = set()
+        for row in rows:
+            try:
+                meta = _j.loads(row["metadata_json"] or "{}")
+            except Exception:
+                meta = {}
+            explicit = meta.get("goal_ulid")
+            if explicit and any(g["ulid"] == explicit for g in open_goals):
+                candidates = [(1.0, g) for g in open_goals if g["ulid"] == explicit]
+                reason = "explicit_link"
+            else:
+                candidates = sorted(
+                    (
+                        (_completion_match_score(g.get("title") or "", row["content"]), g)
+                        for g in open_goals
+                        if g["ulid"] not in already_matched
+                    ),
+                    key=lambda pair: pair[0],
+                    reverse=True,
+                )
+                candidates = [pair for pair in candidates if pair[0] >= 0.8]
+                reason = "unique_high_coverage"
+                if len(candidates) != 1:
+                    continue
+            score, goal = candidates[0]
+            already_matched.add(goal["ulid"])
+            matches.append({
+                "goal_ulid": goal["ulid"],
+                "goal_title": goal.get("title"),
+                "completed_ulid": row["ulid"],
+                "completed_summary": row["content"],
+                "score": round(float(score), 3),
+                "reason": reason,
+            })
+
+        n_applied = 0
+        if not dry_run:
+            for match in matches:
+                res = self.update_goal(
+                    match["goal_ulid"],
+                    status="done",
+                    progress=100,
+                    note=(
+                        "Auto-reconciled from completed activity: "
+                        f"{match['completed_summary'][:200]}"
+                    ),
+                )
+                if not res.get("error"):
+                    n_applied += 1
+        return {
+            "matches": matches,
+            "n": len(matches),
+            "n_applied": n_applied,
+            "dry_run": dry_run,
+        }
 
     def record_milestone(
         self,
@@ -486,6 +596,11 @@ class GoalsMixin:
             add_temporal_next_edge(self, ev)
         except Exception:
             pass
+        if kind == "completed":
+            try:
+                self.reconcile_goals(dry_run=False, completed_ulid=ev.ulid)
+            except Exception:
+                pass
         self.recall_cache.bump_generation()
         return ev.ulid
 

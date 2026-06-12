@@ -669,13 +669,13 @@ def declutter(
 ):
     """Sweep obvious junk out of memory (archive-only).
 
-    Heuristics: test artifacts, empty/stopword content, exact duplicates, and
-    negation tombstones already obsoleted by a positive keyed value. Short
-    (1-7 char) non-stopword facts are shown as `short_review` but NOT archived
-    unless you pass --aggressive — short is not the same as junk. With --llm, a
-    bounded judge (capped + circuit-broken, ≤15s) also reviews low-value
-    borderline facts. Dry-run by default; --apply archives (reversible —
-    restore with `pmb unforget`)."""
+    Heuristics: test artifacts, empty project-index rows, empty/stopword
+    content, exact duplicates, and negation tombstones already obsoleted by a
+    positive keyed value. Short (1-7 char) non-stopword facts are shown as
+    `short_review` but NOT archived unless you pass --aggressive — short is not
+    the same as junk. With --llm, a bounded judge (capped + circuit-broken,
+    ≤15s) also reviews low-value borderline facts. Dry-run by default; --apply
+    archives (reversible — restore with `pmb unforget`)."""
     from pmb.maintenance.declutter import declutter as run_declutter
     eng = Engine()
     if llm:
@@ -960,7 +960,6 @@ def doctor(
     rc = print_doctor(console, remote=remote)
     if rc != 0:
         raise typer.Exit(code=rc)
-
 
 
 

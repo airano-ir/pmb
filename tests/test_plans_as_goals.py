@@ -22,15 +22,14 @@ from pmb.reasoning.attributes import looks_like_future_intent
 
 # ── pure-function ───────────────────────────────────────────────────────────
 
+# G3: EN cold matrix; RU future-intent ("будем делать …") is the warm
+# statement.future_intent anchor now (test_statement_anchors).
 @pytest.mark.parametrize("text", [
     "next we'll wire the Groq backend",
     "next steps: migrate to Groq",
     "we will ship v1.0 next week",
     "plan: refactor auth, then the frontend",
     "let's add tests for the recall path",
-    "будем делать миграцию на Groq",
-    "дальше сделаем дашборд",
-    "план: вынести хардкод в конфиг",
 ])
 def test_future_intent_positive(text):
     assert looks_like_future_intent(text) is True

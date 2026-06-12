@@ -227,6 +227,20 @@ class Engine(
         # byte-identical recall). Cached once so the hot path pays no parse.
         from pmb.reasoning import scoring as _scoring
         self._channel_weights = _scoring.channel_weights(self.config)
+        # v0.9 SAE: built lazily on first WARM use (never loads the model on the
+        # cold path); None until then.
+        self._anchor_index = None
+
+        # v0.9 E1: apply this workspace's cached corpus-derived stopwords to the
+        # live tokenizer (gated; empty cache / off → no change). The tick
+        # refreshes the cache; here we just load what the last tick computed.
+        try:
+            if self.config.get("lang.corpus_stopwords"):
+                from pmb.core.text_match import apply_corpus_stopwords
+                from pmb.maintenance.corpus_stopwords import load_corpus_stopwords
+                apply_corpus_stopwords(load_corpus_stopwords(self))
+        except Exception:
+            pass
 
         # Auto VOCAB_BRIDGES (Improvement TT). Mine the user's own lexicon
         # from workspace events via PMI co-occurrence so PAMVR adapts to

@@ -2,11 +2,86 @@
 
 All notable changes to PMB are documented here.
 
-## [Unreleased] — the v0.9 → 1.0 track (PLAN.md Phase X)
+## [0.9.0] — 2026-06-12 — Anchor Engine
+
+**Memory now understands any language the embedder does — no language packs
+required.** A German/Spanish/French/Italian/Polish query routes to the right
+intent and the right fact with NO pack for that language (measured: de/es/fr/pl
+top-1 recall 1.00 pack-free; intents 12/12 across 6 languages).
+
+- **BREAKING (G3): `packs/ru.yaml` + `packs/uk.yaml` are DELETED.** RU/UK now
+  ride the embedder: recall via the multilingual vector channel (V1 RU/UK top-1
+  still 1.00, byte-identical), intents + keyed-attribute extraction via the WARM
+  anchor tier, and the COLD lexical path self-heals from the user's own traffic
+  via ALD (`$PMB_HOME/lang/auto.yaml`). The loader stays for user packs (drop a
+  YAML in `$PMB_HOME/lang/` to override) and the opt-in de/es templates.
+  **Honest regression:** on a COLD stdio path (no warm daemon, no distilled
+  traffic yet) RU/UK general atomic-fact extraction, first-person / self-intent /
+  relation / negation / future-intent lexical matchers no longer fire — those
+  had no cheap per-candidate warm replacement. The warm-daemon path (the default
+  after S6) is unaffected. The packs-off CI gate is now BLOCKING.
 
 Landed against the track (all additive / default-safe; recall behaviour proven
-byte-identical via the V1 eval):
+byte-identical via the V1 eval; new multilingual gate in
+`test_memory_eval_multilingual.py`):
 
+- **Pack-free extraction + data accuracy (C1–C3, F1–F4).** C1 universal value-
+  span detector (`reasoning/spans.py`); C2 keyed-fact extraction by hypothesis
+  margin (`reasoning/extract_anchor.py`, warm-only, gated `extract.anchor_keyed`)
+  — "Я живу в Киеве" → city=Киеве with zero Russian data; C3 canonical
+  `attr: value` atoms; F1 extraction-confidence metadata scaling the recall
+  boost; F2 write-time contradiction via the anti-hypothesis; F3 the X2 channel-
+  weights learning loop closed (propose in the tick, surface in `pmb doctor`,
+  never auto-applied); F4 the eval grown to a multilingual + paraphrase gate.
+- **Self-healing lexical cache + corpus stats (D3, E1, E2).** D3 recency-prunes
+  the ALD fire log so unused phrasings age out of auto.yaml; E1 derives stopwords
+  from the workspace's own document frequency (IDF made explicit); E2 detects PDF
+  ALL-CAPS headings via `str.isupper()` (every script, no char-class list).
+- **PAMVR on anchors (B3, B4).** B3 precomputes the first-person flag at write
+  time (`metadata.fp`) so the per-candidate loop never re-derives it; B4 drops
+  the lexical verb-synonym boost in `lang.mode=anchors` (the vector channel
+  covers it).
+
+- **Anchor Engine — language-free intent classification (A1/A2/B1/B2 + D1/D2).**
+  A new tier that replaces hand-written per-language packs with English-only
+  semantic ANCHORS: every role the packs enumerate (goals/past/recent/lessons
+  question, work request, self-query, trivial ack) is a set of English
+  positives + hard negatives; a message is classified by MARGIN (one-vs-rest)
+  against per-set thresholds CALIBRATED at FPR ≤ 1% (`scripts/calibrate_anchors.py`
+  → `src/pmb/lang/anchor_calibration.json`, frozen by a test). The shipped
+  multilingual embedder does the cross-lingual transfer, so a German/Spanish/
+  French/Italian/Polish query lands on the English anchors with ZERO per-language
+  data — measured 12/12 across 6 languages × 6 intents. Runs WARM-ONLY (the cold
+  hook never loads the model); `lang.anchors` (on) is the kill-switch. B2 extends
+  the same tier to two STATEMENT detectors (guidance-seeking query → lesson
+  boost; future-plan → suggest-goal flag) in their own scoring/calibration
+  GROUPS, so they add multilingual coverage without competing with — or
+  regressing — the intent tier (proven: B1 τ/recall byte-identical after B2).
+  **ALD (Anchor→Lexicon Distillation):** the maintenance tick mines n-grams that
+  reliably predict an anchor in THIS machine's traffic (precision ≥ 0.95,
+  support ≥ 6, across-anchor) and compiles them into `$PMB_HOME/lang/auto.yaml`,
+  so the COLD lexical path learns the user's languages from their own messages —
+  no model, microseconds, fully local. `lang.anchor_log` (on) gates the fire log.
+- **Fixed: Codex `record_batch` "timed out awaiting tools/call after 120s".**
+  Root cause: the background embed-queue worker EAGERLY triggered the full
+  torch model load inside a cold stdio MCP process; under memory pressure (a
+  second ~400MB model next to the warm daemon → paging) the load's GIL bursts
+  starved the server's asyncio loop, so the client's NEXT call hit its 120s
+  deadline. The worker is now PASSIVE (waits briefly for `is_ready()`, never
+  loads — `embed.queue_autoload=true` restores the old behavior), writes stay
+  durable model-free (`embed_queue_pending`), `warmup()` kicks the leftover
+  drain, and `pmb connect codex` adds `tool_timeout_sec=300` headroom
+  (re-run it once to pick that up). tests/test_record_batch_cold.py.
+- **Memory hygiene + project identity.** `index_project` no longer writes empty
+  structural rows or duplicate root rows; `declutter` archives old empty index
+  artifacts; project-index labels no longer become bogus person/concept nodes;
+  exact project entities win `project_overview`, whose key facts now hide
+  machine-generated file rows.
+- **Goal reconciliation.** Completed activities automatically close a single
+  high-confidence matching open goal; `pmb goals reconcile [--apply]` repairs
+  existing divergence. Project overview now reads the canonical `goal_status`.
+- **Thread-safe model caches.** Concurrent background embedding workers load one
+  shared transformer/cross-encoder instead of racing duplicate native loads.
 - **One base-score function + adaptive weights (X1/X2).** The base recall score
   lives in `pmb.reasoning.scoring.combine_base_score`; a per-workspace
   `recall.channel_weights` JSON vector (default identity = no change) scales the

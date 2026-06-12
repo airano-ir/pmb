@@ -24,9 +24,12 @@ from pmb.reasoning.attributes import (
 
 # ── pure-function tests (no engine, fast) ──────────────────────────────────
 
+# G3: RU alias labels (город / живёт) lived in the deleted ru pack; the EN
+# alias floor stays inline. RU value EXTRACTION is the warm C2 path now
+# (test_extract_anchor / test_keyed_parity).
 @pytest.mark.parametrize("label", [
     "city", "current_city", "current_city_2026", "lives_in", "current location",
-    "residence", "город", "живёт",
+    "residence",
 ])
 def test_location_aliases_canonicalize_to_city(label):
     assert canonicalize_attribute(label) == "city"
@@ -55,7 +58,9 @@ def test_keyed_fact_key_canonicalizes_attribute_only():
     ("I just moved to Tampa", "city", "Tampa"),
     ("I moved to Austin last week", "city", "Austin"),  # trailing time stripped
     ("I currently work at Anthropic", "employer", "Anthropic"),
-    ("Сейчас живу в Тампе", "city", "Тампе"),
+    # G3: RU current-state ("Сейчас живу в …") is the warm C2 hypothesis path
+    # now (test_extract_anchor::test_keyed_extraction_multilingual), not a cold
+    # pack regex.
 ])
 def test_detect_current_state_positive(text, attr, val):
     hit = detect_current_state(text)

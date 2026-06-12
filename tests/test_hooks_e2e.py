@@ -45,7 +45,7 @@ def test_e2e_lesson_surface_then_followcheck_confirms(engine):
     )
 
     # 2. Auto-recall on a matching message → lesson surfaces and is logged.
-    res = run_auto_context(engine, "какие правила про warmup и recall",
+    res = run_auto_context(engine, "do we have a rule about warmup and recall",
                            log_surfaces=True)
     assert res.lessons, "lesson should surface for a lessons query"
     sid = res.lessons[0].get("surface_id")
@@ -81,7 +81,7 @@ def test_e2e_followcheck_no_false_positive_without_activity(engine):
         "Never mix two embedding models in one lancedb table — dimensions clash",
         metadata={"kind": "lesson", "source": "lesson"},
     )
-    res = run_auto_context(engine, "какие правила про embedding model lancedb")
+    res = run_auto_context(engine, "do we have a rule about embedding model lancedb")
     assert res.lessons
     sid = res.lessons[0]["surface_id"]
 
@@ -114,7 +114,7 @@ def test_e2e_decisions_surface(engine):
     )
     # find_decisions is token-overlap (not cross-lingual) — the query must
     # share a distinctive token with the decision. "Postgres" anchors it.
-    res = run_auto_context(engine, "почему мы выбрали Postgres для проекта")
+    res = run_auto_context(engine, "why did we choose Postgres for the project")
 
     # The decision must reach the agent — but it can arrive via either
     # channel: a standalone `decisions` list, OR folded into the project
@@ -144,7 +144,7 @@ def test_e2e_cold_engine_skips_recall_but_lessons_work(engine):
     engine.record_fact("This repo pins numpy below 2.x for lancedb compat",
                        metadata={"kind": "lesson", "source": "lesson"})
 
-    res = run_auto_context(engine, "когда я последний раз трогал numpy и какие правила")
+    res = run_auto_context(engine, "when did I last touch numpy and what are the rules")
     # PAST_QUERY fires but recall is cold-skipped...
     assert Intent.PAST_QUERY in res.intents
     assert "RECALL_COLD_SKIP" in res.intents
@@ -190,7 +190,7 @@ def test_e2e_followcheck_feeds_adherence_stats(engine):
         "Use record_batch for multi-fact writes, never many record_fact calls",
         metadata={"kind": "lesson", "source": "lesson"},
     )
-    res = run_auto_context(engine, "какие правила про record_batch и запись")
+    res = run_auto_context(engine, "do we have a rule about record_batch and writes")
     assert res.lessons
 
     engine.record_activity(

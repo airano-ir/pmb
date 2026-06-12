@@ -270,6 +270,25 @@ def _is_file_indexed(engine: Engine, project_path: str, file_path: str, sha1: st
         return False
 
 
+def _is_project_root_indexed(engine: Engine, project_path: str) -> bool:
+    """Return True when the project already has an active root index row."""
+    import sqlite3
+    try:
+        with sqlite3.connect(engine.workspace.db_path) as c:
+            row = c.execute(
+                "SELECT 1 FROM events WHERE workspace_id=? "
+                "AND archived_at IS NULL "
+                "AND json_extract(metadata_json, '$.source') = 'project' "
+                "AND json_extract(metadata_json, '$.project_root') = 1 "
+                "AND json_extract(metadata_json, '$.project_path') = ? "
+                "LIMIT 1",
+                (engine.workspace.id, project_path),
+            ).fetchone()
+            return row is not None
+    except Exception:
+        return False
+
+
 def index_project(
     engine: Engine,
     path: Path | str,
@@ -301,27 +320,31 @@ def index_project(
     files_seen = 0
     files_indexed = 0
     files_skipped = 0
+    low_signal_skipped = 0
     by_lang: dict[str, int] = {}
     sample_files: list[str] = []
 
     items: list[dict] = []
     # Root entrypoint event so the agent can reach the whole project
-    # via a single recall.
-    items.append({
-        "type": "fact",
-        "content": (
-            f"Project: {project_name}\n"
-            f"Path: {project_path}\n"
-            f"Indexed at {time.strftime('%Y-%m-%d %H:%M:%S')}."
-        ),
-        "importance": 0.75,
-        "metadata": {
-            "source":        "project",
-            "project_path":  project_path,
-            "project_name":  project_name,
-            "project_root":  True,
-        },
-    })
+    # via a single recall. Keep it idempotent: the old timestamped root row
+    # created a fresh duplicate every time the same project was indexed.
+    root_item: dict | None = None
+    if not _is_project_root_indexed(engine, project_path):
+        root_item = {
+            "type": "fact",
+            "content": (
+                f"Project: {project_name}\n"
+                f"Path: {project_path}"
+            ),
+            "importance": 0.75,
+            "metadata": {
+                "source":        "project",
+                "project_path":  project_path,
+                "project_name":  project_name,
+                "project_root":  True,
+            },
+        }
+        items.append(root_item)
 
     for p in _walk_files(root):
         files_seen += 1
@@ -345,6 +368,14 @@ def index_project(
         symbols, imports = _extract_for_lang(lang, text)
         loc = sum(1 for _ in text.splitlines())
         by_lang[lang] = by_lang.get(lang, 0) + 1
+
+        # A structural index row with neither symbols nor imports contains
+        # only a filename and LOC count. It is cheap to regenerate but costly
+        # in memory quality, so do not write it in the first place.
+        if not symbols and not imports:
+            low_signal_skipped += 1
+            continue
+
         if len(sample_files) < 30:
             sample_files.append(str(rel))
 
@@ -370,15 +401,17 @@ def index_project(
                 "sha1":            sha1,
                 "symbols":         symbols[:40],
                 "imports":         imports[:30],
+                "index_artifact":  True,
             },
         })
         files_indexed += 1
 
     # Top-up the entrypoint event with the summary we just gathered.
-    if items:
-        items[0]["content"] += (
+    if root_item is not None:
+        root_item["content"] += (
             f"\nFiles seen: {files_seen} (indexed {files_indexed}, "
-            f"skipped {files_skipped} unchanged)\n"
+            f"skipped {files_skipped} unchanged, "
+            f"{low_signal_skipped} low-signal)\n"
             f"By language: " + ", ".join(f"{k}={v}" for k, v in by_lang.items())
             + ("\nSample files: " + ", ".join(sample_files[:10]) if sample_files else "")
         )
@@ -392,6 +425,7 @@ def index_project(
         "n_files_seen":   files_seen,
         "n_indexed":      files_indexed,
         "n_skipped":      files_skipped,
+        "n_low_signal_skipped": low_signal_skipped,
         "by_language":    by_lang,
         "duration_ms":    round((time.time() - t0) * 1000),
         "queued":         True,

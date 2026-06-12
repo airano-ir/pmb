@@ -131,27 +131,26 @@ class GraphStore:
     # ------------------------------------------------------------------
 
     def upsert_entity(self, workspace_id: str, kind: str, name: str) -> int:
-        """Return the entity id, creating or bumping mention count."""
+        """Return the entity id, creating or bumping mention count.
+
+        Single atomic UPSERT: the previous SELECT-then-INSERT raced under
+        concurrent writers (two threads both miss the SELECT, the second
+        INSERT dies on the UNIQUE(workspace_id, kind, name) constraint —
+        seen live from parallel record_fact calls). ON CONFLICT converts the
+        loser's INSERT into the mention bump instead. RETURNING needs
+        SQLite ≥ 3.35 (2021)."""
         now = time.time()
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT id, n_mentions FROM graph_entities "
-                "WHERE workspace_id = ? AND kind = ? AND name = ?",
-                (workspace_id, kind, name),
-            ).fetchone()
-            if row:
-                conn.execute(
-                    "UPDATE graph_entities SET n_mentions = n_mentions + 1, "
-                    "last_seen = ? WHERE id = ?",
-                    (now, row["id"]),
-                )
-                return int(row["id"])
             cur = conn.execute(
-                "INSERT INTO graph_entities (workspace_id, kind, name, n_mentions, last_seen) "
-                "VALUES (?, ?, ?, 1, ?)",
+                "INSERT INTO graph_entities "
+                "(workspace_id, kind, name, n_mentions, last_seen) "
+                "VALUES (?, ?, ?, 1, ?) "
+                "ON CONFLICT(workspace_id, kind, name) DO UPDATE SET "
+                "n_mentions = n_mentions + 1, last_seen = excluded.last_seen "
+                "RETURNING id",
                 (workspace_id, kind, name, now),
             )
-            return int(cur.lastrowid)
+            return int(cur.fetchone()[0])
 
     def link_event(self, event_ulid: str, entity_ids: Iterable[int]) -> None:
         with self._conn() as conn:

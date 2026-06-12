@@ -1072,19 +1072,24 @@ def workspaces():
 @app.command()
 def goals(
     action: str = typer.Argument(
-        "list", help="list (default) | done"),
+        "list", help="list (default) | done | reconcile"),
     ulid: str | None = typer.Argument(
         None, help="Goal ULID (required for `done`)."),
     all_: bool = typer.Option(
         False, "--all", help="Include done/cancelled goals, not just open ones."),
+    apply: bool = typer.Option(
+        False, "--apply",
+        help="With `reconcile`, close unambiguously completed goals."),
 ):
-    """List open goals, or mark one done.
+    """List open goals, mark one done, or reconcile completed work.
 
     Open goals are how PMB remembers what to do NEXT — the agent records them
     from "remember we'll do X next" / "the plan is …". Examples:
       pmb goals                 # open goals (pending + in_progress)
       pmb goals --all           # everything, including done/cancelled
       pmb goals done <ulid>     # mark a goal complete
+      pmb goals reconcile       # preview completed-work matches
+      pmb goals reconcile --apply
     """
     eng = Engine()
     if action == "done":
@@ -1097,8 +1102,32 @@ def goals(
             raise typer.Exit(1)
         console.print(f"[green]✓ goal marked done:[/] {ulid}")
         return
+    if action == "reconcile":
+        res = eng.reconcile_goals(dry_run=not apply)
+        if not res["matches"]:
+            console.print("[green]No unambiguous completed-goal matches found.[/]")
+            return
+        table = Table(show_header=True, header_style="bold magenta",
+                      title="goal reconciliation")
+        table.add_column("Score", justify="right")
+        table.add_column("Open goal")
+        table.add_column("Completed activity")
+        for match in res["matches"]:
+            table.add_row(
+                f"{match['score']:.2f}",
+                esc((match["goal_title"] or "")[:70]),
+                esc((match["completed_summary"] or "")[:70]),
+            )
+        console.print(table)
+        if apply:
+            console.print(f"[green]Closed {res['n_applied']} goal(s).[/]")
+        else:
+            console.print("[yellow]Dry-run only.[/] Re-run with --apply.")
+        return
     if action != "list":
-        console.print(f"[yellow]Unknown action[/] {action!r}. Use list | done.")
+        console.print(
+            f"[yellow]Unknown action[/] {action!r}. Use list | done | reconcile."
+        )
         raise typer.Exit(2)
 
     items = eng.list_goals(limit=200)

@@ -134,10 +134,18 @@ actual embed + LanceDB insert happens on a background thread.
 the dashboard. Old values get archived, never deleted; full history
 is queryable via `keyed_fact_as_of(t)`.
 
-**Multilingual** — the default embedder is `bge-m3`, which natively
-handles EN, RU, UA, plus 50+ more. A Russian query like *где я живу*
-finds an English keyed-fact stored as *user.city = Warsaw* without
-any translation.
+**Multilingual — no language packs.** The default embedder
+(`paraphrase-multilingual-MiniLM-L12-v2`) covers 50+ languages, so a
+Russian query like *где я живу* finds an English keyed-fact stored as
+*user.city = Warsaw* with no translation. Intent detection and keyed
+extraction ride **English semantic anchors** that transfer cross-lingually
+through the embedder — one mechanism for every language the model knows,
+instead of a hand-written pack per language. The cold lexical path then
+**self-compiles** from your own traffic (anchor→lexicon distillation), so a
+language you actually use gets faster over time with zero configuration.
+Recall stays strong across ~11 languages (overall top-3 ≈ 0.9 on a
+101-query eval; top-1 = 1.00 for en/fr/pt/ru, CJK weaker on exact top-1).
+See [docs/adding-a-language.md](docs/adding-a-language.md).
 
 ---
 

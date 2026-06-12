@@ -62,16 +62,13 @@ def test_fact_extract_behavior_unchanged():
 
 
 def test_future_intent_unchanged():
-    # _FUTURE_INTENT_RE was relocated (EN inline + pack RU markers); these
-    # hand-specified cases pin its EN+RU behavior directly.
+    # G3: _FUTURE_INTENT_RE is EN-inline now (RU markers lived in the deleted
+    # pack); RU future-intent is the warm statement.future_intent anchor
+    # (test_statement_anchors). Pin the EN cold behavior here.
     from pmb.reasoning.attributes import looks_like_future_intent
     yes = ["next we'll refactor auth", "plan: ship v1 by June", "to-do: write docs",
-           "we will migrate the db", "let's add caching",
-           "будем делать рефакторинг", "план: задеплоить", "планируем встречу",
-           "надо будет проверить логи", "дальше сделаем фронтенд",
-           "следующий шаг — деплой"]
-    no = ["I live in Tampa", "the api runs on port 5432", "we use pnpm not npm",
-          "мы используем postgres"]
+           "we will migrate the db", "let's add caching"]
+    no = ["I live in Tampa", "the api runs on port 5432", "we use pnpm not npm"]
     for s in yes:
         assert looks_like_future_intent(s), f"should be future intent: {s!r}"
     for s in no:
@@ -79,39 +76,36 @@ def test_future_intent_unchanged():
 
 
 def test_pamvr_self_reference_matchers_unchanged():
-    # pamvr.py L1 relocation: _FIRST_PERSON / _SELF_INTENT_RE / _RELATION_MARKERS
-    # now build from an EN inline floor + dedicated packs. Pin EN+RU+UK behavior.
+    # G3: _FIRST_PERSON / _SELF_INTENT_RE / _RELATION_MARKERS are the EN inline
+    # floor now (RU/UK fragments lived in the deleted packs); RU/UK self-reference
+    # rides the warm anchor tier. Pin the EN cold behavior here.
     import pmb.reasoning.pamvr as P
-    fp_yes = ["I live here", "my city", "myself", "я живу", "меня зовут",
-              "мне нравится", "со мной", "мене звати", "мені подобається", "зі мною"]
+    fp_yes = ["I live here", "my city", "myself"]
     fp_no = ["the server runs", "Alice lives in Berlin", "weather is nice"]
     for s in fp_yes:
         assert P._has_first_person(s), f"first-person miss: {s!r}"
     for s in fp_no:
         assert not P._has_first_person(s), f"first-person false hit: {s!r}"
-    si_yes = ["where do i live", "what's my name", "what do i prefer",
-              "кто я", "где я живу", "моя машина",
-              "коли я", "де я працюю", "мій дім"]
+    si_yes = ["where do i live", "what's my name", "what do i prefer"]
     si_no = ["where does Alice live", "what is the capital of France"]
     for s in si_yes:
         assert P._SELF_INTENT_RE.search(s.lower()), f"self-intent miss: {s!r}"
     for s in si_no:
         assert not P._SELF_INTENT_RE.search(s.lower()), f"self-intent false hit: {s!r}"
-    for w in ["друг", "жена", "сестра", "брат", "friend", "wife", "brother"]:
+    for w in ["friend", "wife", "brother"]:
         assert w in P._RELATION_MARKERS, f"relation marker missing: {w!r}"
 
 
 def test_recall_personal_intent_gate_unchanged():
-    # recall.py L1 relocation: _QWORD_RE / _ATTR_RE now build from EN inline +
-    # recall_qwords / recall_first_person packs. The two together form the R6
-    # personal-attribute gate; pin EN+RU(+UK) matching.
+    # G3: _QWORD_RE / _ATTR_RE are the EN inline floor now (RU qwords/first-person
+    # lived in the deleted packs); RU personal-attribute queries ride the warm
+    # anchor tier. Pin the EN cold R6 gate here.
     import pmb.core.engine.recall as R
-    for w in ["where", "when", "how", "когда", "где", "сколько", "коли", "який"]:
+    for w in ["where", "when", "how"]:
         assert R._QWORD_RE.search(w), f"qword miss: {w!r}"
-    for w in ["i", "my", "user", "меня", "моя", "мне", "мене", "мій"]:
+    for w in ["i", "my", "user"]:
         assert R._ATTR_RE.search(w), f"attr miss: {w!r}"
     assert R._QWORD_RE.search("where do i live") and R._ATTR_RE.search("where do i live")
-    assert R._QWORD_RE.search("где я живу") and R._ATTR_RE.search("где я живу")
     # topical query: no first-person/user cue -> attr gate must NOT fire
     assert not R._ATTR_RE.search("how does postgres handle vacuum")
 

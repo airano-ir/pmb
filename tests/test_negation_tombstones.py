@@ -30,7 +30,8 @@ from pmb.reasoning.attributes import detect_negated_state
     ("The user no longer works at Stripe.", "employer"),
     ("My current employer is unknown.", "employer"),
     ("The user no longer lives in Warsaw.", "city"),
-    ("я больше не живу в Варшаве", "city"),
+    # G3: RU negation ("я больше не живу в …") is the warm F2 anchor-negation
+    # path now (test_extract_anchor_wiring); cold detect_negated_state is EN-only.
     ("I learned a lot, but I no longer live in Paris.", "city"),  # preamble ok
 ])
 def test_detect_negated_state_positive(text, attr):

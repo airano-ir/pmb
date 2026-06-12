@@ -12,18 +12,42 @@ class GraphMixin:
     def _index_event_in_graph(self, ev: Event, full_text: str) -> list[int]:
         """Extract entities + upsert nodes + co-occurrence edges. Returns entity_ids."""
         files_hint = ev.metadata.get("files_changed") or []
-        # Use the batch-pre-extracted result if record_batch pre-cached it
-        # (one LLM call for N events instead of N calls). Falls through to
-        # per-event extract() for solo writes and for batches that bypassed
-        # pre-extraction (regex backend, or LLM batch failure).
-        cache = getattr(self, '_extract_cache', None)
-        ext = (cache or {}).get(full_text) if cache else None
-        if ext is None:
-            ext = self.entity_extractor.extract(full_text, files_hint=files_hint)
-        named = ext.all_named()
+        meta = ev.metadata if isinstance(ev.metadata, dict) else {}
+
+        # Project-index events are generated from structured metadata. Running
+        # open-vocabulary/person extraction over their rendered labels
+        # ("File:", "Symbols:", "Imports:") taught the graph nonsense such as
+        # file/symbols/imports → person. Use the structure directly instead.
+        if meta.get("source") == "project":
+            named: list[tuple[str, str]] = []
+            project_name = str(meta.get("project_name") or "").strip()
+            file_path = str(
+                meta.get("file_path_posix") or meta.get("file_path") or ""
+            ).strip().replace("\\", "/")
+            language = str(meta.get("language") or "").strip().lower()
+            if project_name:
+                named.append(("project", project_name))
+            if file_path:
+                named.append(("file", file_path))
+            if language:
+                named.append(("tech", language))
+            for imp in (meta.get("imports") or [])[:8]:
+                target = str(imp).strip()
+                if target:
+                    named.append(("import", target))
+        else:
+            # Use the batch-pre-extracted result if record_batch pre-cached it
+            # (one LLM call for N events instead of N calls). Falls through to
+            # per-event extract() for solo writes and for batches that bypassed
+            # pre-extraction (regex backend, or LLM batch failure).
+            cache = getattr(self, '_extract_cache', None)
+            ext = (cache or {}).get(full_text) if cache else None
+            if ext is None:
+                ext = self.entity_extractor.extract(full_text, files_hint=files_hint)
+            named = ext.all_named()
 
         # Improvement H: person extraction (no-ML, regex + dict + speaker)
-        if self.config.get("recall.person_extraction"):
+        if meta.get("source") != "project" and self.config.get("recall.person_extraction"):
             try:
                 from pmb.graph.persons import (
                     KnownPersons,
@@ -52,7 +76,7 @@ class GraphMixin:
         # Improvement J (code half): Python AST symbol extraction.
         # If content looks like code, extract function/class/import entities
         # so the graph layer can answer "which code uses X" structurally.
-        if self.config.get("recall.code_ast_extraction"):
+        if meta.get("source") != "project" and self.config.get("recall.code_ast_extraction"):
             try:
                 from pmb.reasoning.code_ast import (
                     extract_python_symbols,

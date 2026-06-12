@@ -38,16 +38,15 @@ def _write_pack(home: Path, code: str, body: str) -> None:
 
 # ── built-in floor: ru + uk active by default, extend-only ──────────────────
 
-def test_builtin_ru_uk_active_by_default(tmp_home):
-    # L1: ru + uk are built-in ALWAYS-ACTIVE floor packs (de/es stay opt-in).
-    assert lang.active_codes() == ["ru", "uk"]
-    # extend-only: a custom base is always a subset of the merge
+def test_no_builtin_packs_active_by_default(tmp_home):
+    # G3: NO pack is active by default — ru/uk were deleted and RU/UK moved to
+    # the warm anchor tier. The loader floor still returns the caller's defaults
+    # unchanged, extend-only, with container kind preserved.
+    assert lang.active_codes() == []
     base_set = {"the", "a", "is"}
     assert base_set <= lang.merged_set("stopwords", base_set)
-    # the RU/UK verb floor now comes FROM the built-in packs, not inline code
     merged = lang.merged_groups("verb_synonyms", {"live": {"live"}})
-    assert {"live", "живу", "живе"} <= merged["live"]
-    # frozenset in → frozenset out (container kind preserved)
+    assert merged["live"] == {"live"}        # EN floor only, no RU/UK verbs
     fs = frozenset({"x"})
     assert isinstance(lang.merged_set("stopwords", fs), frozenset)
 
@@ -75,8 +74,8 @@ def test_pack_extends_groups(tmp_home):
 def test_active_codes_lists_enabled(tmp_home):
     _write_pack(tmp_home, "de", "stopwords: [der]")
     _write_pack(tmp_home, "es", "stopwords: [el]")
-    # de/es (opt-in) alongside the always-active ru/uk built-ins
-    assert lang.active_codes() == ["de", "es", "ru", "uk"]
+    # G3: only user-enabled packs are active now (no built-in default packs)
+    assert lang.active_codes() == ["de", "es"]
 
 
 def test_malformed_pack_is_ignored(tmp_home):
@@ -114,15 +113,16 @@ def test_builtin_templates_present_and_load():
 # ── integration: a real module picks up an enabled pack (subprocess so the
 #    import-time merge runs with the pack already present) ───────────────────
 
+# G3: a user-enabled de pack reaches the modules; the RU floor is gone (RU now
+# rides the warm anchor tier), so the probe asserts only the EN inline floor + de.
 _PROBE = """
 import pmb.reasoning.pamvr as pamvr
 from pmb.reasoning.attributes import canonicalize_attribute
 assert "the" in pamvr._STOP and "der" in pamvr._STOP, "stopword floor+de"
-assert "живу" in pamvr.VERB_SYNS["live"] and "wohnt" in pamvr.VERB_SYNS["live"]
+assert "live" in pamvr.VERB_SYNS["live"] and "wohnt" in pamvr.VERB_SYNS["live"]
 assert "warum" in pamvr._NOT_PROPER
 assert pamvr._FIRST_PERSON_RE.search("ich wohne in Berlin")
 assert canonicalize_attribute("stadt") == "city"
-assert canonicalize_attribute("город") == "city"   # RU floor still works
 print("INTEGRATION_OK")
 """
 

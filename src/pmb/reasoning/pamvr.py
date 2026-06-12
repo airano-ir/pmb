@@ -54,10 +54,11 @@ _STOP = {
 # unless the user enabled one (`pmb lang enable de`).
 _STOP = _lang.merged_set("stopwords", _STOP)
 
-# Cyrillic letter range for the relation/word tokenizers — sourced from the ru
-# pack (cyrillic_script_range) so this module stays Cyrillic-free (L1). Both
-# call sites tokenize already-lowercased text, so the full block is exact.
-_CYR = "".join(str(x) for x in _lang.merged_list("cyrillic_script_range"))
+# E2: the relation/word tokenizers below use a Unicode LETTER class directly
+# (`[^\W\d_]` = a letter of any script — Latin/Cyrillic/Greek/CJK), so no
+# enumerated Cyrillic range is needed. Both call sites tokenize already-
+# lowercased text. `_WORD_TOK` = one-or-more (letter | apostrophe).
+_WORD_TOK = r"(?:[^\W\d_]|')+"
 
 
 # Domain-specific vocabulary bridges. Map query terms to content synonyms.
@@ -227,6 +228,7 @@ class _QueryFeatures:
     proper_patterns: list = field(default_factory=list)  # compiled regexes
     query_verb: str | None = None
     verb_stems: set[str] = field(default_factory=set)
+    use_verb_match: bool = True   # B4: off in lang.mode=anchors (vector covers it)
     topic_tokens: set[str] = field(default_factory=set)
     topic_expanded: set[str] = field(default_factory=set)
     has_use_verb: bool = False
@@ -258,13 +260,19 @@ def prepare_query_features(
     named_entities: set[str] | None = None,
     vocab_bridges: dict[str, list[str]] | None = None,
     user_names: set[str] | None = None,
+    verb_match: bool = True,
 ) -> _QueryFeatures:
     """Precompute all query-side features for PAMVR. Call ONCE per recall;
     pass the result to apply_pamvr for each candidate.
 
     Replaces the 4-6 regex/tokenize calls that used to run per candidate.
+
+    `verb_match=False` (B4, set by recall when `lang.mode=anchors`) drops the
+    lexical verb-synonym boost — the vector channel already encodes verb
+    synonymy there, so the BM25-era crutch is redundant.
     """
     f = _QueryFeatures(query=query, ql=query.lower())
+    f.use_verb_match = verb_match
     f.entities = named_entities or DEFAULT_NAMED_ENTITIES
     f.bridges = vocab_bridges if vocab_bridges is not None else VOCAB_BRIDGES
     f.user_names = user_names or set()
@@ -301,7 +309,10 @@ def prepare_query_features(
     # Verb features
     f.query_verb = _query_main_verb(query)
     if f.query_verb:
-        f.verb_stems = set(VERB_SYNS.get(f.query_verb, {f.query_verb}))
+        # B4: empty stems in anchors mode → verb_hit is always False downstream,
+        # dropping the lexical verb boost while topic features below still apply.
+        f.verb_stems = (set(VERB_SYNS.get(f.query_verb, {f.query_verb}))
+                        if f.use_verb_match else set())
         f.topic_tokens = f.qt - {f.query_verb}
         f.topic_expanded = set(f.topic_tokens)
         for q_term in list(f.topic_tokens):
@@ -350,7 +361,7 @@ def prepare_query_features(
     f.has_self_intent = bool(_SELF_INTENT_RE.search(f.ql))
 
     # Relation marker presence (markers shared with apply-time _RELATION_MARKERS)
-    f.q_tokens_set = set(re.findall(r"[a-z" + _CYR + r"']+", f.ql))
+    f.q_tokens_set = set(re.findall(_WORD_TOK, f.ql))
     f.q_has_relation = bool(f.q_tokens_set & _RELATION_MARKERS)
 
     # Fix/bug/decision query kinds
@@ -400,6 +411,20 @@ def _has_first_person(text: str) -> bool:
     if not text:
         return False
     return bool(_FIRST_PERSON_RE.search(text))
+
+
+def _first_person_flag(event: Any, ct: str) -> bool:
+    """B3: read the WRITE-TIME precomputed first-person flag (`metadata.fp`) when
+    present, so the per-candidate loop never re-derives it (the hot-loop rule:
+    nothing per-candidate that can be precomputed at write time). Falls back to
+    the lexical regex when the flag is absent (older events, cold writes)."""
+    try:
+        m = getattr(event, "metadata", None)
+        if isinstance(m, dict) and "fp" in m:
+            return bool(m["fp"])
+    except Exception:
+        pass
+    return _has_first_person(ct)
 
 
 # Relation markers - used at apply time too. EN floor inline; the RU relation
@@ -486,7 +511,7 @@ def apply_pamvr(
         )
         if matched_in_content:
             score *= 1.20
-        elif f.query_has_user_name and _has_first_person(ct):
+        elif f.query_has_user_name and _first_person_flag(event, ct):
             # (b) self-reference rescue: query names the user, the candidate is
             # a first-person fact (e.g. "I live in <city>") - treat as a match.
             score *= 1.10
@@ -603,7 +628,7 @@ def apply_pamvr(
     # ---- 13b. Relation-marker disambiguation ----
     # Cheap per-candidate: split ct into tokens once, check intersection.
     if f.all_proper and f.q_has_relation:
-        ct_tokens = set(re.findall(r"[a-z" + _CYR + r"']+", ct))
+        ct_tokens = set(re.findall(_WORD_TOK, ct))
         c_has_relation = bool(ct_tokens & _RELATION_MARKERS)
         if c_has_relation:
             score *= 1.25
@@ -626,7 +651,7 @@ def apply_pamvr(
     # ---- 15. Self-intent: first-person question → boost first-person
     # facts. Closes the "who am I / where do I live" → first-person "I live in
     # <city>" gap that PAMVR otherwise misses because "I" is a stop-word.
-    if f.has_self_intent and _has_first_person(ct):
+    if f.has_self_intent and _first_person_flag(event, ct):
         score *= 1.30
 
     _t("self-intent (first-person rescue)")
