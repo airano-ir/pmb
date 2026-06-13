@@ -224,7 +224,7 @@ jobs:
       - name: Multilingual eval + keyed extraction with packs OFF
         run: >
           pytest -q --tb=short
-          tests/test_packs_off_ratchet.py
-          tests/test_memory_eval_multilingual.py
+          tests/eval/test_packs_off_ratchet.py
+          tests/eval/test_memory_eval_multilingual.py
           tests/test_extract_anchor.py
           tests/test_anchors.py
