@@ -253,7 +253,8 @@ pmb config set recall.ppr_enabled true      toggle a feature
 pmb connect --rules-only                    refresh CLAUDE.md only
 ```
 
-Full reference: [docs/COMMANDS.md](docs/COMMANDS.md).
+Step-by-step per agent: [docs/usage.md](docs/usage.md). Full command
+reference: [docs/COMMANDS.md](docs/COMMANDS.md).
 
 ## Settings — 25 you care about, 80 you don't
 
