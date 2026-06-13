@@ -52,9 +52,9 @@ dev:
 #   - `make test-all-WARN` only if your HF cache is already populated
 # --------------------------------------------------------------------------
 
-CORE_TESTS = tests/test_graph.py tests/test_persons.py tests/test_goals_chains.py \
-	tests/test_fact_tree.py tests/test_recall_cache.py tests/test_config.py \
-	tests/test_redact.py tests/test_causation.py
+CORE_TESTS = tests/engine/test_graph.py tests/engine/test_persons.py tests/engine/test_goals_chains.py \
+	tests/engine/test_fact_tree.py tests/recall/test_recall_cache.py tests/engine/test_config.py \
+	tests/security/test_redact.py tests/recall/test_causation.py
 
 test: test-core
 
@@ -62,7 +62,7 @@ test-core:
 	pytest $(CORE_TESTS) -q
 
 test-smoke:
-	pytest tests/test_lightweight_imports.py -v
+	pytest tests/meta/test_lightweight_imports.py -v
 
 test-all-WARN:
 	@echo "WARNING: full pytest is known to deadlock on parallel HF downloads."

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-_SRC = str(Path(__file__).resolve().parent.parent / "src")
+_SRC = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()) / "src")
 sys.path.insert(0, _SRC)
 
 

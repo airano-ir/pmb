@@ -72,6 +72,6 @@ a systemd unit / Docker:
 
 ## Tests
 
-The auth contract is pinned in `tests/test_http_bearer_auth.py` (no token →
+The auth contract is pinned in `tests/integration/test_http_bearer_auth.py` (no token →
 401, wrong token → 401, correct token → 200, preflight/health pass through,
 empty token disables the gate).

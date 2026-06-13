@@ -28,7 +28,7 @@ make test-smoke  # 9 passed in ~5s   — import-weight regression tests
 | Target | What it runs | When to use |
 |---|---|---|
 | `make test` (= `make test-core`) | 8 deterministic files from `.github/workflows/ci.yml`, 88 tests | Default during development; matches CI |
-| `make test-smoke` | `tests/test_lightweight_imports.py`, 9 tests | After touching `pmb/__init__.py` or any module added to the lazy-attribute table |
+| `make test-smoke` | `tests/meta/test_lightweight_imports.py`, 9 tests | After touching `pmb/__init__.py` or any module added to the lazy-attribute table |
 | `make test-all-WARN` | The full `tests/` directory | Only if your HF cache is already populated; otherwise it will hang |
 | `pytest tests/test_X.py` | One specific file | Reproducing a single failure |
 
@@ -72,7 +72,7 @@ scripts/            - benchmarks, demos, profilers
 ## Tests
 
 - Unit tests live in `tests/`. They use temp workspaces (`tempfile.mkdtemp`); don't write to `~/.pmb/` from a test.
-- For features that touch recall scoring, add a test in `tests/test_graph.py` style that asserts ordering, not exact scores.
+- For features that touch recall scoring, add a test in `tests/engine/test_graph.py` style that asserts ordering, not exact scores.
 - The full LoCoMo bench (`scripts/benchmark_locomo.py`) is the integration test for retrieval quality.
 
 ## Pull requests
