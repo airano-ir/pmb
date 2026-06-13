@@ -12,8 +12,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+_FIXTURES = next(
+    p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()
+) / "tests" / "fixtures"
+
 _BASE = json.loads(
-    (Path(__file__).parent / "_regex_parity_baseline.json").read_text(encoding="utf-8")
+    (_FIXTURES / "_regex_parity_baseline.json").read_text(encoding="utf-8")
 )
 
 
@@ -51,8 +55,7 @@ def test_intents_unchanged():
 
 def test_fact_extract_behavior_unchanged():
     import json as _json
-    from pathlib import Path as _P
-    base = _json.loads((_P(__file__).parent / "_fact_extract_baseline.json")
+    base = _json.loads((_FIXTURES / "_fact_extract_baseline.json")
                        .read_text(encoding="utf-8"))
     import pmb.reasoning.fact_extract as FE
     for probe, expected in base.items():
