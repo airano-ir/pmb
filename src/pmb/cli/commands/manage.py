@@ -409,14 +409,34 @@ def setup(
             "follow-through run automatically)"
             + (f" · MCP profile: [cyan]{prof}[/]" if prof else "")
         )
-    console.print(Panel.fit(
-        "[bold]Next:[/]\n"
-        "  1. Restart your agent so it loads PMB.\n"
-        "  2. [cyan]pmb warmup[/]  - pre-load so the first recall is fast (optional).\n"
-        "  3. [cyan]pmb ollama status[/]  - only if you want a fully-local LLM.\n"
-        "  4. Commands: [cyan]docs/COMMANDS.md[/] or [cyan]pmb --help[/].",
-        title="Done",
-    ))
+    # Offer to warm the model inline so the very FIRST recall is instant —
+    # otherwise it's a manual step users skip, then conclude PMB is slow.
+    did_warmup = False
+    if not yes and typer.confirm(
+        "Warm up the embedding model now? (~90 MB on first run; makes the first "
+        "recall instant)", default=True,
+    ):
+        try:
+            from pmb.core.engine import Engine
+            console.print("[dim]Loading model + indexes…[/]")
+            Engine(cwd=Path.cwd()).warmup(with_first_query=True)
+            console.print("[green]Warmed up[/] - the first recall will be instant.")
+            did_warmup = True
+        except Exception as e:  # never let a warmup hiccup abort setup
+            console.print(f"[yellow]Warmup skipped:[/] {e}  "
+                          "(run [cyan]pmb warmup[/] later)")
+
+    steps = ["[bold]Next:[/]", "  1. Restart your agent so it loads PMB."]
+    n = 2
+    if not did_warmup:
+        steps.append(f"  {n}. [cyan]pmb warmup[/]  - pre-load so the first recall is fast.")
+        n += 1
+    steps += [
+        f"  {n}. [cyan]pmb doctor[/]  - confirm PMB is wired correctly.",
+        f"  {n + 1}. [cyan]pmb ollama status[/]  - only if you want a fully-local LLM.",
+        f"  {n + 2}. Commands: [cyan]docs/COMMANDS.md[/] or [cyan]pmb --help[/].",
+    ]
+    console.print(Panel.fit("\n".join(steps), title="Done"))
 
 
 
