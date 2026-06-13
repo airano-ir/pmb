@@ -30,13 +30,24 @@ CROSS_ENCODERS = [
 ]
 
 
+def _warm(loader, name: str) -> None:
+    """Load one model into the HF cache. Best-effort: a model that won't load on
+    the installed transformers (e.g. clip-ViT-B-32 against a newer transformers
+    that no longer recognizes its image-processor config) must NOT fail the whole
+    CI step. The runtime path (reasoning/images.py) already degrades CLIP to None,
+    and the multimodal tests are written to tolerate it being unavailable."""
+    try:
+        loader(name)
+        print(f"prewarm: ok   {name}", flush=True)
+    except Exception as e:
+        print(f"prewarm: SKIP {name} ({type(e).__name__}: {e})", flush=True)
+
+
 def main() -> None:
     for name in SENTENCE_TRANSFORMERS:
-        print(f"prewarm: SentenceTransformer({name})", flush=True)
-        SentenceTransformer(name)
+        _warm(SentenceTransformer, name)
     for name in CROSS_ENCODERS:
-        print(f"prewarm: CrossEncoder({name})", flush=True)
-        CrossEncoder(name)
+        _warm(CrossEncoder, name)
     print("prewarm: done", flush=True)
 
 
