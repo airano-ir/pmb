@@ -12,8 +12,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+_FIXTURES = next(
+    p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()
+) / "tests" / "fixtures"
+
 _SNAP = json.loads(
-    (Path(__file__).parent / "_lang_parity_snapshot.json").read_text(encoding="utf-8")
+    (_FIXTURES / "_lang_parity_snapshot.json").read_text(encoding="utf-8")
 )
 
 

@@ -33,17 +33,17 @@ buys you almost nothing. Here's the reasoning, then the commands.
 
 ### Why CPU is the default
 
-The only GPU-relevant work PMB does is computing **embeddings** — one forward
+The only GPU-relevant work PMB does is computing **embeddings** - one forward
 pass through a small sentence-transformer model, done once per stored memory
 (at write time) and once per query (at recall time). Everything else in the
-recall pipeline — BM25, SQLite lookups, the entity graph, reranking fusion —
+recall pipeline - BM25, SQLite lookups, the entity graph, reranking fusion -
 is plain CPU work that a GPU can't speed up.
 
 For interactive use that means:
 
 - **A single-query embedding is tiny.** On CPU it's milliseconds. The real
   cost of the first recall is **loading the model into memory** (cold start),
-  not the math — and a GPU doesn't make loading faster.
+  not the math - and a GPU doesn't make loading faster.
 - **Warm recall is already fast on CPU** (single-digit to tens of ms), which is
   far below the latency of the LLM you're feeding. The agent never waits on PMB.
 
@@ -63,12 +63,12 @@ helps. If that's not your workload, stay on CPU.
 | :-- | :-- | :-- |
 | torch wheel | `+cpu` (no CUDA) | default CUDA wheel + bundled NVIDIA libs |
 | Image size | ~1.9 GB | ~5.9 GB |
-| Host requirements | none — runs anywhere | NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) |
+| Host requirements | none - runs anywhere | NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) |
 | Interactive recall | fast (model load dominates) | no meaningful gain |
 | Bulk re-embed / import / benchmarks | slower | faster (batched throughput) |
 | When to use | normal agent memory, dev, dashboard | you routinely re-embed large corpora |
 
-Note: a CUDA image on a host **without** a GPU is not just bigger — it can be
+Note: a CUDA image on a host **without** a GPU is not just bigger - it can be
 *slower* to start, because torch probes for CUDA and falls back. Don't build the
 GPU image unless you actually have (and pass through) a GPU.
 

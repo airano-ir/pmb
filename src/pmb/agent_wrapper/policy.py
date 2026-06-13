@@ -2,14 +2,14 @@
 Compression policies.
 
 The interface is intentionally tiny: given the current messages list, return
-a new (shorter) messages list. The policy is the entire research question —
+a new (shorter) messages list. The policy is the entire research question -
 the value of this wrapper depends on whether selective compression actually
 helps users vs. Claude Code's default auto-compact.
 
 ## What's here
 
 - `CompressionPolicy` protocol.
-- `DropOldestNarrative` — a placeholder that just drops the oldest non-pinned
+- `DropOldestNarrative` - a placeholder that just drops the oldest non-pinned
   messages until the budget is met. This is NOT smart compression, it's a
   baseline to measure against.
 
@@ -21,7 +21,7 @@ A `SelectivePolicy` that:
    "we decided to ...", "the answer is ...", explicit `[FACT]` tags, tool
    results with low-cardinality outputs).
 2. Keeps those verbatim.
-3. Summarizes the *narrative* — back-and-forth exploration messages — into
+3. Summarizes the *narrative* - back-and-forth exploration messages - into
    a single short paragraph, anchored to the original message IDs so the
    detail can be re-fetched from PMB if needed.
 4. Drops messages whose information is already captured in PMB memory
@@ -60,7 +60,7 @@ class CompressionPolicy(Protocol):
 
 
 # Patterns we use to detect decisions/facts at compaction time. These are
-# intentionally narrow — false positives are worse than misses since
+# intentionally narrow - false positives are worse than misses since
 # misclassified-as-narrative still gets summarized.
 _DECISION_PHRASES = [
     # Bare "we" / contractions: we, we'll, we've, we're
@@ -141,7 +141,7 @@ def _msg_text(msg: dict) -> str:
 
 class SelectivePolicy:
     """
-    Real selective compression — mechanic #1 from the pitch.
+    Real selective compression - mechanic #1 from the pitch.
 
     Rule of thumb when budget pressure rises:
 
@@ -155,7 +155,7 @@ class SelectivePolicy:
     Backoff: if even after summarizing all narrative we're still over
     budget, drop oldest summarized narrative until we fit.
 
-    The LLM call is only used to produce summaries — classification is
+    The LLM call is only used to produce summaries - classification is
     purely rule-based to keep compaction cheap and deterministic.
     """
 
@@ -197,7 +197,7 @@ class SelectivePolicy:
 
         Uses self.llm if available (any object with .consolidate(list[str]) →
         dict, same protocol as `LLMClient` used for sleep-engine consolidation).
-        Falls back to a deterministic head+tail extract if no LLM is wired —
+        Falls back to a deterministic head+tail extract if no LLM is wired -
         better than losing the info entirely.
         """
         snippets = [_msg_text(m) for m in run]
@@ -268,7 +268,7 @@ class DropOldestNarrative:
     Baseline policy: drop oldest non-pinned messages until under budget.
 
     "Pinned" here means messages tagged with `metadata={"pin": True}` in their
-    content block, or system messages. This is *not* what the pitch promised —
+    content block, or system messages. This is *not* what the pitch promised -
     real selective compression is `SelectivePolicy` which is not yet built.
     Use this as a no-LLM control for A/B comparison.
     """

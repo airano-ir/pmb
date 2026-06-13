@@ -1,11 +1,11 @@
-"""Phase D — Anchor→Lexicon Distillation (ALD): the self-compiling lexical cache.
+"""Phase D - Anchor→Lexicon Distillation (ALD): the self-compiling lexical cache.
 
 The Semantic Anchor Engine (Phases A/B) needs the embedder, so it only runs on
 the WARM daemon path. ALD closes that gap. It watches which anchors fire on real
-traffic (D1 — the `anchor_fires` log), then in the maintenance tick mines the
+traffic (D1 - the `anchor_fires` log), then in the maintenance tick mines the
 n-grams that reliably PREDICT each anchor and compiles them into
 ``$PMB_HOME/lang/auto.yaml`` in the existing pack schema (D2). After a week of a
-Polish user's traffic, "co mi zostało do zrobienia" then classifies LEXICALLY —
+Polish user's traffic, "co mi zostało do zrobienia" then classifies LEXICALLY -
 in microseconds, on a COLD hook with no model loaded and no Polish anywhere in
 the codebase. The cache is local-only, built from the user's own messages.
 
@@ -13,7 +13,7 @@ Precision is measured ACROSS anchors within the fire log: an n-gram is a signal
 for anchor A only if, among all fires it appeared in, ≥ ``min_precision`` were A
 (with ≥ ``min_support`` messages). Generic n-grams spread across many anchors and
 self-prune; stopword-only n-grams are dropped. No per-language data is written by
-hand — the only inputs are English anchors + the user's traffic.
+hand - the only inputs are English anchors + the user's traffic.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import re
 import time
 from collections import Counter, defaultdict
 
-# Anchor set name → the lexical pack CATEGORY its compiled fragment lands in —
+# Anchor set name → the lexical pack CATEGORY its compiled fragment lands in -
 # the SAME category the inline EN regex in auto_recall.py reads via
 # `_lang.merged_list(category)`. `self_intent` has no lexical category of its
 # own; like B1 it folds into the past/recall path.
@@ -43,7 +43,7 @@ def message_ngrams(text: str, max_n: int = 3, cap: int = 96) -> list[str]:
     """Lowercased 1..max_n word n-grams. Unicode ``\\w`` covers Latin/Cyrillic/
     accented scripts; CJK (no spaces) collapses to one token and is intentionally
     out of scope for the lexical cache (distant scripts stay on the warm anchor
-    path — see the Phase D note)."""
+    path - see the Phase D note)."""
     toks = _WORD.findall((text or "").lower())
     out: list[str] = []
     for n in range(1, max_n + 1):
@@ -66,7 +66,7 @@ def _table_ready(conn) -> None:
 
 
 def log_anchor_fire(engine, anchor: str, text: str) -> None:
-    """D1: append one row per anchor fire. Best-effort — never raises into the
+    """D1: append one row per anchor fire. Best-effort - never raises into the
     hook. The caller gates on ``lang.anchor_log``."""
     try:
         import hashlib
@@ -143,7 +143,7 @@ def load_shadow_precision(engine) -> dict[str, tuple[int, int]]:
 
 def prune_anchor_log(engine, retention_days: float = 30.0) -> int:
     """D3: delete fire-log rows older than `retention_days` so distillation only
-    sees RECENT traffic. This is the recency half of the self-healing cache —
+    sees RECENT traffic. This is the recency half of the self-healing cache -
     a phrasing the user stopped using ages out of auto.yaml on the next tick,
     which D2's precision rebuild alone (it re-derives from whatever is logged)
     cannot do. Best-effort; returns the number of rows deleted."""
@@ -234,7 +234,7 @@ def distill_lexicon(engine, min_support: int = 6,
 
     # D3 shadow-T1 prune: drop a whole category whose COLD lexical classification
     # disagreed with the WARM anchor below min_precision on sampled live traffic
-    # (>= min_shadow samples) — self-healing against a distilled fragment that
+    # (>= min_shadow samples) - self-healing against a distilled fragment that
     # turned out to mislead the cold path.
     shadow = load_shadow_precision(engine)
     shadow_dropped: list[str] = []

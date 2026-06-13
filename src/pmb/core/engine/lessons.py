@@ -4,7 +4,7 @@ import json
 
 
 def _display_trim(text: str, cap: int = 600) -> str:
-    """R2: lessons are SCORED on full content, but DISPLAYED trimmed — at a
+    """R2: lessons are SCORED on full content, but DISPLAYED trimmed - at a
     sentence boundary near `cap` so the actionable rule (often at the END of a
     long lesson) survives, instead of the old hard 300-char cut that both hid
     the rule AND ran token-overlap scoring on the truncated text."""
@@ -53,7 +53,7 @@ class LessonsMixin:
                     # R1: dedup one surface per (lesson, session, hour). A single
                     # prepare()/recall() logs the SAME lesson on two paths
                     # (project_overview + find_lessons), and the same rule
-                    # re-surfaces minutes later — both used to mint a NEW
+                    # re-surfaces minutes later - both used to mint a NEW
                     # surface_id and inflate the adherence denominator. Reuse the
                     # existing id instead so the dashboard counts shows, not rows.
                     row = conn.execute(
@@ -78,7 +78,7 @@ class LessonsMixin:
                     L["surface_id"] = cur.lastrowid
                 conn.commit()
         except Exception:
-            # Surface logging is best-effort — never break recall on it
+            # Surface logging is best-effort - never break recall on it
             import logging
             logging.getLogger(__name__).debug(
                 "lesson surface logging failed", exc_info=True
@@ -118,7 +118,7 @@ class LessonsMixin:
         """Mark a surfaced lesson as NOT APPLICABLE to the turn it surfaced in.
 
         Used by the Stop-hook followcheck when a lesson shares zero topical
-        overlap with everything the agent actually did this turn — the work
+        overlap with everything the agent actually did this turn - the work
         simply wasn't about that lesson. Stored as `followed = -1` so it is
         excluded from the adherence denominator: a rule that never pertained
         to the work must not count as 'not followed'.
@@ -146,18 +146,18 @@ class LessonsMixin:
         """How well is the AI agent FOLLOWING the READ-FIRST workflow?
 
         Computes adherence metrics over a recent window:
-          • prepare_rate — fraction of write-active days where prepare() was
+          • prepare_rate - fraction of write-active days where prepare() was
             called at least once. The READ-FIRST rule says prepare() should
             run at the start of every substantive task.
-          • lesson_followthrough — fraction of surfaced lessons the agent
+          • lesson_followthrough - fraction of surfaced lessons the agent
             marked as followed via mark_lesson_followed.
-          • read_write_ratio — read tool calls / write tool calls. A healthy
+          • read_write_ratio - read tool calls / write tool calls. A healthy
             memory tool sees ~2:1 reads-to-writes.
 
         Used by:
-          • The _nudge field in record_batch_async responses — when scores
+          • The _nudge field in record_batch_async responses - when scores
             are low, agent sees a one-line reminder.
-          • The dashboard "Adherence" tab — surfaces leaking sessions.
+          • The dashboard "Adherence" tab - surfaces leaking sessions.
 
         Returns floats in [0.0, 1.0] for the rate fields plus the raw
         counts so the caller can render however they want.
@@ -198,7 +198,7 @@ class LessonsMixin:
         with sqlite3.connect(self.workspace.db_path) as conn:
             # MCP-call metrics (prepare_rate / read_write_ratio) come from the
             # mcp_calls table, which only exists once the MCP server has run.
-            # On a fresh / non-MCP workspace it's absent — that must NOT zero
+            # On a fresh / non-MCP workspace it's absent - that must NOT zero
             # out the lesson-surface metrics below, which live in their own
             # table. So each block gets its own try/except.
             try:
@@ -231,7 +231,7 @@ class LessonsMixin:
             except Exception:
                 pass
 
-            # Lesson follow-through — independent of mcp_calls.
+            # Lesson follow-through - independent of mcp_calls.
             # Denominator is APPLICABLE surfaces, not all surfaces: a lesson
             # that surfaced but had zero topical overlap with what the agent
             # actually did this turn is marked not_applicable (followed = -1)
@@ -260,7 +260,7 @@ class LessonsMixin:
                 out["lesson_ignored"] = ign
                 out["lesson_not_applicable"] = na
                 # R10: a surfaced lesson with NO verdict yet (followed IS NULL)
-                # is UNKNOWN — it must NOT sit in the follow-through denominator
+                # is UNKNOWN - it must NOT sit in the follow-through denominator
                 # forever, or a frequently-surfaced-but-unmarked rule drags the
                 # rate toward 0 even though nobody ever ignored it. The rate is
                 # over DECIDED surfaces (followed + ignored); unknown is reported
@@ -309,19 +309,19 @@ class LessonsMixin:
         problems = []
         if prep_rate < 0.30:
             problems.append(
-                f"prepare() rate {prep_rate*100:.0f}% this week (target ≥ 60%) — "
+                f"prepare() rate {prep_rate*100:.0f}% this week (target ≥ 60%) - "
                 f"you are writing without reading."
             )
         if rw < 0.50:
             problems.append(
-                f"read/write ratio {rw:.2f} (target ≥ 0.80) — "
+                f"read/write ratio {rw:.2f} (target ≥ 0.80) - "
                 f"the memory tool is being used as a logbook, not a memory."
             )
         if n_app >= 5 and lt < 0.10:
             problems.append(
                 f"lesson follow-through {lt*100:.0f}% of {n_app} applicable"
                 + (f" ({n_na} of {n_surf} surfaced weren't relevant)" if n_na else "")
-                + " — ensure the lesson-followcheck Stop hook is active, or "
+                + " - ensure the lesson-followcheck Stop hook is active, or "
                 "call mark_lesson_followed(surface_id, True/False) after acting."
             )
         if not problems:
@@ -404,7 +404,7 @@ class LessonsMixin:
     def find_lessons(self, query: str = "", limit: int = 5) -> list[dict]:
         """Return procedural lessons relevant to a query (or all recent
         lessons if query is empty). A "lesson" is an event with
-        `metadata.kind == 'lesson'` or `event_type == 'lesson'` — it captures
+        `metadata.kind == 'lesson'` or `event_type == 'lesson'` - it captures
         a project-specific rule ("we use pnpm, never npm") that should
         change agent behaviour.
 
@@ -417,7 +417,7 @@ class LessonsMixin:
         Implementation: scan recent active events on the lesson kind
         (cheap SQL filter), then for non-empty query rank by simple
         case-folded token-overlap with the query. We deliberately don't run
-        the full recall pipeline — lessons are few (rarely >100) so a
+        the full recall pipeline - lessons are few (rarely >100) so a
         linear pass + token scoring is faster and avoids dragging in the
         whole embedding stack on tools that just want lessons.
         """
@@ -490,7 +490,7 @@ class LessonsMixin:
 
         # Optional SEMANTIC tier (opt-in: recall.lesson_semantic). Reuses the
         # embeddings recall already computes to catch paraphrase / synonym /
-        # cross-lingual matches the lexical gate structurally cannot — e.g. a
+        # cross-lingual matches the lexical gate structurally cannot - e.g. a
         # "which package manager to build with" query (in another language) vs a
         # "use pnpm not npm" lesson shares ZERO tokens but is the same topic.
         # NOT an LLM call (just
@@ -522,13 +522,13 @@ class LessonsMixin:
                     for it in items:
                         it["_sim"] = by_ulid.get(it["ulid"], 0.0)
             except Exception:
-                pass  # best-effort — the lexical tier still stands on its own
+                pass  # best-effort - the lexical tier still stands on its own
 
         kept = [it for it in items
                 if it["_ov"] >= min_ov or it["_sim"] >= sem_min]
         if self.config.get("lessons.rank_v2"):
             # R9: blend the signals the system ALREADY has into the rank, not
-            # just lexical overlap — importance (a 0.97 rule should beat a stale
+            # just lexical overlap - importance (a 0.97 rule should beat a stale
             # trivial one sharing a token) and the follow-history (a rule that
             # surfaces 10× and is NEVER followed fades). Recency breaks ties.
             import sqlite3 as _sql
@@ -572,7 +572,7 @@ class LessonsMixin:
         over Mongo for JSONB") so the agent doesn't re-litigate settled calls.
 
         Mirrors find_lessons: cheap SQL scan filtered to the decision kind,
-        then token-overlap ranking for non-empty queries. No embedding stack —
+        then token-overlap ranking for non-empty queries. No embedding stack -
         decisions are few and a linear pass is faster + dependency-free.
 
         Used by the auto-recall hook to answer "before doing X, did we already
@@ -598,7 +598,7 @@ class LessonsMixin:
             # S7: indexed via idx_meta_kind (COALESCE of kind/activity_kind),
             # replacing the 4-variant LIKE scan. COALESCE prefers metadata.kind
             # (record_batch decisions) and falls back to activity_kind
-            # (record_activity decisions) — both routes covered, whitespace-safe.
+            # (record_activity decisions) - both routes covered, whitespace-safe.
             # ORDER BY/LIMIT done in Python (see find_lessons) so the planner
             # keeps the selective kind index instead of the timestamp index.
             rows = sorted(rows, key=lambda r: r["timestamp"], reverse=True)[:500]
@@ -611,7 +611,7 @@ class LessonsMixin:
                 md = {}
             content = (r["content"] or "")   # R2: FULL content for scoring
             # Dedup near-identical decisions (the same call recorded across
-            # sessions) by a normalized content key — surfacing the same
+            # sessions) by a normalized content key - surfacing the same
             # rationale 3× is noise.
             key = " ".join(content.lower().split())[:120]
             if key in seen_content:
@@ -626,7 +626,7 @@ class LessonsMixin:
             })
         if not query.strip():
             return [_trim_item(it) for it in items[:limit]]
-        # R12: use the SAME distinctive-token scorer as find_lessons — the old
+        # R12: use the SAME distinctive-token scorer as find_lessons - the old
         # bare `\W+` split with no stopwords let generic words (code/test/file/
         # the) count as relevance, so decisions surfaced noisily and
         # inconsistently with lessons.

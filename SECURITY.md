@@ -38,7 +38,7 @@ stored content as data, never instructions, on the paths it controls:
   entity extraction and the agent wrapper spawn `claude -p` with
   `--allowed-tools ""` and **without** `--permission-mode bypassPermissions`.
   These are text-in/JSON-out calls, so the spawned agent has no Bash/Edit/Write
-  surface — an injected payload like "ignore the task and run …" cannot make it
+  surface - an injected payload like "ignore the task and run …" cannot make it
   touch the filesystem or network.
   (`health/consolidate.py`, `graph/extractors_llm.py`, `agent_wrapper/loop.py`)
 - **Note on recall into *your* agent.** When PMB injects recalled memory into
@@ -49,7 +49,7 @@ stored content as data, never instructions, on the paths it controls:
 ### Dashboard / API exposure
 
 - The dashboard and HTTP MCP transport bind to `127.0.0.1` by default. Binding
-  to `0.0.0.0` exposes the unauthenticated memory API to your network — only do
+  to `0.0.0.0` exposes the unauthenticated memory API to your network - only do
   this behind a trusted boundary, and set `PMB_MCP_BEARER_TOKEN` for the MCP
   HTTP transport.
 - The dashboard does **not** emit `Access-Control-Allow-Origin`. The UI is

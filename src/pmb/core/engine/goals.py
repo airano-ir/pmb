@@ -66,7 +66,7 @@ class GoalsMixin:
             self._bulk_collected_ulids.append(ev.ulid)
             return ev.ulid
 
-        # Improvement U: dedup at write — most common case the user hits is
+        # Improvement U: dedup at write - most common case the user hits is
         # the AI writing the SAME goal in two languages (RU + EN) as two
         # separate goal events. L1 won't catch translations; L2 (cosine on
         # multilingual model) will.
@@ -105,7 +105,7 @@ class GoalsMixin:
         except Exception:
             pass
 
-        # L2.5: borderline goal pair — enqueue for async LLM verify
+        # L2.5: borderline goal pair - enqueue for async LLM verify
         if borderline is not None and self.config.get("dedup.async_verify"):
             try:
                 from pmb.reasoning.dedup import enqueue_borderline
@@ -479,7 +479,7 @@ class GoalsMixin:
         return out
 
     def chain_current(self, chain_name: str) -> dict | None:
-        """Latest milestone of a chain — the "current state"."""
+        """Latest milestone of a chain - the "current state"."""
         hist = self.chain_history(chain_name, limit=200)
         return hist[-1] if hist else None
 
@@ -494,7 +494,7 @@ class GoalsMixin:
     ) -> str:
         """Log an action / activity. Used by the AI to record what it
         just did (made an edit, ran a tool, gave advice). Lighter than
-        record_fact — these are session-scoped working memory.
+        record_fact - these are session-scoped working memory.
 
         actor: 'agent' (AI's own action), 'user' (user did something),
                'system' (auto-generated event).
@@ -524,7 +524,7 @@ class GoalsMixin:
         # R7: decisions are durable "why" memory. The documented agent pattern
         # records them as {"type":"activity","kind":"decision"}, but the working
         # tier decays with a ~2-day half-life, so a decision auto-archives within
-        # a week — even though events.py reserves the SEMANTIC tier for
+        # a week - even though events.py reserves the SEMANTIC tier for
         # "decision / rule". Land kind=decision in the semantic tier so the
         # rationale survives; everything else stays working memory.
         _tier = "semantic" if kind == "decision" else "working"
@@ -532,7 +532,7 @@ class GoalsMixin:
         # 0.2 (former E6): exact-duplicate suppression for activities. Agents
         # re-log the same action seconds apart (live workspaces showed identical
         # activities ~60s apart). Within write.dedup_window_h, bump the existing
-        # row instead of inserting a twin. Pure SQL probe — safe inside a batch.
+        # row instead of inserting a twin. Pure SQL probe - safe inside a batch.
         self._last_write_deduped = False
         if not getattr(self, "_bulk_mode", False):
             try:
@@ -611,9 +611,9 @@ class GoalsMixin:
         actor: str | None = None,
         kind: str | None = None,
     ) -> list[dict]:
-        """Working memory dump — recent activity events, chronological.
+        """Working memory dump - recent activity events, chronological.
 
-        NO BM25/vector search — just SQL by timestamp. Instant.
+        NO BM25/vector search - just SQL by timestamp. Instant.
 
         Use this BEFORE recall when answering "what did we just do",
         "what's the latest", "show recent changes" type questions.
@@ -717,7 +717,7 @@ class GoalsMixin:
         Used by AI to answer 'what did we just do?' without going through
         recall search.
 
-        Returns activities AND facts AND any other event types — just the
+        Returns activities AND facts AND any other event types - just the
         most recent stuff regardless of session binding. For session-only
         view use `session_timeline()`.
         """

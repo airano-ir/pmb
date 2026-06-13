@@ -1,4 +1,4 @@
-"""`pmb` manage root commands — extracted from cli/main.py (no behavior change).
+"""`pmb` manage root commands - extracted from cli/main.py (no behavior change).
 
 cli/main.py imports this module so these @app.command registrations run."""
 
@@ -28,7 +28,7 @@ from pmb.core.workspace import detect_workspace, list_workspaces
 
 def _ensure_daemon_started(pmb_home: Path | None, tool_profile: str | None) -> None:
     """S6: best-effort detached daemon spawn so the HTTP MCP entry is reachable
-    the moment it's written — no window where it points at a not-yet-running
+    the moment it's written - no window where it points at a not-yet-running
     daemon. No-op if one is already live, under pytest, or on any error (the
     lifecycle hooks autostart it otherwise). Inherits the configured tool
     profile so the shared daemon serves the same lean surface."""
@@ -119,7 +119,7 @@ def connect(
     ),
     rules_only: bool = typer.Option(
         False, "--rules-only", "--update",
-        help="Only refresh the AGENTS.md / CLAUDE.md rules block — don't touch "
+        help="Only refresh the AGENTS.md / CLAUDE.md rules block - don't touch "
              "the MCP config file. Use after a PMB update to bring the agent "
              "instructions in sync with the latest READ-FIRST guidance, without "
              "duplicating or re-adding the MCP server entry.",
@@ -204,7 +204,7 @@ def connect(
             break  # global only
         for p, act, err in results:
             if err:
-                console.print(f"[red]Failed: {p}[/] — {err}")
+                console.print(f"[red]Failed: {p}[/] - {err}")
             else:
                 colour = "green" if act in ("updated", "added") else "yellow"
                 console.print(
@@ -253,7 +253,7 @@ def connect(
     # asked for but the host can't take an HTTP entry, say so.
     if result.get("daemon_http"):
         console.print(
-            "[green]Shared warm daemon (HTTP) — the default now.[/] This host "
+            "[green]Shared warm daemon (HTTP) - the default now.[/] This host "
             "reuses the ONE warm process instead of spawning its own Engine + "
             "~400 MB model, so N connected clients cost ~400 MB total, not ×N. "
             "The daemon is pinned to never idle-exit so the connection stays warm "
@@ -270,7 +270,7 @@ def connect(
         console.print(
             "[yellow]Stdio entry (HTTP daemon not applicable here):[/] this host "
             "takes a command-shaped stdio entry (codex / editor extensions / "
-            "--remote), not an HTTP one — wrote stdio. The shared HTTP daemon is "
+            "--remote), not an HTTP one - wrote stdio. The shared HTTP daemon is "
             "available for claude-code / cursor."
         )
 
@@ -292,7 +292,7 @@ def connect(
     prof = result.get("tool_profile")
     if hk is not None:
         if isinstance(hk, dict) and hk.get("error"):
-            console.print(f"[yellow]Hooks: not installed[/] — {hk['error']}")
+            console.print(f"[yellow]Hooks: not installed[/] - {hk['error']}")
         else:
             events = (hk or {}).get("events") or []
             ev = (", ".join(events)) if events else (hk or {}).get("action", "installed")
@@ -303,7 +303,7 @@ def connect(
             )
         if prof:
             console.print(
-                f"[green]MCP profile:[/] {prof} — trimmed to deliberate-only "
+                f"[green]MCP profile:[/] {prof} - trimmed to deliberate-only "
                 "tools (the hooks cover the rest; smaller tool list = faster)."
             )
     elif agent in ("claude-code", "codex") and not hooks:
@@ -318,11 +318,11 @@ def connect(
 
     console.print(
         "\n[bold]Next steps:[/]"
-        "\n  1. [cyan]pmb warmup[/]   — load the embedding model now so the "
+        "\n  1. [cyan]pmb warmup[/]   - load the embedding model now so the "
         "first recall is fast (skip it and the first query pays a ~30-60s "
         "one-time load)"
         "\n  2. Restart your agent so it picks up the new MCP entry"
-        "\n  3. [cyan]pmb doctor[/]   — verify the full local state"
+        "\n  3. [cyan]pmb doctor[/]   - verify the full local state"
     )
 
 
@@ -409,14 +409,34 @@ def setup(
             "follow-through run automatically)"
             + (f" · MCP profile: [cyan]{prof}[/]" if prof else "")
         )
-    console.print(Panel.fit(
-        "[bold]Next:[/]\n"
-        "  1. Restart your agent so it loads PMB.\n"
-        "  2. [cyan]pmb warmup[/]  - pre-load so the first recall is fast (optional).\n"
-        "  3. [cyan]pmb ollama status[/]  - only if you want a fully-local LLM.\n"
-        "  4. Commands: [cyan]docs/COMMANDS.md[/] or [cyan]pmb --help[/].",
-        title="Done",
-    ))
+    # Offer to warm the model inline so the very FIRST recall is instant -
+    # otherwise it's a manual step users skip, then conclude PMB is slow.
+    did_warmup = False
+    if not yes and typer.confirm(
+        "Warm up the embedding model now? (~90 MB on first run; makes the first "
+        "recall instant)", default=True,
+    ):
+        try:
+            from pmb.core.engine import Engine
+            console.print("[dim]Loading model + indexes…[/]")
+            Engine(cwd=Path.cwd()).warmup(with_first_query=True)
+            console.print("[green]Warmed up[/] - the first recall will be instant.")
+            did_warmup = True
+        except Exception as e:  # never let a warmup hiccup abort setup
+            console.print(f"[yellow]Warmup skipped:[/] {e}  "
+                          "(run [cyan]pmb warmup[/] later)")
+
+    steps = ["[bold]Next:[/]", "  1. Restart your agent so it loads PMB."]
+    n = 2
+    if not did_warmup:
+        steps.append(f"  {n}. [cyan]pmb warmup[/]  - pre-load so the first recall is fast.")
+        n += 1
+    steps += [
+        f"  {n}. [cyan]pmb doctor[/]  - confirm PMB is wired correctly.",
+        f"  {n + 1}. [cyan]pmb ollama status[/]  - only if you want a fully-local LLM.",
+        f"  {n + 2}. Commands: [cyan]docs/COMMANDS.md[/] or [cyan]pmb --help[/].",
+    ]
+    console.print(Panel.fit("\n".join(steps), title="Done"))
 
 
 
@@ -1083,7 +1103,7 @@ def goals(
 ):
     """List open goals, mark one done, or reconcile completed work.
 
-    Open goals are how PMB remembers what to do NEXT — the agent records them
+    Open goals are how PMB remembers what to do NEXT - the agent records them
     from "remember we'll do X next" / "the plan is …". Examples:
       pmb goals                 # open goals (pending + in_progress)
       pmb goals --all           # everything, including done/cancelled
@@ -1149,7 +1169,7 @@ def goals(
             str(g.get("status") or "pending"),
             f"{g.get('progress', 0)}%",
             esc((g.get("title") or "")[:70]),
-            _humanize_time(due) if due else "—",
+            _humanize_time(due) if due else "-",
             g["ulid"][:12],
         )
     console.print(table)

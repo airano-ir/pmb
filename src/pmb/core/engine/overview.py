@@ -116,7 +116,7 @@ class OverviewMixin:
         import sqlite3
         ws = self.workspace.id
         text_lc = text.lower()
-        # Limit candidates to entities with non-trivial mentions — same
+        # Limit candidates to entities with non-trivial mentions - same
         # threshold as the dashboard's project heuristic.
         with sqlite3.connect(self.workspace.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -142,7 +142,7 @@ class OverviewMixin:
             if len(nm) < 4 or len(nm) > 30: continue
             if nm in blacklist: continue
             if '.' in nm or '/' in nm or '\\' in nm: continue
-            # Word-boundary match — "node" matches "node" but not "nodejs"
+            # Word-boundary match - "node" matches "node" but not "nodejs"
             if _re.search(rf"\b{_re.escape(nm)}\b", text_lc):
                 return {"id": r["id"], "name": r["name"],
                         "kind": r["kind"], "n_mentions": r["n_mentions"]}
@@ -153,7 +153,7 @@ class OverviewMixin:
         complete than topic_overview because we go directly via
         graph_event_entities instead of running the full recall pipeline.
 
-        Use this when the agent (re)starts work on a known project — ONE
+        Use this when the agent (re)starts work on a known project - ONE
         call returns the full context: top facts, lessons, decisions, open
         goals, recent completions, related sub-entities (tech stack /
         people / files), and project span.
@@ -295,7 +295,7 @@ class OverviewMixin:
                     """,
                     (eid, ws),
                 ).fetchall()
-            # Top related entities — neighbours in the co-occurrence graph,
+            # Top related entities - neighbours in the co-occurrence graph,
             # by edge weight. Gives the "tech stack" feel without LLM.
             nbr_rows = [] if eid is None else conn.execute(
                     """
@@ -409,7 +409,7 @@ class OverviewMixin:
                 "n_events": len(timestamps),
             }
 
-        # Related entities — keep variety across kinds, prune the project
+        # Related entities - keep variety across kinds, prune the project
         # entity itself.
         related_noise = {"file", "files", "symbol", "symbols", "import", "imports"}
         related = [

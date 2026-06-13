@@ -1,21 +1,21 @@
-"""X1/X2/X3 — the canonical scoring + confidence math in ONE explainable place.
+"""X1/X2/X3 - the canonical scoring + confidence math in ONE explainable place.
 
 Recall's final score is a base channel-combination followed by a long chain of
 config-gated boosts (graph / causation / arc / ppr / temporal / keyed) and the
-PAMVR reranker. Unifying the WHOLE chain would rewire the recall hot path — the
-core the project guards most — so this module owns the two CLEAN, well-defined
+PAMVR reranker. Unifying the WHOLE chain would rewire the recall hot path - the
+core the project guards most - so this module owns the two CLEAN, well-defined
 pieces and leaves the boost chain where it is:
 
-  * ``combine_base_score`` (X1) — the base channel combination (hybrid hit score
+  * ``combine_base_score`` (X1) - the base channel combination (hybrid hit score
     × importance factor × recency reward) as one named function, with an
     optional per-CHANNEL weight vector (X2). Weights default to identity, so
     default recall is byte-identical to the old inline formula.
-  * ``calibrated_confidence`` (X3) — RecallPack.confidence as a named, tested,
+  * ``calibrated_confidence`` (X3) - RecallPack.confidence as a named, tested,
     monotonic, bounded function.
 
 X2 adaptive weights: ``recall.channel_weights`` (a JSON object string in config)
 is a per-workspace vector the system COULD learn from feedback;
-``propose_channel_weights`` suggests an update but is NEVER auto-applied —
+``propose_channel_weights`` suggests an update but is NEVER auto-applied -
 default identity means zero behaviour change until a user opts in.
 """
 from __future__ import annotations
@@ -28,13 +28,13 @@ _IDENTITY: dict[str, float] = {c: 1.0 for c in CHANNELS}
 
 
 def importance_factor(importance: float, weights: dict[str, float] | None = None) -> float:
-    """0.5..1.0 — an importance-0 event keeps half its hit score, importance-1
+    """0.5..1.0 - an importance-0 event keeps half its hit score, importance-1
     keeps all of it (recall's ``0.5 + 0.5*importance``), scaled by the importance
     CHANNEL weight (X2). Weight 1.0 → the original.
 
     Recall computes this ONCE per candidate and feeds it to BOTH
     ``combine_base_score`` and the downstream boost terms, so the importance
-    weight is applied consistently across the whole score — not just the base."""
+    weight is applied consistently across the whole score - not just the base."""
     w = (weights or _IDENTITY).get("importance", 1.0)
     return 0.5 + 0.5 * max(0.0, min(1.0, importance)) * float(w)
 
@@ -106,7 +106,7 @@ def propose_channel_weights(
 ) -> dict[str, float]:
     """X2 learning hook (NOT auto-applied). Given ``(channel_scores, was_useful)``
     feedback samples, nudge each channel's weight up when high values of that
-    channel coincided with useful recalls and down otherwise — a simple
+    channel coincided with useful recalls and down otherwise - a simple
     gradient-free heuristic, clamped to [0.5, 1.5] around identity. The result is
     a SUGGESTION a user can inspect and set via ``recall.channel_weights``; recall
     never adopts it on its own (default identity)."""

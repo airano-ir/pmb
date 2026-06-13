@@ -1,4 +1,4 @@
-"""`pmb health ...` — self-test, trends, conflicts, user-feedback summary."""
+"""`pmb health ...` - self-test, trends, conflicts, user-feedback summary."""
 
 from __future__ import annotations
 

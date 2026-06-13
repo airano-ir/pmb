@@ -1,4 +1,4 @@
-"""PMB TUI Workspace — multi-tab terminal UI for memory management.
+"""PMB TUI Workspace - multi-tab terminal UI for memory management.
 
 Layout (k9s / lazygit / mem0 dashboard inspired):
 
@@ -98,7 +98,7 @@ class MemoryTab(Vertical):
                       and f not in content.lower()):
                 continue
             t = time.strftime("%H:%M:%S", time.localtime(ev.timestamp))
-            imp = f"{ev.importance:.2f}" if ev.importance is not None else "—"
+            imp = f"{ev.importance:.2f}" if ev.importance is not None else "-"
             table.add_row(t, ev.event_type, imp, content, key=ev.ulid)
 
     def on_input_changed(self, event: Input.Changed) -> None:
@@ -188,8 +188,8 @@ class RecallTab(Vertical):
             content = (r.content or "")[:100]
             table.add_row(
                 f"{r.score:.3f}",
-                f"{r.bm25_score:.2f}" if hasattr(r, "bm25_score") else "—",
-                f"{r.vec_score:.2f}" if hasattr(r, "vec_score") else "—",
+                f"{r.bm25_score:.2f}" if hasattr(r, "bm25_score") else "-",
+                f"{r.vec_score:.2f}" if hasattr(r, "vec_score") else "-",
                 content,
             )
 
@@ -199,7 +199,7 @@ class RecallTab(Vertical):
 # ────────────────────────────────────────────────────────────────────────
 
 class StatsTab(Vertical):
-    """Live MCP performance metrics — auto-refresh every 2s."""
+    """Live MCP performance metrics - auto-refresh every 2s."""
 
     def __init__(self, eng: Engine):
         super().__init__()

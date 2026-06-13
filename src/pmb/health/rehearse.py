@@ -49,7 +49,7 @@ class RehearseResult:
 
 
 def _query_from_event(text: str, max_tokens: int = 7) -> str:
-    """Cheap query synthesis from event content — same approach as self-test
+    """Cheap query synthesis from event content - same approach as self-test
     so a rehearsal really exercises the recall pipeline."""
     import re
     tokens = [t for t in re.findall(r"\w+", text.lower()) if len(t) >= 3]
@@ -126,7 +126,7 @@ def rehearse(
             n_ok += 1
             rehearsed_ulids.append(ev.ulid)
         else:
-            # Even on miss, give a small explicit importance nudge — the
+            # Even on miss, give a small explicit importance nudge - the
             # memory is important enough that we don't want it to vanish
             # because our query synthesis was weak.
             new_imp = min(1.0, ev.importance + 0.02)

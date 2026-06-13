@@ -8,7 +8,7 @@ compact "here's where you were" block from what was recorded THIS session
 about.
 
 Wired via `pmb hooks install` → SessionStart hook → `pmb session-restore`.
-Pure read, no embeddings, no LLM — runs in a few ms.
+Pure read, no embeddings, no LLM - runs in a few ms.
 """
 
 from __future__ import annotations
@@ -42,13 +42,13 @@ def build_session_restore(
     except Exception:
         return ""
     if not brief or brief.get("empty"):
-        # Nothing recorded this session — but there might still be a project
+        # Nothing recorded this session - but there might still be a project
         # the user is actively working on. Fall through to project detection
         # via recent activity only if include_project; otherwise bail.
         brief = {}
 
     buf: list[str] = []
-    buf.append("== PMB session restore (context compacted — here's where you were) ==")
+    buf.append("== PMB session restore (context compacted - here's where you were) ==")
     scope = brief.get("scope")
     if scope:
         buf.append(f"(scope: {scope}, {brief.get('n_events', 0)} events)")
@@ -69,7 +69,7 @@ def build_session_restore(
         for d in decisions[:6]:
             buf.append(f"  > {_trim(d.get('content',''), 160)}")
     if lessons:
-        buf.append("\nLessons learned this session (RULES — keep following):")
+        buf.append("\nLessons learned this session (RULES - keep following):")
         for L in lessons[:6]:
             buf.append(f"  ! {_trim(L.get('content',''), 180)}")
         # R1: log the surfaces session-restore actually SHOWS (previously this
@@ -90,7 +90,7 @@ def build_session_restore(
         for g in goals[:5]:
             buf.append(f"  * {_trim(g.get('content',''), 120)}")
 
-    # Open goals (workspace-wide, not just this session) — what's still in flight.
+    # Open goals (workspace-wide, not just this session) - what's still in flight.
     try:
         open_goals = engine.list_goals(status="in_progress", limit=5)
     except Exception:
@@ -162,7 +162,7 @@ def build_session_restore(
 
     buf.append("")
     buf.append(
-        "Pick the thread back up from the above — don't re-ask the user what "
+        "Pick the thread back up from the above - don't re-ask the user what "
         "you already did. Call session_brief / project_overview for more."
     )
 

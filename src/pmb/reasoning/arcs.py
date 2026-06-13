@@ -1,5 +1,5 @@
 """
-Narrative arcs — the top tier of PMB v2.
+Narrative arcs - the top tier of PMB v2.
 
 Where this fits:
   Reflective memory (phase 1) understands individual events.
@@ -11,7 +11,7 @@ An arc is a coherent thread: "Postgres adoption journey", "Alice's onboarding",
 they extend an existing story or start a new one.
 
 Why this matters:
-  Multi-hop questions often ask about a STORY — "how did we end up using
+  Multi-hop questions often ask about a STORY - "how did we end up using
   Redis?", "what's been happening with the auth refactor?". Pure retrieval
   returns scattered events. Arcs let recall return a SUMMARY plus the most
   relevant events, vastly improving recall quality for narrative questions.
@@ -195,7 +195,7 @@ Output VALID JSON with EXACTLY these keys:
   "action":      "join" | "create" | "ignore"
   "arc_id":      integer ID of existing arc to join, OR null
   "new_title":   short title (3-6 words) if creating a new arc, OR null
-  "reasoning":   one sentence — why this fits / why new
+  "reasoning":   one sentence - why this fits / why new
 
 Rules:
 - "ignore" if the event is too generic / off-topic / doesn't belong in any narrative.

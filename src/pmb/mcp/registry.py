@@ -2,13 +2,13 @@
 
 Why: with the default stdio transport the agent host spawns a fresh
 ``pmb-mcp`` process per session, and each loads the embedding model + opens
-LanceDB — N sessions = N× RAM and N cold starts. There's no way to see how
+LanceDB - N sessions = N× RAM and N cold starts. There's no way to see how
 many are running, and an HTTP ``pmb mcp serve`` could be started twice on the
 same port by accident.
 
 This module keeps a tiny JSON registry under ``$PMB_HOME/servers.json`` so:
   * an HTTP server can refuse to start a SECOND instance on a live host:port
-    (``find_live_http``) — point clients at the existing one instead;
+    (``find_live_http``) - point clients at the existing one instead;
   * ``pmb mcp status`` can list what's running, with per-process memory.
 
 Best-effort and dependency-light: stdlib only, ``psutil`` used opportunistically
@@ -31,7 +31,7 @@ def registry_path() -> Path:
     return _pmb_home() / "servers.json"
 
 
-# S8: resolve psutil ONCE. _pid_alive / _rss_mb ran `import psutil` per entry —
+# S8: resolve psutil ONCE. _pid_alive / _rss_mb ran `import psutil` per entry -
 # when psutil isn't installed that's a failing import per call, twice per server
 # on every hook discovery. Cache the module (or its absence) at first use.
 _PSUTIL: object | None = None

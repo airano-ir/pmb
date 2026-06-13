@@ -10,12 +10,12 @@ from pmb.mcp._toolspec import _maybe_tool  # noqa: F401
 
 
 def _compact_recall(out, engine):
-    """D3: trim a recall response before it goes over the wire — cap each
+    """D3: trim a recall response before it goes over the wire - cap each
     result's content (mcp.max_item_chars) and drop top-level fields that are
     genuinely NULL (None). Empty collections are kept: `results`/`lessons` are
-    STRUCTURAL — consumers index them directly, so dropping an empty `results`
+    STRUCTURAL - consumers index them directly, so dropping an empty `results`
     would KeyError. 0/False are kept (they carry meaning). Gated by config
-    mcp.compact_responses; never raises — returns the original on any problem."""
+    mcp.compact_responses; never raises - returns the original on any problem."""
     try:
         if not isinstance(out, dict) or not engine.config.get("mcp.compact_responses"):
             return out
@@ -40,11 +40,11 @@ def register_all(mcp, engine):
         - people (who is X, what did Alice say)
         - any fact the user might have recorded earlier
 
-        Trust results with score > 0.2 — they are the user's recorded history,
+        Trust results with score > 0.2 - they are the user's recorded history,
         more authoritative than inferring from code/docker/env.
 
         Optional `project`: scope results to a single project (a filter over
-        the one user memory — not a separate store). Leave empty to search
+        the one user memory - not a separate store). Leave empty to search
         everything.
 
         Returns structured pack with results, each containing event_type,
@@ -53,7 +53,7 @@ def register_all(mcp, engine):
 
         ALSO returns a top-level `lessons` field with up to 3 procedural
         lessons relevant to the query. Lessons are project-specific rules like
-        "this repo uses pnpm, never npm" — READ THEM FIRST and FOLLOW them
+        "this repo uses pnpm, never npm" - READ THEM FIRST and FOLLOW them
         before acting on the regular results.
         """
         pack = engine.recall_scoped(query=query, top_k=top_k, project=project or None)
@@ -61,7 +61,7 @@ def register_all(mcp, engine):
         # Auto-surface relevant lessons. The agent often ignores lessons
         # even though they're the most actionable memory. By piggy-backing
         # on every recall(), lessons become impossible to miss. Each
-        # surfaced lesson gets a `surface_id` — agent can later call
+        # surfaced lesson gets a `surface_id` - agent can later call
         # mark_lesson_followed(surface_id) to confirm follow-through.
         try:
             lessons = engine.find_lessons(query=query, limit=3)
@@ -103,12 +103,12 @@ def register_all(mcp, engine):
 
     @mcp.tool()
     def project_overview(name: str) -> dict:
-        """⭐ Use at the START of any project work — returns the FULL project
+        """⭐ Use at the START of any project work - returns the FULL project
         context in ONE call, sourced from the entity graph (not recall):
 
           • All key facts about the project (top by importance)
-          • LESSONS — procedural rules you MUST follow ("use pnpm not npm")
-          • DECISIONS — past architectural / design choices
+          • LESSONS - procedural rules you MUST follow ("use pnpm not npm")
+          • DECISIONS - past architectural / design choices
           • OPEN GOALS still in flight
           • Recent completed work + activity timeline
           • Related entities (tech stack, people, files mentioned with it)
@@ -143,22 +143,22 @@ def register_all(mcp, engine):
         """⭐⭐⭐ Call this ONCE at the START of any substantive user task.
 
         Auto-detects what the task is about and pre-loads everything you'd
-        need to act on it — in ONE call. Replaces 4-5 separate
+        need to act on it - in ONE call. Replaces 4-5 separate
         recall/overview/list_goals/recent_activity calls.
 
         Returns whatever's relevant for the message:
-          • project_context — full project_overview if a known project is
+          • project_context - full project_overview if a known project is
             mentioned (LoadGuard / LeanBoard / PMB / …). Includes lessons
             (RULES to follow), decisions, open goals, recent activity,
             related entities. Surface-logged.
-          • active_arcs — narrative arcs the project is currently living in
+          • active_arcs - narrative arcs the project is currently living in
             (e.g. "Postgres adoption", "Auth refactor") with their member
             event ulids. Lets you understand the bigger story before acting.
-          • lessons — top procedural rules matching the message, surface-
+          • lessons - top procedural rules matching the message, surface-
             logged so the self-improvement loop can track follow-through.
-          • recent_activity — last 24h of decisions/edits/completions for
+          • recent_activity - last 24h of decisions/edits/completions for
             session continuity.
-          • open_goals — in-flight goals so you know what user is pursuing.
+          • open_goals - in-flight goals so you know what user is pursuing.
 
         WHEN to call:
           • User starts a task with a project name ("working on LoadGuard")
@@ -174,7 +174,7 @@ def register_all(mcp, engine):
         Fast path: ~10-20ms total (SQL only, no LLM, no embedding).
         """
         out: dict = {"message_excerpt": (message or "")[:120]}
-        # 1. Project detection — gives the full project_overview + active
+        # 1. Project detection - gives the full project_overview + active
         #    narrative arcs (the "bigger story" the project is currently
         #    living in).
         try:
@@ -197,7 +197,7 @@ def register_all(mcp, engine):
                     pass
         except Exception:
             pass
-        # 2. Lessons matching the message — even without a clear project.
+        # 2. Lessons matching the message - even without a clear project.
         try:
             ls = engine.find_lessons(query=message, limit=5)
             if ls:
@@ -242,7 +242,7 @@ def register_all(mcp, engine):
 
         When the user states a fact about themselves (or a person/thing)
         where there's exactly ONE current value, and that value can
-        change later — use this instead of record_fact.
+        change later - use this instead of record_fact.
 
         Examples that fit:
           • "I live in Warsaw" / "moved to Warsaw"
@@ -258,7 +258,7 @@ def register_all(mcp, engine):
           1. Any prior fact with the same (subject, attribute) is
              ARCHIVED (not deleted) with `superseded_by` pointer and
              `valid_to` timestamp.
-          2. Future recall returns ONLY the current value — old ones
+          2. Future recall returns ONLY the current value - old ones
              disappear from results.
           3. Historical lookup still works:
              engine.keyed_fact_as_of('user', 'city', past_timestamp)
@@ -267,13 +267,13 @@ def register_all(mcp, engine):
 
         WRONG tool when:
           • User describes an EVENT/activity ("I moved to Warsaw last
-            week" with date detail) — use record_activity
-          • Multi-valued ("I speak Russian, English, Ukrainian") —
+            week" with date detail) - use record_activity
+          • Multi-valued ("I speak Russian, English, Ukrainian") -
             use record_fact (each value is independently true)
-          • Facts that won't change ("user's birthday is March 14") —
+          • Facts that won't change ("user's birthday is March 14") -
             record_fact is fine, or record_keyed_fact if you want the
             'I corrected my birthday' upsert behaviour.
-          • You're not sure — use record_fact (safe default).
+          • You're not sure - use record_fact (safe default).
 
         Args:
             subject: who/what the fact is about ('user', 'user_dog',
@@ -325,8 +325,8 @@ def register_all(mcp, engine):
         force: bool = False,
         max_files: int = 5000,
     ) -> dict:
-        """📂 Index a code project's structure — per-file symbols, imports,
-        languages — so the agent can recall things like "where is the auth
+        """📂 Index a code project's structure - per-file symbols, imports,
+        languages - so the agent can recall things like "where is the auth
         flow", "which files import LanceDB", "show me the recall pipeline".
 
         Respects .gitignore. Idempotent per file (SHA1). Safe to re-run.
@@ -347,8 +347,8 @@ def register_all(mcp, engine):
     @mcp.tool()
     def find_lessons(query: str = "", limit: int = 5) -> list[dict]:
         """Pull procedural lessons (project rules / gotchas) relevant to a
-        topic. Use this BEFORE making a project-shaping choice — picking a
-        library, setting up tooling, choosing an approach — to see what
+        topic. Use this BEFORE making a project-shaping choice - picking a
+        library, setting up tooling, choosing an approach - to see what
         worked or failed before.
 
         Lessons are short rules captured from prior corrections / failures
@@ -356,7 +356,7 @@ def register_all(mcp, engine):
         below 30"). They override default behaviour.
 
         Each result includes a `surface_id`. After acting on a lesson,
-        call mark_lesson_followed(surface_id) — the self-improvement loop
+        call mark_lesson_followed(surface_id) - the self-improvement loop
         uses follow-rate to prune dead lessons.
 
         Args:
@@ -378,7 +378,7 @@ def register_all(mcp, engine):
     ) -> dict:
         """Confirm whether a previously surfaced lesson actually changed
         your behaviour on the current task. Call this AFTER acting on a
-        lesson — the self-improvement loop uses this signal to identify
+        lesson - the self-improvement loop uses this signal to identify
         useful vs dead lessons.
 
         Args:
@@ -430,14 +430,14 @@ def register_all(mcp, engine):
         periodically to keep the store clean.
 
         Conservative default (0.92). Lower to 0.85 if you want more aggressive
-        merging — risks false merges of genuinely separate facts.
+        merging - risks false merges of genuinely separate facts.
         """
         return engine.dedupe_sweep(threshold=threshold, event_types=types)
 
     @mcp.tool()
     def dedupe_list_pending(limit: int = 100) -> list[dict]:
         """List borderline duplicate pairs awaiting verdict (L2.5).
-        These are pairs that scored cosine 0.80-0.92 — too risky to
+        These are pairs that scored cosine 0.80-0.92 - too risky to
         auto-merge, but worth review.
         """
         return engine.dedupe_list_pending(limit=limit)
@@ -464,7 +464,7 @@ def register_all(mcp, engine):
         record_fact calls = ~55 seconds. ONE record_batch call = ~5 seconds.
         ALWAYS prefer this over multiple record_fact/record_goal calls.
 
-        Schema for `items` — list of operation dicts, each with a `type`:
+        Schema for `items` - list of operation dicts, each with a `type`:
 
           {"type": "fact",      "content": "...", "importance": 0.7}
           {"type": "fact_tree", "main": "...", "subfacts": ["...", "..."],
@@ -474,7 +474,7 @@ def register_all(mcp, engine):
                                  "parent_goal_ulid": null}
           {"type": "plan",      "title": "next we'll wire X", "status": "pending"}
                                  # alias for a goal (kind=plan). Use for FUTURE
-                                 # intent — "what we'll do next", "remember what
+                                 # intent - "what we'll do next", "remember what
                                  # we'll do next". NEVER store a plan as a
                                  # fact; facts are settled state, plans resurface
                                  # via prepare()/open-goals.
@@ -495,7 +495,7 @@ def register_all(mcp, engine):
              "status": "in_progress", "due_at": 1782000000},
             {"type": "fact_tree",
              "main": "Meeting Max on May 25 2026 at café on Podol",
-             "subfacts": ["Max — ex-colleague from Grammarly",
+             "subfacts": ["Max - ex-colleague from Grammarly",
                           "Topic: Rust startup idea"],
              "importance": 0.7},
             {"type": "fact_tree",
@@ -505,7 +505,7 @@ def register_all(mcp, engine):
              "importance": 0.9},
           ])
 
-        Returns: {n_accepted, processing} — fire-and-forget by default.
+        Returns: {n_accepted, processing} - fire-and-forget by default.
         The actual write happens in a background thread, so MCP returns in
         ~50ms even for very large batches. Items appear in recall within
         ~1-2 seconds.
@@ -535,14 +535,14 @@ def register_all(mcp, engine):
         - FUTURE INTENT → goal, NOT fact. If the user states what will be done
           NEXT ("remember we'll do X next", "next steps are …", "the plan is",
           "remember what we'll do next"), record a GOAL via record_goal
-          (or record_batch {"type": "goal"/"plan", "status": "pending"}) —
+          (or record_batch {"type": "goal"/"plan", "status": "pending"}) -
           never a fact. Facts are settled state; plans belong in goals so
           prepare()/open-goals can resurface them.
         - Use absolute dates derived from current session time, not "today"
         - importance: 0.9 health/medical, 0.7 events, 0.5 opinions
-        - Better to over-store than miss — junk is cheap, gaps hurt
+        - Better to over-store than miss - junk is cheap, gaps hurt
 
-        DO NOT wait until end of conversation — call DURING the turn,
+        DO NOT wait until end of conversation - call DURING the turn,
         as soon as user states the fact.
 
         Examples:
@@ -695,7 +695,7 @@ def register_all(mcp, engine):
         verdict: 'useful' | 'wrong' | 'irrelevant'.
         Useful events get importance boost, wrong/irrelevant get a small
         decrease, expected_ulid (if given) gets a stronger boost.
-        This is the primary signal for adaptive importance — prefer it over
+        This is the primary signal for adaptive importance - prefer it over
         the synthetic self-test.
         """
         return engine.record_recall_feedback(
@@ -772,14 +772,14 @@ def register_all(mcp, engine):
 
     @mcp.tool()
     def recall_deep(query: str, top_k: int = 5) -> dict:
-        """DEEP recall — explicitly opt into the slow, thorough path.
+        """DEEP recall - explicitly opt into the slow, thorough path.
 
         Unlike `recall` / `recall_smart` (fast, local, bounded), this ATTEMPTS
         LLM query-decomposition (RAG-Fusion: split → retrieve each → fuse) and
         may take several seconds. It is still bounded by a deadline so it
         cannot hang, and falls back to a normal local recall if the LLM
         backend is unavailable. Use ONLY when a hard multi-hop question
-        genuinely needs it and the latency is acceptable — never for routine
+        genuinely needs it and the latency is acceptable - never for routine
         lookups.
         """
         return _compact_recall(engine.recall_deep(query, top_k=top_k).to_dict(), engine)
@@ -803,7 +803,7 @@ def register_all(mcp, engine):
         """Improvement D (mem0-style): LLM extracts atomic facts from recent
         events. Each fact becomes a new searchable event.
 
-        Stronger than reflections for direct lookup queries. Idempotent —
+        Stronger than reflections for direct lookup queries. Idempotent -
         skips events that already have facts.
         """
         return engine.extract_facts_batch(limit=limit, backend=backend)
@@ -855,7 +855,7 @@ def register_all(mcp, engine):
     ) -> dict:
         """Record an image (screenshot/diagram) in memory (Improvement J).
 
-        `description` is the searchable text — make it specific.
+        `description` is the searchable text - make it specific.
         Set `encode_clip=True` for cross-modal text→image search (requires
         open_clip or sentence-transformers; gracefully degrades).
 
@@ -901,7 +901,7 @@ def register_all(mcp, engine):
     ) -> dict:
         """Improvement R: create a goal/intent (12-th semantic layer).
 
-        Use when user states a goal, plan, or FUTURE intention — record it
+        Use when user states a goal, plan, or FUTURE intention - record it
         HERE, not as a fact:
           "I want to learn Rust by the end of the year"
           "Need to ship v1.0 by Q3"
@@ -952,7 +952,7 @@ def register_all(mcp, engine):
     ) -> dict:
         """Improvement R: record a milestone in a named state-chain.
 
-        Use to track EVOLUTION of any tracked thing — "X became Y because Z".
+        Use to track EVOLUTION of any tracked thing - "X became Y because Z".
 
         Example:
           record_milestone(
@@ -985,7 +985,7 @@ def register_all(mcp, engine):
 
     @mcp.tool()
     def chain_current(chain_name: str) -> dict | None:
-        """Latest milestone of a chain — the 'current state'.
+        """Latest milestone of a chain - the 'current state'.
         Use to answer 'how many X do we have now?' / 'what's the latest?'."""
         return engine.chain_current(chain_name=chain_name)
 
@@ -1000,7 +1000,7 @@ def register_all(mcp, engine):
 
         Use AFTER any significant action: you made an edit, ran a tool,
         gave a recommendation, decided something, completed a step.
-        Lighter than record_fact — session-scoped, working tier (3-day decay).
+        Lighter than record_fact - session-scoped, working tier (3-day decay).
 
         Examples:
           record_activity("Implemented typo correction with 5 algorithms", kind="edit")
@@ -1008,7 +1008,7 @@ def register_all(mcp, engine):
           record_activity("Ran test suite, 82/82 passing", kind="tool_call")
           record_activity("Finished v2.6 architecture review", kind="completed")
 
-        actor:  'agent' (default — AI's own action) | 'user' | 'system'
+        actor:  'agent' (default - AI's own action) | 'user' | 'system'
         kind:   'action' | 'edit' | 'tool_call' | 'recommendation' | 'plan' | 'completed'
 
         Returns: {ulid}
@@ -1025,7 +1025,7 @@ def register_all(mcp, engine):
         actor: str | None = None,
         kind: str | None = None,
     ) -> list[dict]:
-        """Improvement Q: working memory dump — instant, no search.
+        """Improvement Q: working memory dump - instant, no search.
 
         Call THIS instead of recall for questions like:
           "what did we just do?"
@@ -1034,7 +1034,7 @@ def register_all(mcp, engine):
           "what happened in the last hour?"
 
         Returns chronological list (newest first) of activity events.
-        Free of BM25/vector overhead — pure SQL by timestamp.
+        Free of BM25/vector overhead - pure SQL by timestamp.
 
         Filters:
           minutes: lookback window (default 60)
@@ -1089,7 +1089,7 @@ def register_all(mcp, engine):
         Subfacts link to main via metadata.parent_ulid AND via event_edges.
 
         ALWAYS prefer this over multiple separate record_fact calls when
-        the data points are RELATED to ONE event — preserves causal structure.
+        the data points are RELATED to ONE event - preserves causal structure.
 
         Returns: {main_ulid, subfact_ulids, n_subfacts}
         """
@@ -1109,7 +1109,7 @@ def register_all(mcp, engine):
     def workspace_info() -> dict:
         """Identify the current PMB workspace.
 
-        Useful when multiple MCP clients share one workspace — confirms which
+        Useful when multiple MCP clients share one workspace - confirms which
         events.db file is in use.
         """
         return {

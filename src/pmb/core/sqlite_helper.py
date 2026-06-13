@@ -19,7 +19,7 @@ import sqlite3
 from pathlib import Path
 
 # Tune via env vars for power users / benchmarks.
-_BUSY_TIMEOUT_MS  = 10_000   # 10s — survives a normal record_batch burst
+_BUSY_TIMEOUT_MS  = 10_000   # 10s - survives a normal record_batch burst
 _CACHE_SIZE_KB    = -2_000   # negative = KB of cache; 2 MB is the sweet spot
 _TEMP_STORE       = "MEMORY" # in-memory temp tables (we have RAM)
 
@@ -53,7 +53,7 @@ def apply_pragmas(conn: sqlite3.Connection, *, wal: bool = True) -> None:
 
     Safe to call multiple times. Each pragma is idempotent.
 
-    `wal` gates ONLY `journal_mode=WAL` — the one pragma that PERSISTS in the
+    `wal` gates ONLY `journal_mode=WAL` - the one pragma that PERSISTS in the
     database file header. The global monkey-patch passes wal=False for
     connections to non-PMB databases (see `_is_pmb_db`) so a third-party
     caller's file is never silently switched to WAL on disk. The remaining
@@ -61,12 +61,12 @@ def apply_pragmas(conn: sqlite3.Connection, *, wal: bool = True) -> None:
     """
     try:
         if wal:
-            # WAL persists in the DB file header — PMB-owned DBs only.
+            # WAL persists in the DB file header - PMB-owned DBs only.
             conn.execute("PRAGMA journal_mode=WAL")
         # Normal = durable on commit, no fsync on every write. Tradeoff:
         # ~0.1% of writes can be lost on power loss; not OS crash.
         conn.execute("PRAGMA synchronous=NORMAL")
-        # Patience for concurrent writes — without this, second writer fails
+        # Patience for concurrent writes - without this, second writer fails
         # IMMEDIATELY with 'database is locked' instead of waiting.
         conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
         # 2 MB cache per connection. Cheap, faster repeated reads.
@@ -74,7 +74,7 @@ def apply_pragmas(conn: sqlite3.Connection, *, wal: bool = True) -> None:
         # Temp tables live in RAM, not on disk.
         conn.execute(f"PRAGMA temp_store={_TEMP_STORE}")
     except Exception:
-        # Pragmas are advisory — never block opening on a quirky DB
+        # Pragmas are advisory - never block opening on a quirky DB
         # (e.g. :memory: in tests that doesn't support all pragmas).
         pass
 
@@ -85,7 +85,7 @@ _PATCH_APPLIED = False
 def _is_pmb_db(database) -> bool:
     """True if `database` is a PMB-owned SQLite file, an in-memory DB, or we
     can't tell. Used by the global patch to decide whether to switch a
-    connection to WAL — a PERSISTENT change to the file header — which we only
+    connection to WAL - a PERSISTENT change to the file header - which we only
     do for our own databases.
 
     PMB stores every workspace under PMB_HOME (default ~/.pmb) as

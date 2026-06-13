@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 
 _CYRILLIC = re.compile(r"[Ѐ-ӿԀ-ԯⷠ-ⷿꙀ-ꚟ]")
-_SRC = Path(__file__).resolve().parent.parent / "src" / "pmb"
+_SRC = next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()) / "src" / "pmb"
 
 # L1 COMPLETE (2026-06-10): every RU/UK matching datum — verb stems, stopword
 # sets, intent/heading/relation regexes, fact-extraction templates — now lives

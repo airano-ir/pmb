@@ -64,11 +64,11 @@ class HealthMixin:
             except Exception:
                 meta = {}
             if isinstance(meta, dict) and meta.get("keyed_fact_key"):
-                continue  # current keyed attribute — keep
+                continue  # current keyed attribute - keep
             if isinstance(meta, dict) and (
                 meta.get("kind") == "lesson" or meta.get("source") == "lesson"
             ):
-                continue  # lessons are stored as facts — never decay-archive them
+                continue  # lessons are stored as facts - never decay-archive them
             candidates.append({
                 "ulid": r["ulid"],
                 "age_days": round((now - r["timestamp"]) / 86400.0, 1),

@@ -1,4 +1,4 @@
-"""Language packs — extend PMB's lexical fast-paths to new languages as DATA.
+"""Language packs - extend PMB's lexical fast-paths to new languages as DATA.
 
 PMB's stopwords / function-words / verb-synonyms / attribute-aliases ship in
 code as a small **English** bootstrap floor. RU/UK (and every other language)
@@ -7,7 +7,7 @@ language pack is an optional YAML file that EXTENDS the lexical lists for a
 language's COLD path. Packs are **opt-in and file-based**, exactly like
 ``reference.yaml``:
 
-  * Built-in templates live in ``pmb/lang/packs/*.yaml`` (de, es, …) — NOT
+  * Built-in templates live in ``pmb/lang/packs/*.yaml`` (de, es, …) - NOT
     active by themselves.
   * A pack becomes ACTIVE when its file is present in ``$PMB_HOME/lang/``.
     ``pmb lang enable de`` copies the template there; you can also drop your
@@ -49,7 +49,7 @@ _BUILTIN_DIR = Path(__file__).parent / "packs"
 # $PMB_HOME/lang/auto.yaml (COLD: grows from the user's own traffic), so the two
 # packs were DELETED. The loader still merges any pack a user drops into
 # $PMB_HOME/lang/ (override escape hatch) and the opt-in de/es TEMPLATES under
-# packs/ — but nothing is active by default. RU/UK intents/keyed-extraction are
+# packs/ - but nothing is active by default. RU/UK intents/keyed-extraction are
 # WARM-anchor classified now (the cold path self-heals via ALD); the regex/pack
 # tests below were migrated to assert that path.
 _DEFAULT_ACTIVE: tuple[str, ...] = ()
@@ -95,7 +95,7 @@ def active_packs() -> dict[str, dict]:
     the built-in one (extend-only union, like reference.yaml). Cached; call
     clear_cache() after enabling one."""
     out: dict[str, dict] = {}
-    # Built-in floor packs (ru, uk) — always active, shipped in packs/. The
+    # Built-in floor packs (ru, uk) - always active, shipped in packs/. The
     # G2 packs-off ratchet sets PMB_DISABLE_DEFAULT_PACKS=1 to prove the anchor
     # tier carries recall with NO built-in packs active (deletion soak, pre-G3).
     _defaults = () if os.environ.get("PMB_DISABLE_DEFAULT_PACKS") else _DEFAULT_ACTIVE
@@ -167,7 +167,7 @@ _RE_FLAG = {"i": 2, "m": 8, "s": 16, "x": 64, "u": 32, "a": 256, "l": 4}
 
 def compile_patterns(category: str, default_flags=None) -> list:
     """Compile the regex pattern fragments an active pack contributes for
-    `category` (L1 — relocating RU/UK regexes out of .py). Each pack item is
+    `category` (L1 - relocating RU/UK regexes out of .py). Each pack item is
     either a raw pattern string (compiled with `default_flags`) or a dict
     ``{re: "...", flags: "im"}``. Returns a list of compiled patterns; the
     caller PREPENDS its English inline patterns. Order within a category is

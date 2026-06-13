@@ -1,4 +1,4 @@
-"""`pmb config ...` — inspect and tune PMB knobs from the console."""
+"""`pmb config ...` - inspect and tune PMB knobs from the console."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def config_list(
     n_pro = len(SCHEMA) - n_default
     hidden_hint = (
         "" if show_all
-        else f"  (+ {n_pro} pro knobs hidden — pass --pro to see them)"
+        else f"  (+ {n_pro} pro knobs hidden - pass --pro to see them)"
     )
     console.print(Panel.fit(
         f"workspace: [cyan]{ws.name}[/] ({ws.id[:12]})\n"

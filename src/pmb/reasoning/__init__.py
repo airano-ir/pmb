@@ -7,10 +7,10 @@ understanding: reflections (why this matters), causation (what caused what),
 arcs (narrative threads).
 
 Modules:
-  reflect.py   — LLM-driven 'why does this matter?' reflection
-  causation.py — typed event-to-event edges (caused, influenced, references)
-  arcs.py      — narrative arc clustering and summarization
-  router.py    — at read time, classify the question and dispatch
+  reflect.py   - LLM-driven 'why does this matter?' reflection
+  causation.py - typed event-to-event edges (caused, influenced, references)
+  arcs.py      - narrative arc clustering and summarization
+  router.py    - at read time, classify the question and dispatch
 
 Design principles:
   1. Reflection happens OFFLINE (sleep/idle), never blocks recall.
@@ -22,6 +22,6 @@ Design principles:
   5. Read time stays fast: query router decides whether to pay the multi-hop
      traversal cost or just use the cheap hybrid path.
 
-The whole layer degrades gracefully — if the LLM client isn't available or
+The whole layer degrades gracefully - if the LLM client isn't available or
 reasoning has never run, the system behaves exactly like PMB v1.
 """

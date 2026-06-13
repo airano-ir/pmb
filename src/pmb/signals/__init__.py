@@ -1,4 +1,4 @@
-"""Signal capture modules — git, sessions, files, decay."""
+"""Signal capture modules - git, sessions, files, decay."""
 
 from pmb.signals.decay import apply_decay, recompute_importance
 from pmb.signals.files import FileCorrelation

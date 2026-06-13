@@ -1,4 +1,4 @@
-"""Lightweight agent-action log — the hot path for the PostToolUse hook.
+"""Lightweight agent-action log - the hot path for the PostToolUse hook.
 
 `pmb track-action` runs on EVERY tool the agent uses, so it must not pull
 the heavy engine stack (numpy / lancedb / sentence-transformers). This
@@ -170,16 +170,16 @@ def insert_agent_action(
 
 
 def auto_layer_stats(db_path, workspace_id: str, days: float = 7.0) -> dict:
-    """Tally what PMB's automatic layer did on its own — no model cooperation.
+    """Tally what PMB's automatic layer did on its own - no model cooperation.
 
     Light (sqlite only). Counts, for the last `days` and all-time:
-      • ambient_writes      — memory entries the auto-writer saved
+      • ambient_writes      - memory entries the auto-writer saved
                               (events with metadata.source == 'autowrite')
-      • auto_surfaces       — lessons the auto-recall HOOK injected
+      • auto_surfaces       - lessons the auto-recall HOOK injected
                               (lesson_surfaces.source LIKE 'hook.%')
-      • auto_followed       — of those, ones followcheck auto-confirmed followed
-      • observed_significant— significant actions the observer logged
-      • agent_records       — times the agent self-recorded via MCP (record_*),
+      • auto_followed       - of those, ones followcheck auto-confirmed followed
+      • observed_significant- significant actions the observer logged
+      • agent_records       - times the agent self-recorded via MCP (record_*),
                               i.e. turns where ambient deliberately stayed silent
 
     Every value degrades to 0 if a table is missing (fresh / non-MCP ws).

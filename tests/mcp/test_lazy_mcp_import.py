@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_SRC = str(Path(__file__).resolve().parent.parent / "src")
+_SRC = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()) / "src")
 
 _HEAVY = ("fastmcp", "mcp", "pmb.core.engine", "sentence_transformers",
           "lancedb", "torch", "transformers")

@@ -192,7 +192,7 @@ class EmbedMixin:
         return bool(getattr(self, "_is_warm", False))
 
     def anchor_index(self):
-        """v0.9 Semantic Anchor Engine — built lazily and ONLY when the engine
+        """v0.9 Semantic Anchor Engine - built lazily and ONLY when the engine
         is warm, so the cold path never loads the embedder for it. Returns the
         AnchorIndex or None (cold engine / anchors disabled). Cached per engine;
         the AnchorIndex itself caches embedded exemplars to disk."""
@@ -219,7 +219,7 @@ class EmbedMixin:
     def anchor_fires(self, text: str, name: str) -> bool:
         """B2 warm-only single-anchor check (`is_lesson_intent` /
         `looks_like_future_intent`). Returns False when cold, when anchors are
-        disabled, or when the set doesn't fire — and NEVER loads the model
+        disabled, or when the set doesn't fire - and NEVER loads the model
         (anchor_index() is warm-gated), so a cold write path stays lexical."""
         try:
             if not self.config.get("lang.anchors"):
@@ -275,7 +275,7 @@ class EmbedMixin:
         """Lazy-init the SQLite-backed pending embeds table. Idempotent.
 
         Recovery thread spawns ONLY when there are pending rows from a
-        previous process — avoids racing the model load on fresh / empty
+        previous process - avoids racing the model load on fresh / empty
         workspaces (which caused a Windows access violation in pytest
         teardown when the thread outlived the Engine).
         """
@@ -324,7 +324,7 @@ class EmbedMixin:
         for the background worker. Writes always return immediately.
 
         Improvement X: when called from inside `record_batch` (signalled via
-        `self._batch_defer`), do NOT embed inline — instead append to a
+        `self._batch_defer`), do NOT embed inline - instead append to a
         per-batch buffer that gets drained as ONE batched encode at the end.
         This turns N sequential embed calls (~200ms each) into one batched
         encode (~500ms total for N≤16) via sentence-transformers native
@@ -355,7 +355,7 @@ class EmbedMixin:
                 dq.enqueue(ulid, text)
             except Exception:
                 # Durable queue is best-effort; don't drop the work
-                # if it fails — in-memory queue still tries to run.
+                # if it fails - in-memory queue still tries to run.
                 pass
         with self._embed_queue_lock:
             self._embed_queue.append((ulid, text))
@@ -368,7 +368,7 @@ class EmbedMixin:
                 ).start()
 
     def _drain_embed_inline(self, max_items: int = 64) -> None:
-        """Bounded SYNCHRONOUS drain — read-your-writes for recall. A recall
+        """Bounded SYNCHRONOUS drain - read-your-writes for recall. A recall
         is a legitimate model consumer (it embeds the query in a moment
         anyway), so flushing parked embeds here keeps 'record then recall'
         consistent in-process without reintroducing the cold-WRITE-path model
@@ -416,7 +416,7 @@ class EmbedMixin:
 
     def _drain_embed_queue(self) -> None:
         """Background worker: wait for the model to be ready (poll every
-        500ms), then drain the queue. After fully draining, exits — re-spawned
+        500ms), then drain the queue. After fully draining, exits - re-spawned
         on next enqueue (or by warmup(), see below) if needed.
 
         The worker is PASSIVE by default: it WAITS for `is_ready()` but never
@@ -429,7 +429,7 @@ class EmbedMixin:
         before the client's 120s deadline. Writes are already durable without
         the model (SQLite row + embed_queue_pending), and the queue is drained
         by whoever legitimately warms the engine (prewarm thread, a recall,
-        warmup(), or the next process via recover_on_start) — so a write-only
+        warmup(), or the next process via recover_on_start) - so a write-only
         cold process now NEVER pays (or inflicts) a model load. Set
         `embed.queue_autoload=true` to restore the old eager behavior."""
         import time as _t
@@ -445,7 +445,7 @@ class EmbedMixin:
                 _ = self.search.model
             except Exception:
                 pass
-        # Eager mode: the load is in flight — wait it out (old semantics).
+        # Eager mode: the load is in flight - wait it out (old semantics).
         # Passive mode: only a SHORT grace (covers a prewarm already in
         # flight). Parking for minutes is pointless AND harmful: the thread
         # pins the whole Engine (BM25/LanceDB handles) against GC, and a
@@ -457,7 +457,7 @@ class EmbedMixin:
         deadline = _t.time() + (600.0 if autoload else 15.0)
         while not self.search.is_ready() and _t.time() < deadline:
             # Attach instantly if ANOTHER consumer in this process already
-            # constructed the model (process-wide _ModelCache) — a peek, never
+            # constructed the model (process-wide _ModelCache) - a peek, never
             # a load. This is what the old eager `_ = self.search.model` was
             # implicitly doing mid-suite/mid-daemon; without it, vectors queued
             # before a recall-triggered lazy load would sit until warmup().
@@ -474,7 +474,7 @@ class EmbedMixin:
                 self._embed_worker_started = False
             return
         # Drain (Hardening H3: failure no longer silently drops the
-        # work — the row stays in `embed_queue_pending` and the next
+        # work - the row stays in `embed_queue_pending` and the next
         # process restart picks it up via `recover_on_start`).
         while True:
             with self._embed_queue_lock or _DUMMY_LOCK:

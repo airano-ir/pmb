@@ -1,4 +1,4 @@
-"""`pmb` maintenance root commands — extracted from cli/main.py (no behavior change).
+"""`pmb` maintenance root commands - extracted from cli/main.py (no behavior change).
 
 cli/main.py imports this module so these @app.command registrations run."""
 
@@ -37,13 +37,13 @@ def repair_keyed(
     `user::city = Warsaw` and a duplicate `user::current_city_2026 = Warsaw`
     both beating `lives in Tampa`). Keeps the newest value, archives the rest
     (never deletes), and rewrites survivors to the canonical key. Dry-run by
-    default — pass --apply to write.
+    default - pass --apply to write.
     """
     eng = Engine()
     mode = "APPLIED" if apply else "DRY-RUN (no changes written)"
-    console.print(f"[bold]Keyed-fact repair — {mode}[/]")
+    console.print(f"[bold]Keyed-fact repair - {mode}[/]")
 
-    # Pass 1 — backfill: promote current-state statements buried in plain facts
+    # Pass 1 - backfill: promote current-state statements buried in plain facts
     # ("the user currently lives in Tampa") into keyed facts, so a stale keyed
     # value stops out-ranking the real one. Runs first so Pass 2 collapses the
     # already-corrected state.
@@ -54,10 +54,10 @@ def repair_keyed(
         bt.add_column("Attribute"); bt.add_column("New (current)"); bt.add_column("Was")
         for p in bf["promotions"]:
             bt.add_row(esc(p["attribute"]), esc(str(p["new_value"])),
-                       esc(str(p["old_value"]) if p["old_value"] is not None else "—"))
+                       esc(str(p["old_value"]) if p["old_value"] is not None else "-"))
         console.print(bt)
 
-    # Pass 2 — collapse alias / duplicate keys onto one canonical value.
+    # Pass 2 - collapse alias / duplicate keys onto one canonical value.
     res = eng.repair_keyed_facts(dry_run=not apply)
     if res.get("error"):
         console.print(f"[red]repair failed: {res['error']}[/]")
@@ -69,12 +69,12 @@ def repair_keyed(
         table.add_column("Canonical key"); table.add_column("Keep (current)")
         table.add_column("Archive (stale)"); table.add_column("Recanon", justify="center")
         for p in plan:
-            archived = ", ".join(esc(str(v)) for v in p["archive_values"]) or "—"
+            archived = ", ".join(esc(str(v)) for v in p["archive_values"]) or "-"
             table.add_row(esc(p["canonical_key"]), esc(str(p["keep_value"])),
                           archived, "✓" if p["recanonicalize"] else "")
         console.print(table)
 
-    # Pass 3 — negation tombstones: archive older "user does NOT live in X /
+    # Pass 3 - negation tombstones: archive older "user does NOT live in X /
     # current city is unknown" facts for any attribute that now has a positive
     # keyed value (issue #5). They assert ignorance about a now-known attribute.
     neg = eng.archive_negations_for_current_keys(dry_run=not apply)
@@ -87,7 +87,7 @@ def repair_keyed(
         console.print(nt)
 
     if not bf.get("promotions") and not plan and not neg.get("plan"):
-        console.print("[green]Nothing to repair — keyed facts are consistent.[/]")
+        console.print("[green]Nothing to repair - keyed facts are consistent.[/]")
         return
     console.print(
         f"\n{'[green]Applied[/]' if apply else '[yellow]Would apply[/]'}: "
@@ -121,7 +121,7 @@ def migrate_workspaces(
 
     Copies active events from SOURCE into the target (current unless --into),
     tagged project=<name> so you keep ONE memory and use project as a FILTER.
-    The SOURCE workspace is left fully intact — this is reversible. Dry-run by
+    The SOURCE workspace is left fully intact - this is reversible. Dry-run by
     default; pass --apply to write."""
     import os as _os
     if into:
@@ -135,7 +135,7 @@ def migrate_workspaces(
     tgt = eng.workspace
     if not apply:
         console.print(Panel.fit(
-            f"DRY-RUN — no changes written\n"
+            f"DRY-RUN - no changes written\n"
             f"source:  [cyan]{res['source_name']}[/] ({res['source'][:12]})\n"
             f"target:  [cyan]{tgt.name}[/] ({tgt.id[:12]})\n"
             f"project: {res['project']}\n"
@@ -626,7 +626,7 @@ def decay(
             console.print(f"[red]archive-cold failed: {res['error']}[/]")
             raise typer.Exit(1)
         mode = "APPLIED" if apply else "DRY-RUN (no changes written)"
-        console.print(f"[bold]decay --archive-cold — {mode}[/]  "
+        console.print(f"[bold]decay --archive-cold - {mode}[/]  "
                       f"[dim](age > {res['days']}d, importance ≤ "
                       f"{res['max_importance']}, access_count = 0)[/]")
         if not res["candidates"]:
@@ -665,17 +665,17 @@ def declutter(
     aggressive: bool = typer.Option(
         False, "--aggressive",
         help="Also archive SHORT (1-7 char) non-stopword facts. RISKY: real "
-             "memories like 'O+', 'ADHD', 'Tampa' are short — review first."),
+             "memories like 'O+', 'ADHD', 'Tampa' are short - review first."),
 ):
     """Sweep obvious junk out of memory (archive-only).
 
     Heuristics: test artifacts, empty project-index rows, empty/stopword
     content, exact duplicates, and negation tombstones already obsoleted by a
     positive keyed value. Short (1-7 char) non-stopword facts are shown as
-    `short_review` but NOT archived unless you pass --aggressive — short is not
+    `short_review` but NOT archived unless you pass --aggressive - short is not
     the same as junk. With --llm, a bounded judge (capped + circuit-broken,
     ≤15s) also reviews low-value borderline facts. Dry-run by default; --apply
-    archives (reversible — restore with `pmb unforget`)."""
+    archives (reversible - restore with `pmb unforget`)."""
     from pmb.maintenance.declutter import declutter as run_declutter
     eng = Engine()
     if llm:
@@ -685,10 +685,10 @@ def declutter(
         res = run_declutter(eng, apply=apply, use_llm=False, aggressive=aggressive)
 
     if not res["candidates"]:
-        console.print("[green]Nothing to declutter — memory looks clean.[/]")
+        console.print("[green]Nothing to declutter - memory looks clean.[/]")
         return
     mode = "APPLIED" if apply else "DRY-RUN (no changes written)"
-    console.print(f"[bold]declutter — {mode}[/]  [dim]{res['by_reason']}[/]")
+    console.print(f"[bold]declutter - {mode}[/]  [dim]{res['by_reason']}[/]")
     table = Table(show_header=True, header_style="bold magenta",
                   title="junk candidates")
     table.add_column("Reason"); table.add_column("ULID", style="dim")
@@ -852,7 +852,7 @@ def consolidate(
         console.print(f"[red]Consolidation failed:[/] {e}")
         raise typer.Exit(code=1)
 
-    # NOTE: do NOT return on zero clusters — the keyed-suggestion pass below
+    # NOTE: do NOT return on zero clusters - the keyed-suggestion pass below
     # must still run (quiet workspaces accumulate plain facts but rarely form
     # clusters). Only the cluster TABLE is skipped when there are no results.
     if result["n_clusters_found"] == 0:
@@ -889,7 +889,7 @@ def consolidate(
     # Offline LLM tier (#11): also extract keyed current-state from plain facts
     # the cheap regex missed. Runs even with zero clusters. The command's
     # --backend/--model are threaded through so a chosen backend reaches it.
-    # Best-effort — never fails the consolidate command.
+    # Best-effort - never fails the consolidate command.
     if eng.config.get("consolidate.suggest_keyed"):
         try:
             with loading("extracting keyed current-state (offline LLM)…"):

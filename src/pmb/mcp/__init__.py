@@ -2,13 +2,13 @@
 
 S1 (perf): this package init is LAZY. Importing a light submodule such as
 `pmb.mcp.registry` (stdlib-only, by contract) or `pmb.mcp.daemon` must NOT drag
-in `pmb.mcp.server` — which pulls fastmcp + the mcp SDK + pydantic + the whole
-engine (measured 3–6 s on first import). The hook client reaches the daemon via
+in `pmb.mcp.server` - which pulls fastmcp + the mcp SDK + pydantic + the whole
+engine (measured 3-6 s on first import). The hook client reaches the daemon via
 `pmb.mcp.registry` on EVERY user message, so that eager import was the single
 biggest latency cost in the system.
 
 `build_server` / `main` stay importable as `pmb.mcp.build_server` etc. via PEP
-562 — resolved only the first time the attribute is accessed (i.e. when someone
+562 - resolved only the first time the attribute is accessed (i.e. when someone
 actually wants to BUILD a server), mirroring `pmb/__init__.py`.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str):
-    """PEP 562 lazy attribute access — import the heavy server on demand."""
+    """PEP 562 lazy attribute access - import the heavy server on demand."""
     target = _LAZY_ATTRS.get(name)
     if target is None:
         raise AttributeError(f"module 'pmb.mcp' has no attribute {name!r}")

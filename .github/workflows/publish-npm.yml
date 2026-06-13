@@ -1,0 +1,52 @@
+name: Publish to npm
+
+# Publishes the thin npm launcher in npm/ to the npm registry, in lockstep with
+# the PyPI release (same v*.*.* tag triggers both this and publish.yml). The
+# wrapper only forwards to the PyPI package, so its version tracks the main one;
+# this workflow rewrites npm/package.json's version from the tag before publish.
+#
+# ONE-TIME SETUP (this is the "do I need to create something" answer: yes, one
+# secret):
+#   1. Create an npm account if you don't have one: https://www.npmjs.com/signup
+#   2. Create an Automation token:
+#      npmjs.com -> avatar -> Access Tokens -> Generate New Token ->
+#      "Automation" (works under 2FA in CI). Copy it.
+#   3. Add it to this repo: Settings -> Secrets and variables -> Actions ->
+#      New repository secret -> name: NPM_TOKEN, value: <the token>.
+#   4. Make sure the package name is free: `npm view pmb-ai` (E404 = free). If it
+#      is taken, change "name" in npm/package.json to "@oleksiijko/pmb-ai".
+#
+# Later, if you want full parity with the PyPI OIDC flow (no secret), switch to
+# npm Trusted Publishing on the package settings page and drop NODE_AUTH_TOKEN.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch: {}   # manual run from the Actions tab (uses the committed version)
+
+jobs:
+  npm:
+    name: Publish · npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # lets `npm publish --provenance` attest the build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Sync the wrapper version to the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: npm
+        run: npm pkg set version="${GITHUB_REF_NAME#v}"
+
+      - name: Publish
+        working-directory: npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

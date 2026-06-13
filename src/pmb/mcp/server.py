@@ -2,15 +2,15 @@
 PMB MCP Server.
 
 Tools:
-- recall(query, top_k=5)            — search
-- remember(query, response, ...)    — add a Q/A pair
-- record_fact(fact, ...)            — add a factual statement
-- pin(ulid)                         — pin
-- forget(ulid)                      — archive
-- stats()                           — workspace stats
-- list_recent(limit=20, event_type) — most recent events
+- recall(query, top_k=5)            - search
+- remember(query, response, ...)    - add a Q/A pair
+- record_fact(fact, ...)            - add a factual statement
+- pin(ulid)                         - pin
+- forget(ulid)                      - archive
+- stats()                           - workspace stats
+- list_recent(limit=20, event_type) - most recent events
 
-The Engine is initialised lazily once — workspace detection runs at server
+The Engine is initialised lazily once - workspace detection runs at server
 start and the same engine is reused thereafter.
 """
 
@@ -38,35 +38,35 @@ PMB_SYSTEM_INSTRUCTIONS = """\
 PMB is OFF for general questions (theory, syntax, "what is X"). Don't call
 it on coding/debugging questions answerable from training.
 
-But when you DO engage — READ BEFORE YOU WRITE. The core failure mode:
-agents record lessons, decisions, facts — then on the next task ignore all
+But when you DO engage - READ BEFORE YOU WRITE. The core failure mode:
+agents record lessons, decisions, facts - then on the next task ignore all
 of it and start from scratch. PMB exists to break that pattern. If you
 write a lesson and never read it, the lesson is wasted.
 
-══════════ READ FIRST — call BEFORE acting ══════════
+══════════ READ FIRST - call BEFORE acting ══════════
 
-▶ project_overview(name) — at the START of any work on a known project.
+▶ project_overview(name) - at the START of any work on a known project.
   User says "working on LoadGuard / fix bug in LeanBoard / write code for
   PMB". ONE call returns: lessons (RULES to follow), decisions, open
   goals, recent activity, related entities. Replaces 5+ recall() calls.
   7ms, graph-backed. Try this BEFORE guessing the project structure.
 
-▶ recall(query) — for any question about user/past/project. The response
-  now includes a `lessons` field — READ THE LESSONS FIRST and follow
+▶ recall(query) - for any question about user/past/project. The response
+  now includes a `lessons` field - READ THE LESSONS FIRST and follow
   them. Then use `results` as background.
 
-▶ session_brief — after long sessions when your own context compacted.
+▶ session_brief - after long sessions when your own context compacted.
   Re-orient on what THIS session decided/built. Don't re-ask the user.
 
-▶ recent_activity / what_just_happened / list_goals — for the obvious
+▶ recent_activity / what_just_happened / list_goals - for the obvious
   triggers ("what did I recently", "what did we just do", "what are my goals").
 
-If a lesson surfaces in any of the above — it overrides your default
+If a lesson surfaces in any of the above - it overrides your default
 behaviour. "We use pnpm, never npm" → use pnpm. No discussion.
 
-══════════ WRITE — only on triggers ══════════
+══════════ WRITE - only on triggers ══════════
 
-▶ record_batch(items=[…]) — exactly ONE call per turn, all items together.
+▶ record_batch(items=[…]) - exactly ONE call per turn, all items together.
 
   Types: fact | fact_tree | goal | activity | milestone | lesson.
 
@@ -79,15 +79,15 @@ behaviour. "We use pnpm, never npm" → use pnpm. No discussion.
     4. User corrects you, OR you discover a reusable project rule
        → {"type":"lesson","content":"This repo uses pnpm, never npm"}
        Lessons are PROCEDURAL ("how to work here"), high-importance.
-       They will surface in every future recall — record them so the
+       They will surface in every future recall - record them so the
        NEXT session of yourself reads them and gets smarter.
 
 ══════════ DON'T record ══════════
 
 Memory is for what's NOT trivially re-derivable. Skip:
-  - secrets / tokens / API keys (they're redacted anyway — don't rely on it)
+  - secrets / tokens / API keys (they're redacted anyway - don't rely on it)
   - transient tool output, stack traces, file/dir listings as "facts"
-  - restating repo content (code structure, file contents, git history) —
+  - restating repo content (code structure, file contents, git history) -
     the agent can just read the repo
   - future intent as a fact → use a goal instead (see trigger table)
 Junk is cheap but not free: it dilutes recall. When unsure whether something
@@ -99,23 +99,23 @@ is durable signal vs. transient noise, lean toward NOT recording it.
 - Use pin:true field, NEVER call pin() separately
 - NEVER recall after writing to verify
 - ABSOLUTE dates ("On May 25, 2026"), not "today"
-- Don't narrate tool calls — no "I'll save that / found in memory /
+- Don't narrate tool calls - no "I'll save that / found in memory /
   according to records / in memory / I recorded"
 - Read-tool results are your knowledge, weave naturally into the answer
 - Save-content rules apply to MEMORY only. Answer length is not
-  restricted — answer with whatever depth the question deserves.
+  restricted - answer with whatever depth the question deserves.
 
 PMB is local-only.
 """
 
 
-# Kept for reference — the old verbose instructions. Not used.
+# Kept for reference - the old verbose instructions. Not used.
 PMB_SYSTEM_INSTRUCTIONS_OLD = """\
 PMB (Personal Memory Brain) is the user's persistent long-term memory.
 Treat it as the AUTHORITATIVE source for anything personal or project-specific.
 
 ═══════════════════════════════════════════════════════════════════════════
-PART 0 — FIRST PRINCIPLE: SAVE GENEROUSLY, BATCH AGGRESSIVELY
+PART 0 - FIRST PRINCIPLE: SAVE GENEROUSLY, BATCH AGGRESSIVELY
 ═══════════════════════════════════════════════════════════════════════════
 
 The rules below say BATCH writes and be QUIET. They do NOT say save LESS.
@@ -124,13 +124,13 @@ The rules below say BATCH writes and be QUIET. They do NOT say save LESS.
   ❌ user states 6 facts → "I'll save the important ones" → 2 items
   ❌ user states 6 facts → 6 separate record_fact calls
 
-Junk is cheap. Gaps hurt the user. When in doubt — SAVE IT.
+Junk is cheap. Gaps hurt the user. When in doubt - SAVE IT.
 
 ═══════════════════════════════════════════════════════════════════════════
-PART 0.5 — EXPLICIT MEMORY TRIGGERS (pin to permanent)
+PART 0.5 - EXPLICIT MEMORY TRIGGERS (pin to permanent)
 ═══════════════════════════════════════════════════════════════════════════
 
-If the user uses any of these phrases — the fact is HIGH PRIORITY. After
+If the user uses any of these phrases - the fact is HIGH PRIORITY. After
 saving, immediately call `pin(ulid)` so it never decays:
 
   • "remember" / "remember this" / "don't forget" / "save this"
@@ -140,18 +140,18 @@ saving, immediately call `pin(ulid)` so it never decays:
 
 Pattern: record_fact (or fact_tree) with importance=0.95, then pin.
 
-  User: "Remember — my birthday is March 14"
+  User: "Remember - my birthday is March 14"
   → record_fact("User's birthday is March 14", importance=0.95)
   → pin(ulid)
 
 ═══════════════════════════════════════════════════════════════════════════
-PART 1 — SPEED & STYLE RULES
+PART 1 - SPEED & STYLE RULES
 ═══════════════════════════════════════════════════════════════════════════
 
 Each MCP call costs ~3-5 seconds of YOUR thinking time. User notices.
 
 1. **BATCH ALL WRITES.** Call `record_batch` ONCE with all items per turn.
-   Never make 5 separate record_* calls — 30s instead of 5s. See PART 2.
+   Never make 5 separate record_* calls - 30s instead of 5s. See PART 2.
 
 2. **ONE RECALL PER QUESTION.** Call `recall` ONCE with a well-chosen query.
    Don't loop. If top results aren't relevant, ONE rephrased follow-up is
@@ -172,7 +172,7 @@ Each MCP call costs ~3-5 seconds of YOUR thinking time. User notices.
    silently and answer. The dashboard shows what was stored.
 
 ═══════════════════════════════════════════════════════════════════════════
-PART 1 — WHEN TO `recall` (READ memory)
+PART 1 - WHEN TO `recall` (READ memory)
 ═══════════════════════════════════════════════════════════════════════════
 
 ALWAYS call `recall` BEFORE answering, when the user asks about:
@@ -183,15 +183,15 @@ ALWAYS call `recall` BEFORE answering, when the user asks about:
   • Project state:  "what port?", "what's the config?", "where's X?"
   • Health/life:    "when was I sick?", "what was my appointment?"
 
-For "what did we just do?" / "what were we just discussing?" — call
+For "what did we just do?" / "what were we just discussing?" - call
 `what_just_happened(5)` or `recent_activity(minutes=60)` instead. Those
 are instant (no vector search).
 
-Trust results with score > 0.2 — that's the user's recorded reality, more
+Trust results with score > 0.2 - that's the user's recorded reality, more
 authoritative than your inferences from code / docker / env / web.
 
 ═══════════════════════════════════════════════════════════════════════════
-PART 2 — WHEN TO WRITE memory  ← ALWAYS USE `record_batch`
+PART 2 - WHEN TO WRITE memory  ← ALWAYS USE `record_batch`
 ═══════════════════════════════════════════════════════════════════════════
 
 When user mentions multiple things worth saving, extract ALL of them in ONE
@@ -212,10 +212,10 @@ WHAT to extract from a typical user turn:
   RELATIONSHIPS:                             → fact ("User's wife is Anna")
   PROGRESS on a tracked metric:             → milestone (chain_name="…")
 
-Example — user says one long paragraph:
+Example - user says one long paragraph:
 
   "Today fixed JWT bug (3h). Want v1.0 by June. Tomorrow meeting Max
-   (ex-Grammarly) at Podol café — Rust startup. Peanut allergy worsened,
+   (ex-Grammarly) at Podol café - Rust startup. Peanut allergy worsened,
    doctor said carry EpiPen. Dropped LanceDB for SQLite-only. Finished
    async chapter in Rust book, 4 chapters left."
 
@@ -228,7 +228,7 @@ Example — user says one long paragraph:
      "status":"in_progress","due_at":<epoch for 2026-06-30>},
     {"type":"fact_tree",
      "main":"Meeting Max on May 25 2026 at café on Podol",
-     "subfacts":["Max — ex-colleague from Grammarly",
+     "subfacts":["Max - ex-colleague from Grammarly",
                  "Topic: discussing Rust startup idea"],
      "importance":0.7},
     {"type":"fact_tree",
@@ -244,21 +244,21 @@ Example — user says one long paragraph:
   ])
 
 WRITING RULES:
-  • Use ABSOLUTE dates ("On May 24, 2026", never "today") — derived from
+  • Use ABSOLUTE dates ("On May 24, 2026", never "today") - derived from
     the session date in the instructions header.
   • One atomic fact per item.
-  • Use the user's primary language for the body when possible — multilingual
+  • Use the user's primary language for the body when possible - multilingual
     embedding bridges RU↔EN automatically.
   • importance: 0.9 health/medical, 0.7 events/plans, 0.5 opinions.
-  • Call `record_batch` DURING the turn, before you answer — not "at the end".
+  • Call `record_batch` DURING the turn, before you answer - not "at the end".
 
 ═══════════════════════════════════════════════════════════════════════════
-PART 3 — AI-AGENT MODE (when YOU are doing the work)
+PART 3 - AI-AGENT MODE (when YOU are doing the work)
 ═══════════════════════════════════════════════════════════════════════════
 
 When YOU act on the user's behalf (writing code, refactoring, debugging,
 deploying), YOUR actions also deserve memory. Don't only save what the user
-said — save what YOU did.
+said - save what YOU did.
 
   • Design decision you made    → activity(kind="decision", content="why X over Y")
   • Files you edited            → activity(kind="edit")
@@ -287,28 +287,28 @@ Future "when did we fix auth?" / "why did you choose X?" instantly answered
 without re-reading code.
 
 ═══════════════════════════════════════════════════════════════════════════
-PART 4 — OTHER TOOLS (use when relevant)
+PART 4 - OTHER TOOLS (use when relevant)
 ═══════════════════════════════════════════════════════════════════════════
 
-  recall_smart       — for important queries (escalates on low confidence)
-  what_just_happened — instant: last N events of current session
-  recent_activity    — instant: last X minutes of activity log
-  list_goals         — open goals (status="in_progress")
-  chain_history      — full evolution of a tracked metric
-  pin                — pin a memory (use after "remember"/"save this" triggers)
-  dedupe_sweep       — one-shot dedup of duplicate facts
-  workspace_info     — confirm which memory you're using
+  recall_smart       - for important queries (escalates on low confidence)
+  what_just_happened - instant: last N events of current session
+  recent_activity    - instant: last X minutes of activity log
+  list_goals         - open goals (status="in_progress")
+  chain_history      - full evolution of a tracked metric
+  pin                - pin a memory (use after "remember"/"save this" triggers)
+  dedupe_sweep       - one-shot dedup of duplicate facts
+  workspace_info     - confirm which memory you're using
 
 The single-item record_fact / record_goal / record_milestone tools still
 exist for one-off cases, but for any multi-fact message PREFER record_batch.
 
 ═══════════════════════════════════════════════════════════════════════════
-ARCHITECTURE NOTE — why writes stay fast
+ARCHITECTURE NOTE - why writes stay fast
 ═══════════════════════════════════════════════════════════════════════════
 
-Write-path (record_*) does NO LLM call — just embedding + SQLite insert
-(~50ms). Deep semantic ops — atomic fact extraction, reflections, narrative
-arcs, LLM-verify dedup — are SLEEP-MODE: run via separate commands
+Write-path (record_*) does NO LLM call - just embedding + SQLite insert
+(~50ms). Deep semantic ops - atomic fact extraction, reflections, narrative
+arcs, LLM-verify dedup - are SLEEP-MODE: run via separate commands
 (`pmb reflect`, `pmb consolidate`, `pmb dedupe --run-pending`) when user is
 idle. You don't trigger them. This keeps every turn fast.
 """
@@ -350,7 +350,7 @@ def build_server(
         # while waiting for the full pipeline to be ready.
         import threading
 
-        # Stage 1 — critical path (model + LanceDB import). Runs in BG.
+        # Stage 1 - critical path (model + LanceDB import). Runs in BG.
         def _stage1_async():
             try:
                 vec = engine.search.embed(
@@ -374,7 +374,7 @@ def build_server(
                 )
             except Exception:
                 pass
-            # Stage 2 — batch embed + reranker JIT
+            # Stage 2 - batch embed + reranker JIT
             try:
                 engine.search.embed_batch([
                     "warmup batch item one",
@@ -406,7 +406,7 @@ def build_server(
     today = _dt.datetime.now().strftime("%B %d, %Y")
     instructions = (
         f"Current session date: {today}.\n"
-        f"When user says 'today', 'yesterday', 'last week' — resolve to absolute "
+        f"When user says 'today', 'yesterday', 'last week' - resolve to absolute "
         f"dates relative to {today} when storing facts.\n\n"
         + PMB_SYSTEM_INSTRUCTIONS
     )
@@ -444,11 +444,11 @@ def build_server(
 
     # Improvement Z: post-registration tool-profile filter.
     # All 55 tools registered above; now drop the ones not in active profile.
-    # This reduces what Codex sees in the tool list — fewer descriptions to
+    # This reduces what Codex sees in the tool list - fewer descriptions to
     # parse each turn = faster + sharper LLM responses.
     if _TOOL_PROFILE != "full":
         # Resolve the active profile's tool set. NOTE: this must mirror
-        # `_should_register` — a missing 'lean' key here is what silently
+        # `_should_register` - a missing 'lean' key here is what silently
         # demoted the lean profile to the full default set.
         allowed = {
             "minimal": _MINIMAL_TOOLS,
@@ -460,7 +460,7 @@ def build_server(
             # before any event loop exists, so asyncio.run() works there and
             # gating applies. If we're already inside a running loop (in-memory
             # client / embedded host), asyncio.run() would raise and leave an
-            # un-awaited coroutine — skip cleanly instead.
+            # un-awaited coroutine - skip cleanly instead.
             try:
                 asyncio.get_running_loop()
                 in_loop = True
@@ -541,7 +541,7 @@ def main():
 
     On stdio, the agent's host spawns `pmb-mcp` per session. On HTTP, run
     one persistent process (systemd, Docker, etc.) and point every IDE at
-    its URL — they share one workspace, one entity graph, one memory.
+    its URL - they share one workspace, one entity graph, one memory.
     """
     import sys
     workspace_id = os.environ.get("PMB_WORKSPACE")
@@ -568,7 +568,7 @@ def main():
     path = os.environ.get("PMB_MCP_PATH", "/mcp")
     token = os.environ.get("PMB_MCP_BEARER_TOKEN", "").strip()
 
-    # Issue #6 — HTTP singleton: if a healthy PMB server already serves this
+    # Issue #6 - HTTP singleton: if a healthy PMB server already serves this
     # host:port, don't spawn a SECOND heavy process (model + LanceDB). Point
     # clients at the existing one instead.
     if transport == "streamable-http":
@@ -580,7 +580,7 @@ def main():
         if existing:
             sys.stderr.write(
                 f"[pmb-mcp] already running on http://{host}:{port} "
-                f"(pid {existing.get('pid')}). Not starting a second — point "
+                f"(pid {existing.get('pid')}). Not starting a second - point "
                 f"clients at the existing URL, or stop it (`pmb mcp status`).\n"
             )
             return
@@ -616,7 +616,7 @@ def main():
     # Build the Starlette ASGI app from the fastmcp server, then attach
     # our middleware before handing off to uvicorn. fastmcp's own
     # server.run(transport=...) calls the same thing internally, but
-    # bypasses our chance to inject middleware — so we do it ourselves.
+    # bypasses our chance to inject middleware - so we do it ourselves.
     auth_mw = _build_bearer_middleware(token)
     app = None
     last_err: Exception | None = None
@@ -639,7 +639,7 @@ def main():
     if app is None:
         sys.stderr.write(
             f"[pmb-mcp] fastmcp version doesn't expose http_app/streamable_http_app "
-            f"({last_err}). Falling back to server.run() — bearer auth WILL NOT "
+            f"({last_err}). Falling back to server.run() - bearer auth WILL NOT "
             f"work; set PMB_MCP_BEARER_TOKEN='' or upgrade fastmcp.\n"
         )
         server.run(transport="streamable-http", host=host, port=port, path=path)
@@ -650,7 +650,7 @@ def main():
             app.add_middleware(auth_mw)
         except Exception as e:
             sys.stderr.write(
-                f"[pmb-mcp] middleware install failed: {e} — server will run UNAUTHENTICATED\n"
+                f"[pmb-mcp] middleware install failed: {e} - server will run UNAUTHENTICATED\n"
             )
 
     try:

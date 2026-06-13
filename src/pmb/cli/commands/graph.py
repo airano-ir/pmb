@@ -1,4 +1,4 @@
-"""`pmb graph ...` — inspect the association graph (entities + edges)."""
+"""`pmb graph ...` - inspect the association graph (entities + edges)."""
 
 from __future__ import annotations
 

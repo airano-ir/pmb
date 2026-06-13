@@ -27,7 +27,7 @@ import sqlite3
 from pathlib import Path
 
 # Models that are explicitly English-only (or English-heavy).
-# `all-MiniLM-L6-v2` is the canonical "fast English baseline" — covered.
+# `all-MiniLM-L6-v2` is the canonical "fast English baseline" - covered.
 _EN_ONLY_MODELS = {
     "all-minilm-l6-v2",
     "all-minilm-l12-v2",
@@ -78,7 +78,7 @@ def sample_non_latin_ratio(
             "n_sampled": int,
             "n_non_latin_letters": int,
             "n_total_letters": int,
-            "non_latin_ratio": float,   # 0.0 — 1.0
+            "non_latin_ratio": float,   # 0.0 - 1.0
             "looks_multilingual": bool, # ratio >= 0.05
         }
     """
@@ -157,7 +157,7 @@ def evaluate(
             "  pmb reindex   # re-embed events under the new model"
         )
     elif stats["looks_multilingual"] and not multi and not en_only:
-        # Unknown model — can't say for sure.
+        # Unknown model - can't say for sure.
         severity = "warn"
         warning = (
             f"This workspace has non-Latin content but the embedding model "

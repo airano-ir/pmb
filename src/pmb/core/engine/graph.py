@@ -61,7 +61,7 @@ class GraphMixin:
                     known_persons=kp,
                 )
                 if pres.persons:
-                    # Add person entities. Dedupe on (kind, name) — a name
+                    # Add person entities. Dedupe on (kind, name) - a name
                     # might already be a 'concept' but should ALSO be a
                     # 'person' (different graph node).
                     existing_pairs = {(k, n) for k, n in named}
@@ -109,17 +109,17 @@ class GraphMixin:
         return entity_ids
 
     # ──────────────────────────────────────────────────────────────────
-    # Async graph indexing — keep LLM extraction OFF the write hot-path
+    # Async graph indexing - keep LLM extraction OFF the write hot-path
     # ──────────────────────────────────────────────────────────────────
 
     def _index_graph_or_defer(self, ev: Event, full_text: str) -> list[int]:
         """Graph-index an event, deferring the slow part off the write path.
 
-        The regex (and spaCy) backends are fast and local — they run INLINE,
+        The regex (and spaCy) backends are fast and local - they run INLINE,
         exactly as before. But an LLM backend (`llm:claude` / `llm:ollama` /
         `llm:codex`) does a blocking CLI round-trip of up to
         `graph.llm_timeout_s` PER event. Running that inline violates PMB's
-        core rule — "the write path does NO blocking LLM call" — and is what
+        core rule - "the write path does NO blocking LLM call" - and is what
         made records hang and, when an MCP request was serialized behind a
         stuck subprocess, could stall a following recall.
 
@@ -158,7 +158,7 @@ class GraphMixin:
     def _drain_graph_queue(self) -> None:
         """Background worker: index queued events through the (slow) LLM
         extractor one at a time, then exit. Re-spawned on the next enqueue.
-        Each failure is swallowed (best-effort) — `pmb regraph` can rebuild
+        Each failure is swallowed (best-effort) - `pmb regraph` can rebuild
         any event the worker missed."""
         import logging
 
@@ -184,7 +184,7 @@ class GraphMixin:
                     self._graph_in_flight = False
 
     def graph_queue_pending(self) -> int:
-        """How many events still need deferred LLM graph indexing — queued
+        """How many events still need deferred LLM graph indexing - queued
         PLUS the one currently being processed. Used by `wait_for_graph_queue`
         (tests/bulk flows) and diagnostics."""
         lock = getattr(self, "_graph_queue_lock", None)
@@ -199,7 +199,7 @@ class GraphMixin:
     def wait_for_graph_queue(self, timeout_seconds: float = 120.0) -> dict:
         """Block until the deferred graph queue drains (or timeout). For
         tests / bulk ingests that need the graph consistent before asserting.
-        Pure busy-wait poll — the worker runs in its own thread."""
+        Pure busy-wait poll - the worker runs in its own thread."""
         import time as _t
 
         deadline = _t.time() + timeout_seconds
@@ -225,12 +225,12 @@ class GraphMixin:
         Two cleanups:
           1. Drop edges with `weight <= max_weight` AND `last_seen` older
              than `older_than_days`. These are typically one-off co-mentions
-             that won't help recall — keeping them just slows PPR.
+             that won't help recall - keeping them just slows PPR.
           2. Drop entities with zero remaining edges AND zero event-links
              (orphans left after edge pruning).
 
         Run periodically (cron or after large ingests) on workspaces with
-        10k+ events to keep recall fast. Reversible? No — but the underlying
+        10k+ events to keep recall fast. Reversible? No - but the underlying
         events/embeddings aren't touched, so a `pmb regraph` rebuilds.
 
         Returns: {n_edges_pruned, n_entities_pruned, edges_before, edges_after}
@@ -299,7 +299,7 @@ class GraphMixin:
             conn.execute("DELETE FROM graph_entities WHERE workspace_id = ?", (ws,))
             conn.commit()
 
-        # Also wipe the self-reinforcing known_persons dict — it learned
+        # Also wipe the self-reinforcing known_persons dict - it learned
         # garbage names ("how", "appdata") that the old extractor allowed.
         try:
             with sqlite3.connect(self.workspace.db_path) as conn:

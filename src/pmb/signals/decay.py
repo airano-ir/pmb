@@ -12,8 +12,8 @@ Formula:
 - Pin: importance = 1.0 + pinned flag (does not decay)
 
 Entry points:
-- recompute_importance(engine) — recompute after a batch
-- apply_decay(engine) — daily ritual
+- recompute_importance(engine) - recompute after a batch
+- apply_decay(engine) - daily ritual
 
 In Phase 2 these are manual functions; in Phase 3 there will be a cron-like background scheduler.
 """
@@ -37,7 +37,7 @@ def boost_on_recall(current_importance: float, hit_score: float) -> float:
     Apply a boost to importance after a recall hit.
 
     Saturating: the closer to 1.0, the smaller the increment.
-    hit_score (0..1) — how relevant the hit was (we only boost on strong ones).
+    hit_score (0..1) - how relevant the hit was (we only boost on strong ones).
     """
     if hit_score < 0.3:
         return current_importance
@@ -124,7 +124,7 @@ def recompute_importance(engine: Engine) -> dict:
     """
     Recompute importance based on access patterns.
 
-    Used when you want to reset state — usually apply_decay is sufficient.
+    Used when you want to reset state - usually apply_decay is sufficient.
     """
     active = engine.events.list_active(engine.workspace.id, limit=100000)
     now = time.time()

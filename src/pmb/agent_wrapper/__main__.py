@@ -1,4 +1,4 @@
-"""`python -m pmb.agent_wrapper` — start a chat session backed by PMB memory."""
+"""`python -m pmb.agent_wrapper` - start a chat session backed by PMB memory."""
 from __future__ import annotations
 
 import argparse

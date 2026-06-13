@@ -1,9 +1,9 @@
-"""PDF ingestion — extract text + metadata, chunk by section, persist as
+"""PDF ingestion - extract text + metadata, chunk by section, persist as
 PMB events that the agent can recall like any other fact.
 
 Design notes:
 
-  * pypdf is the default backend — pure-Python, MIT-licensed, ships
+  * pypdf is the default backend - pure-Python, MIT-licensed, ships
     inside the wheel. No system PDF dependency.
   * One PDF → one PARENT fact_tree per file ("PDF: <title>") plus N
     child events, one per chunk. Each chunk has:
@@ -13,7 +13,7 @@ Design notes:
         metadata.pdf_page       = 1-based page number
         metadata.pdf_chunk      = chunk index within the doc
         metadata.pdf_section    = heuristic section title if detected
-  * Re-ingesting the same file is a no-op — the source_hash + page check
+  * Re-ingesting the same file is a no-op - the source_hash + page check
     drops every duplicate chunk via the engine's L1 exact-text dedup
     AND a fast pre-check that bails out if any event already has the
     same hash.
@@ -43,7 +43,7 @@ log = logging.getLogger(__name__)
 
 CHUNK_TARGET_CHARS = 1500
 CHUNK_OVERLAP = 150     # carry tail into next chunk to keep context
-MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB guard — anything larger is suspicious
+MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB guard - anything larger is suspicious
 
 
 # ----------------------------------------------------------------------
@@ -108,12 +108,12 @@ def _import_backend():
 
 
 # ----------------------------------------------------------------------
-# Chunking — keep paragraphs together, respect heading boundaries
+# Chunking - keep paragraphs together, respect heading boundaries
 # ----------------------------------------------------------------------
 
 # Heading words: EN inline; localized equivalents (RU/UK/DE "Chapter"/"Section")
 # come from the packs (pdf_heading_words). E2: the ALL-CAPS heading test is now
-# str.isupper() in Python — Unicode-correct for every script — so this module no
+# str.isupper() in Python - Unicode-correct for every script - so this module no
 # longer needs the packs' `sentence_uppercase` char-class ranges.
 _HEAD_WORDS = "|".join(["Chapter", "Section", "Part", "Appendix"]
                        + [str(w) for w in _lang.merged_list("pdf_heading_words")])
@@ -156,7 +156,7 @@ def _split_into_chunks(text: str, target: int = CHUNK_TARGET_CHARS) -> list[str]
 
 
 def _detect_section(chunk: str) -> str | None:
-    """Best-effort heuristic: first heading-looking line in the chunk —
+    """Best-effort heuristic: first heading-looking line in the chunk -
     a 'Chapter N …' / 'Section N …' marker, a numbered 'N.M Title', or an
     ALL-CAPS line (any script via str.isupper(), E2)."""
     for raw in chunk[:400].splitlines():
@@ -212,7 +212,7 @@ def ingest_pdf(
     Args:
         engine: a live PMB Engine
         path: PDF file path
-        importance: per-chunk importance (default 0.6 — high-signal but not pinned)
+        importance: per-chunk importance (default 0.6 - high-signal but not pinned)
         force: re-ingest even if the file's content hash is already in PMB
 
     Returns:
@@ -317,7 +317,7 @@ def ingest_pdfs(
     importance: float = 0.6,
     force: bool = False,
 ) -> dict:
-    """Bulk ingest — accept a list of paths, or a directory (with optional
+    """Bulk ingest - accept a list of paths, or a directory (with optional
     recursion). Returns aggregated stats. Errors are reported per-file."""
     files: list[Path] = []
     seen = set()

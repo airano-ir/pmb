@@ -34,7 +34,7 @@ PMB_AGENT_RULES_START = "<!-- PMB-RULES-START (managed by `pmb connect`) -->"
 PMB_AGENT_RULES_END   = "<!-- PMB-RULES-END -->"
 
 PMB_AGENT_RULES_BODY = """\
-## PMB — persistent memory (via MCP)
+## PMB - persistent memory (via MCP)
 
 This project has a PMB workspace attached. The user reviews your
 adherence to these rules in the PMB dashboard's "Adherence" tab; your
@@ -42,7 +42,7 @@ prepare-rate, lesson-followthrough, and read/write ratio are visible
 to them. Skipping the rules below means writing into a void the user
 can see is unused.
 
-### REQUIRED — call BEFORE the first substantive action of any task
+### REQUIRED - call BEFORE the first substantive action of any task
 
 ```
 prepare(message="<the user's first or current message>")
@@ -50,7 +50,7 @@ prepare(message="<the user's first or current message>")
 
 That single call returns project_context, surfaced lessons (with
 `surface_id`), recent_activity, open_goals. ~10 ms. If the response
-has a `lessons` array, READ THEM before acting — they OVERRIDE your
+has a `lessons` array, READ THEM before acting - they OVERRIDE your
 defaults ("use pnpm not npm" means use pnpm, no debate).
 
 After acting on a surfaced lesson:
@@ -60,7 +60,7 @@ mark_lesson_followed(surface_id=<from prepare>, followed=True|False,
                      note="<one line: what you did>")
 ```
 
-Do this even when followed=False (be honest — the dashboard shows
+Do this even when followed=False (be honest - the dashboard shows
 both). Lessons never marked are counted as ignored.
 
 ### OK to skip prepare() ONLY when
@@ -70,7 +70,7 @@ both). Lessons never marked are counted as ignored.
 - Continuation of a task already prepared earlier this session.
 - One-line trivial change (rename a variable, fix a typo).
 
-If you're unsure — call prepare(). It's 10 ms.
+If you're unsure - call prepare(). It's 10 ms.
 
 ### BEFORE a kind of action you haven't done before this session
 
@@ -97,12 +97,12 @@ time: act → record why → next time it surfaces as a decision/lesson.
 
 If PMB hooks are installed you'll sometimes see, prepended to a message,
 blocks titled `== PMB auto-context ==` or `== PMB session restore ==`.
-That's PMB pre-loading memory for you — treat its lessons/decisions as
+That's PMB pre-loading memory for you - treat its lessons/decisions as
 if you'd fetched them yourself. After a compaction, the session-restore
 block tells you what THIS session already did: pick the thread back up,
 don't re-ask the user.
 
-### WRITE — one `record_batch` per turn, only on these triggers
+### WRITE - one `record_batch` per turn, only on these triggers
 
 | Trigger | What to write |
 | --- | --- |
@@ -112,7 +112,7 @@ don't re-ask the user.
 | You made a project-shaping choice | activity, kind=decision |
 | User corrected you OR a non-obvious rule emerged | lesson (high-importance) |
 | User states a personal attribute that CAN CHANGE | record_keyed_fact(subject, attribute, value) |
-| FUTURE intent — "next we'll do X / the plan is …" | goal (record_goal or batch {"type":"goal"/"plan", status="pending"}), NOT a fact |
+| FUTURE intent - "next we'll do X / the plan is …" | goal (record_goal or batch {"type":"goal"/"plan", status="pending"}), NOT a fact |
 
 Never call `recall` after writing to "verify". Never call `pin`
 separately. Use absolute dates ("On May 25, 2026"), not "today".
@@ -130,7 +130,7 @@ separately. Use absolute dates ("On May 25, 2026"), not "today".
 
 ### Style
 
-Use read results as your own knowledge — weave naturally. Never say
+Use read results as your own knowledge - weave naturally. Never say
 "I found in memory / according to the records / I recorded that". Don't
 narrate which tools you called.
 
@@ -388,7 +388,7 @@ def make_local_entry(
     multi-user shared memory (point at a shared NAS path).
 
     tool_profile (minimal | lean | default | full) is written as
-    PMB_TOOL_PROFILE in the server env — `pmb connect` sets "lean" for a
+    PMB_TOOL_PROFILE in the server env - `pmb connect` sets "lean" for a
     hook-enabled host so the agent isn't offered MCP tools the hooks already
     cover. None = leave it to the server default.
     """
@@ -415,13 +415,13 @@ def make_remote_entry(remote: str, bearer_token: str | None = None) -> dict:
 
     Two forms are supported:
 
-      • SSH tunnel:    `user@host:/abs/path/to/repo` — wraps `pmb-mcp` via ssh
+      • SSH tunnel:    `user@host:/abs/path/to/repo` - wraps `pmb-mcp` via ssh
                        (stdio over an SSH tunnel; uses the remote box's PMB).
-      • HTTP URL:      `http://host:8765/mcp` or `https://...` — connects to
+      • HTTP URL:      `http://host:8765/mcp` or `https://...` - connects to
                        a `pmb mcp serve --transport streamable-http` process.
 
     For HTTP, pass `bearer_token` if the server was started with
-    `--bearer-token` — the resulting entry will include the
+    `--bearer-token` - the resulting entry will include the
     `Authorization: Bearer <token>` header.
     """
     if remote.startswith(("http://", "https://")):
@@ -481,13 +481,13 @@ def make_daemon_entry(
     """S6: a streamable-HTTP MCP entry pointing at the LOCAL warm daemon, so N
     AI clients share ONE warm process (one Engine + one ~400 MB model) instead
     of spawning a stdio server each. The bearer token is the PERSISTENT daemon
-    token (created here if absent) — stable across daemon restarts, so the baked
+    token (created here if absent) - stable across daemon restarts, so the baked
     `Authorization` header doesn't go stale when the daemon idle-exits and the
     hook autostarts it again.
 
     Shape matches `make_remote_entry`'s HTTP form (`type: http`), which the
     big-three JSON hosts already accept. Codex/extended (stdio-shaped) hosts
-    keep the local stdio entry — the caller decides."""
+    keep the local stdio entry - the caller decides."""
     from pmb.mcp.daemon import write_daemon_token
     token = write_daemon_token()   # reuse-if-present (persistent)
     entry: dict = {"type": "http", "url": f"http://{host}:{int(port)}{path}"}
@@ -532,7 +532,7 @@ def merge_codex_entry(
     codex_entry["startup_timeout_sec"] = 120
     # Per-call timeout: Codex defaults to 120s per tools/call, which a
     # legitimately slow FIRST warm call (cold model load under memory
-    # pressure — paging on a machine already hosting the daemon's model) can
+    # pressure - paging on a machine already hosting the daemon's model) can
     # exceed. 300s gives the cold path headroom; normal calls are ms.
     codex_entry["tool_timeout_sec"] = 300
     servers[name] = codex_entry
@@ -1051,7 +1051,7 @@ def connect(
         # HTTP. The CLI uses it to ensure the daemon is up and print RSS math.
         "daemon_http": daemon_http,
         # Signalled when --daemon was asked for but the host can't take an HTTP
-        # entry (codex/extended/remote) — we kept stdio; surfaced so the CLI can
+        # entry (codex/extended/remote) - we kept stdio; surfaced so the CLI can
         # tell the user instead of silently ignoring the flag.
         "daemon_http_unavailable": bool(use_daemon and not daemon_http),
     }

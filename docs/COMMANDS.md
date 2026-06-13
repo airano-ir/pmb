@@ -8,7 +8,7 @@ pmb connect --help
 ```
 
 **Legend:** 🟢 fully offline (no network) · 🧠 needs an LLM backend
-(Claude CLI / `ANTHROPIC_API_KEY` / Ollama — see [LLM-powered commands](#llm-powered-commands)).
+(Claude CLI / `ANTHROPIC_API_KEY` / Ollama - see [LLM-powered commands](#llm-powered-commands)).
 
 Nothing leaves your machine except the workspace-sync commands you run on purpose.
 
@@ -25,7 +25,7 @@ Nothing leaves your machine except the workspace-sync commands you run on purpos
 | `pmb connect <agent> --probe` 🟢 | After wiring, spawn `pmb-mcp` briefly to confirm it starts. |
 | `pmb doctor` 🟢 | Diagnose the install + runtime state. `--remote user@host:/path` prints an SSH-tunneled MCP snippet. |
 | `pmb warmup` 🟢 | Pre-load the model + BM25 + LanceDB so the next recall is fast (avoids the ~1-2 s cold start). |
-| `pmb init [--name NAME]` 🟢 | Initialize a workspace in the current directory (optional — a workspace auto-detects from cwd). |
+| `pmb init [--name NAME]` 🟢 | Initialize a workspace in the current directory (optional - a workspace auto-detects from cwd). |
 
 ```bash
 pip install pmb-ai
@@ -60,12 +60,12 @@ pmb import chatgpt ~/Downloads/conversations.json
 | Command | What it does |
 |---|---|
 | `pmb recall "query" [-k 5]` 🟢 | Search memory. Each hit shows source, confidence, freshness, ★lesson / ⚠failure markers. |
-| `pmb why "query"` 🟢 | Explain the ranking — which of the 14 PAMVR rules fired and each multiplier. |
-| `pmb overview "<topic>"` 🟢 | Structured "what do I know about X?" — key facts & decisions, lessons, failures, goals, timeline, related topics. Also an **MCP tool** so the agent can get up to speed on a topic in one call. |
+| `pmb why "query"` 🟢 | Explain the ranking - which of the 14 PAMVR rules fired and each multiplier. |
+| `pmb overview "<topic>"` 🟢 | Structured "what do I know about X?" - key facts & decisions, lessons, failures, goals, timeline, related topics. Also an **MCP tool** so the agent can get up to speed on a topic in one call. |
 | `pmb timeline` 🟢 | Chronological, day-grouped view (`--days`, `--type`, `--newest-first`). |
 | `pmb insights` 🟢 | Analytics: totals, type breakdown, weekly growth, top topics, lessons/goals counts. |
 | `pmb digest [today\|week\|month]` 🟢 | Recap of recent memories (`--days N`). |
-| `pmb audit` 🟢 | "What does PMB know about me?" — grouped, read-only view + memory-health signals. |
+| `pmb audit` 🟢 | "What does PMB know about me?" - grouped, read-only view + memory-health signals. |
 | `pmb lessons` 🟢 | List the durable lessons & failures (procedural memory). |
 | `pmb reminders` 🟢 | Goals that are overdue or due soon (`--within N`, `--all`). |
 | `pmb tags` / `pmb tagged <tag>` 🟢 | List tags / list memories in a tag "collection". |
@@ -106,14 +106,14 @@ pmb snapshot create --note "before refactor"
 
 ---
 
-## Sync & backup (only these touch the network — and only when you run them)
+## Sync & backup (only these touch the network - and only when you run them)
 
 | Command | What it does |
 |---|---|
 | `pmb workspace init [--remote URL]` 🟢 | Turn the workspace into a git repo. |
 | `pmb workspace push` / `pull` / `status` | Sync memory to/from a git remote (cross-device, team, backup). |
 | `pmb workspace clone <url> <name>` | Clone a remote workspace locally. |
-| `pmb workspace export <out> [--key-file]` 🟢 | Encrypt the workspace into one portable bundle (scrypt + AES/HMAC) — safe even on a public remote. Needs `pip install 'pmb-ai[crypto]'`. |
+| `pmb workspace export <out> [--key-file]` 🟢 | Encrypt the workspace into one portable bundle (scrypt + AES/HMAC) - safe even on a public remote. Needs `pip install 'pmb-ai[crypto]'`. |
 | `pmb workspace import <bundle> <name>` 🟢 | Decrypt a bundle into a local workspace. |
 | `pmb workspaces` 🟢 | List all known workspaces. |
 
@@ -147,7 +147,7 @@ on). Change them, then re-run `pmb connect <agent> --active` to regenerate.
 | `agent.log_lessons` | Log project conventions / corrections |
 | `agent.log_failures` | Log failures (don't-repeat) |
 | `agent.log_goals` | Log the user's goals / intents |
-| `agent.apply_lessons` | **Self-improvement loop** — recall + apply past lessons/failures before a task, so the agent gets better at this project over time |
+| `agent.apply_lessons` | **Self-improvement loop** - recall + apply past lessons/failures before a task, so the agent gets better at this project over time |
 | `agent.context_continuity` | Tell the agent to call `session_brief` to re-orient after its own context compacts in a long session |
 
 ```bash
@@ -158,20 +158,20 @@ pmb connect codex --active                 # regenerate rules
 ### Pro: choose the entity-graph extractor
 
 The dashboard's memory graph and `recall`'s graph-boost step both lean on the
-**entity extractor** — the thing that turns event text into nodes
+**entity extractor** - the thing that turns event text into nodes
 (`file` / `tech` / `person` / `concept`). PMB ships three backends; swap one
 at runtime, no code changes:
 
 | Backend | What it does | Cost | Deps |
 |---|---|---|---|
 | `regex` (default) 🟢 | Fast file/tech regex + improved stop-list + multi-word phrase detection ("Claude Code" → one node). Fully offline. | ~0 ms | none |
-| `spacy` 🟢 | Adds POS-filter (noun/proper-noun only) and real NER (PERSON / ORG / GPE / PRODUCT). Cleanest no-LLM option. | ~3–10 ms | `pip install spacy` + `python -m spacy download en_core_web_sm` |
-| `llm:claude` 🧠 | One Claude Code CLI call per event — returns clean named-entity JSON. Same idea as graphify / Penpax. Falls back to regex on timeout / error. | ~1–3 s/event | `claude` CLI on PATH |
-| `llm:ollama` 🧠 | Same, but via a local Ollama model (default `qwen2.5:3b`). Fully offline if you have a model pulled. | ~1–4 s/event | `ollama` CLI + a model |
-| `llm:codex` 🧠 | OpenAI Codex CLI. | ~1–3 s/event | `codex` CLI on PATH |
+| `spacy` 🟢 | Adds POS-filter (noun/proper-noun only) and real NER (PERSON / ORG / GPE / PRODUCT). Cleanest no-LLM option. | ~3-10 ms | `pip install spacy` + `python -m spacy download en_core_web_sm` |
+| `llm:claude` 🧠 | One Claude Code CLI call per event - returns clean named-entity JSON. Same idea as graphify / Penpax. Falls back to regex on timeout / error. | ~1-3 s/event | `claude` CLI on PATH |
+| `llm:ollama` 🧠 | Same, but via a local Ollama model (default `qwen2.5:3b`). Fully offline if you have a model pulled. | ~1-4 s/event | `ollama` CLI + a model |
+| `llm:codex` 🧠 | OpenAI Codex CLI. | ~1-3 s/event | `codex` CLI on PATH |
 
 ```bash
-# default — leave it at regex unless the noise bugs you
+# default - leave it at regex unless the noise bugs you
 pmb config set graph.extractor regex
 
 # nicer no-LLM extraction
@@ -189,7 +189,7 @@ pmb config set graph.viz_min_mentions 2
 
 LLM backends never block the write path: if the CLI times out or returns
 malformed output, the record falls back to the regex extractor for that one
-event. Recall still works exactly the same — the choice only changes WHICH
+event. Recall still works exactly the same - the choice only changes WHICH
 entities end up as graph nodes, not the recall pipeline.
 
 ---
@@ -202,7 +202,7 @@ entities end up as graph nodes, not the recall pipeline.
 | `pmb ollama use <profile>` 🟢 | Select a model profile (tiny / balanced / quality). |
 | `pmb ollama test` 🟢 | Smoke-test the local model. |
 
-Ollama is **optional** — PMB works fully offline without any LLM. It's only used
+Ollama is **optional** - PMB works fully offline without any LLM. It's only used
 by the LLM-powered commands below (and only if you choose it over Claude
 CLI / Anthropic).
 
@@ -211,7 +211,7 @@ CLI / Anthropic).
 ## LLM-powered commands
 
 These are the **only** commands that need an LLM backend (Claude CLI in PATH /
-`ANTHROPIC_API_KEY` / Ollama). They run **off the recall hot path** — recall
+`ANTHROPIC_API_KEY` / Ollama). They run **off the recall hot path** - recall
 itself never calls an LLM.
 
 | Command | What it does |
@@ -259,14 +259,14 @@ their own mechanisms (check `pmb hooks capabilities`).
 | `pmb auto-context "..."` 🟢 | Preview the per-turn memory a UserPromptSubmit hook would inject. |
 | `pmb session-restore [-m MIN]` 🟢 | Preview the "where you left off" digest a SessionStart hook injects after a compaction. |
 | `pmb lesson-followcheck --dry-run` 🟢 | Preview deterministic follow-through scoring for surfaced lessons. |
-| `pmb autowrite [--dry-run]` 🟢🧠 | Ambient auto-write for the current turn: if the agent didn't call a `record_*` tool, synthesize ONE activity entry from observed actions. No-op unless `autowrite.enabled`. 🧠 only if `autowrite.synthesizer` is an LLM backend — the default template needs no model. |
-| `pmb track-action` 🟢 | (Hook-invoked.) Append one observed action to the ambient journal — the PostToolUse hot path (single SQLite INSERT, no model). |
+| `pmb autowrite [--dry-run]` 🟢🧠 | Ambient auto-write for the current turn: if the agent didn't call a `record_*` tool, synthesize ONE activity entry from observed actions. No-op unless `autowrite.enabled`. 🧠 only if `autowrite.synthesizer` is an LLM backend - the default template needs no model. |
+| `pmb track-action` 🟢 | (Hook-invoked.) Append one observed action to the ambient journal - the PostToolUse hot path (single SQLite INSERT, no model). |
 | `pmb ambient-watch <dir>` 🟢🧠 | Ambient auto-write for MCP-only hosts (Cursor/Zed/VS Code): poll git for changes, auto-write once the project goes idle. |
 | `pmb codex-notify` 🟢🧠 | (Hook-invoked by Codex on `agent-turn-complete`.) Parse the session rollout, then run ambient auto-write. |
-| `pmb forget-auto [--minutes N]` 🟢 | Archive memory the ambient layer wrote itself (`source=autowrite`). Reversible — archived, not hard-deleted. |
+| `pmb forget-auto [--minutes N]` 🟢 | Archive memory the ambient layer wrote itself (`source=autowrite`). Reversible - archived, not hard-deleted. |
 
 Ambient auto-write is **ON by default** and never duplicates the agent's
-own `record_*` calls — it only fills the gap when the agent stays silent.
+own `record_*` calls - it only fills the gap when the agent stays silent.
 A turn is journaled only if it clears an outcome-based quality bar (tests
 passed, a failure fixed, a deploy ran), so mechanical churn is dropped.
 Tune everything via `autowrite.*` (`pmb config list`).
@@ -282,5 +282,5 @@ Tune everything via `autowrite.*` (`pmb config list`).
 - **Nothing is forced.** Use the agent's native abilities freely; PMB only
   chimes in when asked.
 - **Remove it anytime.** Delete the `pmb` entry from the agent's MCP config to
-  disconnect — your stored memory stays on disk and is still readable via the
+  disconnect - your stored memory stays on disk and is still readable via the
   CLI.

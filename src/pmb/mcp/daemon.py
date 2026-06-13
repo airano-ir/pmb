@@ -78,7 +78,7 @@ _PRETOOL_SEEN: dict[str, set] = {}
 
 
 def pretool_lessons(engine, excerpt: str, seen: set) -> list:
-    """R11 core: lessons that should FIRE for a tool-call excerpt — a STRONG
+    """R11 core: lessons that should FIRE for a tool-call excerpt - a STRONG
     match (>= 2 distinctive overlapping tokens incl >= 1 identifier-grade one),
     not yet fired this session, max 2. The guard interrupts the agent, so the
     bar is deliberately higher than ordinary lesson surfacing. Pure function for
@@ -101,7 +101,7 @@ def pretool_lessons(engine, excerpt: str, seen: set) -> list:
             continue
         ov = q & distinctive_tokens(L.get("content") or "")
         # Confident-match bar: TWO distinctive overlapping tokens, OR ONE
-        # identifier-grade one (record_batch, qwen2.5 — is_strong). The guard
+        # identifier-grade one (record_batch, qwen2.5 - is_strong). The guard
         # interrupts the agent, so a single common-word overlap isn't enough.
         if len(ov) >= 2 or any(is_strong(t) for t in ov):
             seen.add(u)
@@ -298,7 +298,7 @@ def _idle_watcher(idle_exit_min: float, engine) -> None:
                 flush_perf()
             except Exception:
                 pass
-            sys.stderr.write("[pmb-daemon] idle timeout reached — exiting.\n")
+            sys.stderr.write("[pmb-daemon] idle timeout reached - exiting.\n")
             os._exit(0)
 
 

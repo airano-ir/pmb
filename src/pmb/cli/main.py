@@ -65,7 +65,7 @@ app.add_typer(lang_app, name="lang")
 
 @app.callback(invoke_without_command=True)
 def _root(ctx: typer.Context):
-    """PMB — local-first memory for AI agents. Run with no command for status."""
+    """PMB - local-first memory for AI agents. Run with no command for status."""
     # Only render the status dashboard for a bare `pmb`; any subcommand
     # (and `--help`, which Click handles before this body) passes through.
     if ctx.invoked_subcommand is None:

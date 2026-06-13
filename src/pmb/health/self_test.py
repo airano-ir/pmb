@@ -1,9 +1,9 @@
 """
-Self-Test Runner — quantifies memory degradation over time.
+Self-Test Runner - quantifies memory degradation over time.
 
 Idea: periodically (once a week) the system picks random old memories,
 builds test queries out of them, and tries to recall them via recall.
-If recall accuracy drops — that's a degradation signal.
+If recall accuracy drops - that's a degradation signal.
 
 Metric: % of old memories that recall finds in top-K using their own key
 words/phrase.
@@ -11,14 +11,14 @@ words/phrase.
 Query generation approach:
 - For each selected event we take the first 8-15 significant tokens of its content
 - That becomes the query
-- Expected — the same event_ulid
+- Expected - the same event_ulid
 
-This is a "scratch your own itch" benchmark — it measures against the user's
+This is a "scratch your own itch" benchmark - it measures against the user's
 real data, not synthetic data. Results are saved to health_log.jsonl and are
 available through the `pmb health` CLI.
 
 Anti-bias measure: the query differs substantially from the content (only a
-subset of tokens in random order) — otherwise it would be trivial.
+subset of tokens in random order) - otherwise it would be trivial.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def generate_test_query(content: str, rng: random.Random) -> str | None:
     Generates a test query from an event's content.
 
     We take 4-7 significant tokens in random order. If there are fewer than 4
-    significant tokens — the event isn't suitable for self-test (too short).
+    significant tokens - the event isn't suitable for self-test (too short).
     """
     tokens = _significant_tokens(content, n_keep=12)
     if len(tokens) < 4:
@@ -139,7 +139,7 @@ class SelfTestRunner:
 
         Args:
             n_samples: how many events to test
-            min_age_days: minimum age of an event (fresh ones are skipped — too easy)
+            min_age_days: minimum age of an event (fresh ones are skipped - too easy)
             top_k_max: how many results to request from recall
             max_failed_to_save: we save the details of failed queries
         """
@@ -155,7 +155,7 @@ class SelfTestRunner:
         ]
 
         if not eligible:
-            # Distinguish "empty workspace" from "everything is too fresh" — both
+            # Distinguish "empty workspace" from "everything is too fresh" - both
             # produce zero results but the second one tells the user to wait.
             n_recent = sum(
                 1 for e in active

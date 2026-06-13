@@ -1,20 +1,20 @@
-"""M1 — daemon self-maintenance tick.
+"""M1 - daemon self-maintenance tick.
 
 Nothing ran decay / conflict-scan / declutter automatically: junk accumulated
 unless the user hand-installed cron. The daemon already owns a process
 lifecycle, so it's the natural place to tend the store. Once per
 ``daemon.maintenance_interval_h`` of uptime, and ONLY when the daemon has been
 idle for ``daemon.maintenance_idle_min`` minutes (so it never competes with a
-live request), it runs — each step independently guarded + errlogged so one
+live request), it runs - each step independently guarded + errlogged so one
 failure can't abort the rest:
 
-  * archive_cold      — archive cold / low-value / old fact+activity rows.
+  * archive_cold      - archive cold / low-value / old fact+activity rows.
                         Archive-only (reversible, ``archived_reason=decay_cold``);
                         NEVER lessons / goals, and decisions survive because they
                         carry high importance and live in the semantic tier (R7),
                         above ``decay.archive_cold_max_importance``.
-  * detect_conflicts  — REPORT only (surfaced to ``pmb doctor``); never resolved.
-  * declutter         — DRY-RUN only (report); never auto-applied.
+  * detect_conflicts  - REPORT only (surfaced to ``pmb doctor``); never resolved.
+  * declutter         - DRY-RUN only (report); never auto-applied.
 
 Everything is archive-only or report-only: the tick NEVER hard-deletes, never
 resolves a conflict, and never declutters for real without the user. Gated by
@@ -47,7 +47,7 @@ def should_run_maintenance(
 def run_maintenance_tick(engine: Any, *, archive: bool = True,
                          now: float | None = None) -> dict:
     """Run one maintenance pass. Returns a summary dict
-    ``{ran_at, ok, steps: {name: {...}}}``. Pure of scheduling — the caller
+    ``{ran_at, ok, steps: {name: {...}}}``. Pure of scheduling - the caller
     decides WHEN; this decides WHAT, all archive-only / report-only."""
     summary: dict = {"ran_at": now if now is not None else time.time(),
                      "ok": True, "steps": {}}
@@ -71,17 +71,17 @@ def run_maintenance_tick(engine: Any, *, archive: bool = True,
     else:
         summary["steps"]["archive_cold"] = {"skipped": "maintenance_archive=off"}
 
-    # 2. conflict scan — REPORT only.
+    # 2. conflict scan - REPORT only.
     _step("conflicts", lambda: {"found": len(engine.detect_conflicts())})
 
-    # 3. declutter — DRY-RUN only (never apply).
+    # 3. declutter - DRY-RUN only (never apply).
     def _declutter_dryrun() -> dict:
         from pmb.maintenance.declutter import declutter
         r = declutter(engine, apply=False)
         return {"would_archive": int(r.get("n", 0))}
     _step("declutter_dryrun", _declutter_dryrun)
 
-    # 4. ALD (Phase D) — distil the anchor-fire log into $PMB_HOME/lang/auto.yaml
+    # 4. ALD (Phase D) - distil the anchor-fire log into $PMB_HOME/lang/auto.yaml
     # so the COLD lexical path learns this machine's languages from its own
     # traffic. Writes only when n-grams clear support/precision; safe + local.
     def _distill() -> dict:
@@ -94,7 +94,7 @@ def run_maintenance_tick(engine: Any, *, archive: bool = True,
         return distill_lexicon(engine)
     _step("distill", _distill)
 
-    # 5. E1 — refresh corpus-derived stopwords (document frequency) for this
+    # 5. E1 - refresh corpus-derived stopwords (document frequency) for this
     # workspace and apply them to the live tokenizer. Gated; additive.
     def _corpus_stopwords() -> dict:
         try:
@@ -106,7 +106,7 @@ def run_maintenance_tick(engine: Any, *, archive: bool = True,
         return refresh_corpus_stopwords(engine)
     _step("corpus_stopwords", _corpus_stopwords)
 
-    # 6. F3 — propose channel weights from collected feedback samples (X2 loop).
+    # 6. F3 - propose channel weights from collected feedback samples (X2 loop).
     # Suggestion only; `pmb doctor` surfaces it, never auto-applied.
     def _weight_learning() -> dict:
         try:

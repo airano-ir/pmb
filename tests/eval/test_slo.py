@@ -6,7 +6,9 @@ from pathlib import Path
 
 from pmb.health.slo import SLOS
 
-_ROOT = Path(__file__).resolve().parent.parent
+_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()
+)
 
 
 def test_every_slo_points_at_a_present_test():

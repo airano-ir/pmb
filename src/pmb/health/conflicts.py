@@ -1,5 +1,5 @@
 """
-Conflict Detector — detects contradictions between facts from different times.
+Conflict Detector - detects contradictions between facts from different times.
 
 Idea: one key (for example `database`) can have different values at different
 times. This is either evolution (Postgres 16 → Postgres 17, which is fine) or
@@ -8,14 +8,14 @@ an error (2 live facts contradict each other).
 Detection strategies (without LLM calls):
 1. **Same-key heuristics**: we look for "fact" events whose content has the
    pattern "X = Y" or "X is Y" with the same X but a different Y.
-2. **Semantic clusters**: for qa events — high similarity between the
+2. **Semantic clusters**: for qa events - high similarity between the
    questions (close by embedding) but low similarity between the answers.
 
-In Phase 3 — a simple implementation via regex for facts. Semantic clusters
+In Phase 3 - a simple implementation via regex for facts. Semantic clusters
 are a TODO for the next iteration.
 
 Output: a list of FactConflict with suggested_resolution:
-- "supersede": newer replaces older — automatic resolution
+- "supersede": newer replaces older - automatic resolution
 - "concurrent": both may be true (different branches)
 - "needs_review": requires manual review
 """
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from pmb.core.events import Event
 
 
-# Conservative patterns — only catch identifier-style keys, not free text.
+# Conservative patterns - only catch identifier-style keys, not free text.
 # We deliberately dropped the prior generic "X is Y" pattern: it matched
 # natural language like "the bug is fixed" and produced false conflicts.
 
@@ -44,11 +44,11 @@ KEY_VALUE_PATTERNS = [
     re.compile(rf"(?<![\w.])({_IDENT})\s*=\s*(.+)"),
     # project.foo = value, user.foo = value, also project.foo: value (config-style)
     re.compile(rf"(?<![\w.])((?:project|user)\.{_IDENT})\s*[=:]\s*(.+)", re.IGNORECASE),
-    # "<ident> uses <value>" — single ident only
+    # "<ident> uses <value>" - single ident only
     re.compile(rf"(?<![\w.])({_IDENT})\s+uses\s+(.+)", re.IGNORECASE),
 ]
 
-# Keys we refuse to treat as configuration — common natural-language words
+# Keys we refuse to treat as configuration - common natural-language words
 # that would otherwise generate false-positive conflicts.
 _KEY_BLOCKLIST = {
     "the", "a", "an", "this", "that", "it", "we", "i", "you", "they",
@@ -97,8 +97,8 @@ def extract_key_value(content: str) -> tuple[str, str] | None:
         value = m.group(2).strip()
         # Strip at first newline or sentence end
         value = value.split("\n")[0]
-        # Cut at first ". " or "; " — keep abbreviations like "v1.2" intact
-        for sep in (". ", "; ", " — ", " - "):
+        # Cut at first ". " or "; " - keep abbreviations like "v1.2" intact
+        for sep in (". ", "; ", " - ", " - "):
             idx = value.find(sep)
             if idx > 0:
                 value = value[:idx]
@@ -181,7 +181,7 @@ class ConflictDetector:
                     older_ev.source_session_id == newer_ev.source_session_id
                     and older_ev.source_session_id is not None
                 )
-                # > 7 days apart? — more likely supersede
+                # > 7 days apart? - more likely supersede
                 age_diff_days = (newer_ev.timestamp - older_ev.timestamp) / 86400.0
 
                 if age_diff_days > 7:
@@ -222,7 +222,7 @@ class ConflictDetector:
             analogy: instead of throwing the old version away we synthesize
             an updated one with provenance.
 
-        In dry_run we never write — we just describe what we would do.
+        In dry_run we never write - we just describe what we would do.
         """
         conflicts = self.detect()
         actions = []
@@ -247,7 +247,7 @@ class ConflictDetector:
 
         def _is_protected(ulid: str) -> bool:
             """R12: a pinned (importance>=0.99) or lesson fact must NEVER be
-            auto-archived by conflict resolution — every other archiver in the
+            auto-archived by conflict resolution - every other archiver in the
             codebase protects those, this one didn't."""
             try:
                 import json as _j
@@ -304,7 +304,7 @@ class ConflictDetector:
                             "key": c.key,
                         },
                     )
-                    # Archive both originals — merged fact now carries truth
+                    # Archive both originals - merged fact now carries truth
                     self.engine.events.archive(c.older_ulid)
                     self.engine.events.archive(c.newer_ulid)
                     archived += 2
@@ -337,7 +337,7 @@ class ConflictDetector:
 _MERGE_PROMPT = """\
 Two facts about the same key contradict each other. The newer fact is
 the current truth; the older is history. Write ONE sentence that
-preserves both — current state first, then history — using natural
+preserves both - current state first, then history - using natural
 language.
 
 Examples:
@@ -349,7 +349,7 @@ Examples:
   newer: "auth = JWT + 2FA via TOTP"
   output: "Auth uses JWT with 2FA TOTP added on top (was JWT-only before)."
 
-Now write a single-sentence merged fact for the following — JSON only,
+Now write a single-sentence merged fact for the following - JSON only,
 no prose or code fences:
 
 {"merged": "<your one sentence>"}

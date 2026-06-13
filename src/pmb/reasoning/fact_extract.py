@@ -8,7 +8,7 @@ When the user writes a long message like:
 
 …retrieval on "where does Alice live?" or "who is the new Stripe tech lead?"
 performs much better when those atomic facts exist as standalone, indexable
-events alongside the original — not buried inside a 3-sentence paragraph
+events alongside the original - not buried inside a 3-sentence paragraph
 whose embedding averages all of them out.
 
 This module does the no-LLM version of mem0's fact decomposition:
@@ -78,7 +78,7 @@ _PATTERNS: list[tuple[re.Pattern, str, str]] = [
         r"(?:^|(?<=[.,])\s+)(?P<subj>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+is\s+(?:the\s+|a\s+|an\s+)?(?P<role>(?:[a-z]+\s+){0,3}(?:lead|head|owner|manager|engineer|developer|designer|director|founder|cto|ceo|cfo))(?:\s+at\s+(?P<org>[A-Z][A-Za-z]+))?\b"),
      "role", "{subj} is {role}{at_org}"),
 
-    # Location: "X lives in Y", "X is based in Y" — subject must be at
+    # Location: "X lives in Y", "X is based in Y" - subject must be at
     # start of sentence or preceded by "and"/"."/"," to avoid capturing
     # a noun deep inside a clause as the subject.
     (re.compile(
@@ -90,14 +90,14 @@ _PATTERNS: list[tuple[re.Pattern, str, str]] = [
         r"\b(?P<subj>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?:owns|manages|leads|heads|runs)\s+(?P<obj>[A-Za-z][A-Za-z\s]+)\b",
         re.IGNORECASE), "ownership", "{subj} leads {obj}"),
 
-    # "We use X for Y" — tech choices. Tool can be multi-word
+    # "We use X for Y" - tech choices. Tool can be multi-word
     # ("Cloud Run", "GitHub Actions") via capitalised continuation.
     (re.compile(
         r"\b[Ww]e\s+(?:use|are\s+using)\s+(?P<tool>[A-Z][A-Za-z0-9\-_.]+(?:\s+[A-Z][A-Za-z0-9\-_.]+)?)(?:\s+for\s+(?P<purpose>[a-z][a-z\s]+?)(?=[.,;]|$))?"),
      "tool_choice",
      "We use {tool}{for_purpose}"),
 
-    # "We chose X over Y" — decisions
+    # "We chose X over Y" - decisions
     (re.compile(
         r"\b[Ww]e\s+(?:chose|picked|selected)\s+(?P<a>[A-Za-z][A-Za-z0-9\-_.]+)\s+over\s+(?P<b>[A-Za-z][A-Za-z0-9\-_.]+)",
         re.IGNORECASE), "decision",
@@ -124,7 +124,7 @@ _PATTERNS: list[tuple[re.Pattern, str, str]] = [
 ]
 # RU/UK extraction patterns + their localized output templates live in the
 # built-in ru.yaml / uk.yaml packs under `fact_extract_patterns`
-# ([{re, kind, template, flags}]) — L1 keeps this module Cyrillic-free.
+# ([{re, kind, template, flags}]) - L1 keeps this module Cyrillic-free.
 _FE_FLAG = {"i": re.IGNORECASE, "m": re.MULTILINE, "s": re.DOTALL}
 for _ent in _lang.merged_list("fact_extract_patterns"):
     if not (isinstance(_ent, dict) and _ent.get("re") and _ent.get("kind")):
@@ -201,7 +201,7 @@ def _atomic_from_match(m: re.Match, kind: str, template: str,
         )}, **d}).strip()
         text = re.sub(r"\s+", " ", text)
         # Quality filter: avoid mostly-empty extractions
-        # Min 6 chars / 2 words — short localized atoms (a name or a "lives in
+        # Min 6 chars / 2 words - short localized atoms (a name or a "lives in
         # <city>" fact) are valid. Cuts off truly noisy single-word fragments.
         if len(text) < 6 or len(text.split()) < 2:
             return None

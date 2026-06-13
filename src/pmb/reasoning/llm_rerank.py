@@ -9,8 +9,8 @@ the given query.
 Trade-offs:
   - +100-300ms per query (model load amortised, generation small).
   - +5-15pp top-1 on hard queries (cross-encoder ceiling).
-  - 100% local — no API key, no cost.
-  - Off by default — opt-in flag `recall.llm_rerank` per workspace.
+  - 100% local - no API key, no cost.
+  - Off by default - opt-in flag `recall.llm_rerank` per workspace.
 
 Design choices:
   - Show LLM at most 10 candidates (typical context for small models).

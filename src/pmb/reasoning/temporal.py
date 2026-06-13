@@ -57,7 +57,7 @@ _BARE_MONTH_RE = re.compile(
     r"month|of))",
     re.IGNORECASE,
 )
-# Relative day-counters — translated against a reference 'now'
+# Relative day-counters - translated against a reference 'now'
 _RELATIVE_RE = re.compile(
     r"\b(yesterday|today|tomorrow|"
     r"last\s+(?:week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
@@ -184,7 +184,7 @@ def _to_ts(year: int, month: int, day: int) -> float:
 
 def _infer_year(reference_now: float, month: int) -> int:
     """Pick the year that puts the date <= 6 months from reference (in the
-    past for ambiguous month-day strings — most user references go
+    past for ambiguous month-day strings - most user references go
     backward not forward)."""
     now = datetime.fromtimestamp(reference_now, tz=UTC)
     candidate_this_year = datetime(now.year, month, 1, tzinfo=UTC)

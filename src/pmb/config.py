@@ -44,7 +44,7 @@ class _Setting:
 
 
 # ----------------------------------------------------------------------
-# Tier curation — keep `pmb config list` short and signal-dense
+# Tier curation - keep `pmb config list` short and signal-dense
 # ----------------------------------------------------------------------
 #
 # PMB has ~100 tunables. Most users only need to know the 25 below; the
@@ -52,7 +52,7 @@ class _Setting:
 #
 # When you run `pmb config list` (no flags) you only see the DEFAULT-tier
 # keys. `pmb config list --pro` shows every tunable; `pmb config list
-# --all` is its alias. Same for `pmb config <key>` lookups — every key
+# --all` is its alias. Same for `pmb config <key>` lookups - every key
 # is still readable, just hidden from the default list.
 DEFAULT_TIER_KEYS: frozenset[str] = frozenset({
     # ── Recall (the 7 you'll actually want to touch) ─────────────
@@ -164,7 +164,7 @@ SCHEMA: dict[str, _Setting] = {
     # ── Auto-recall (the hook that bypasses agent cooperation) ─────
     # The UserPromptSubmit hook (`pmb hooks install claude-code`) runs
     # `pmb prepare-context --stdin --auto`. The classifier in
-    # pmb.hooks.auto_recall decides — without asking the model — which
+    # pmb.hooks.auto_recall decides - without asking the model - which
     # PMB calls to pre-execute and inject as context. Sub-100ms on a
     # warm workspace. Knobs here control the dispatcher.
     "auto_recall.enabled": _Setting(
@@ -185,7 +185,7 @@ SCHEMA: dict[str, _Setting] = {
     ),
     "hooks.pretool_guard": _Setting(
         bool, True,
-        "R11: the PreToolUse lesson guard — fire a matching rule ('use pnpm, "
+        "R11: the PreToolUse lesson guard - fire a matching rule ('use pnpm, "
         "never npm') at TOOL-CALL time (when the agent is about to run `npm "
         "install`), even if the agent never called memory. Daemon-served and "
         "ADVISORY (never blocks); a rule fires at most once per session. A "
@@ -195,7 +195,7 @@ SCHEMA: dict[str, _Setting] = {
         bool, False,
         "C5 (opt-in, default OFF): when lexical intent detection finds nothing "
         "AND the engine is warm (daemon-served), classify the message by "
-        "embedding cosine against per-intent exemplars — so a query in a "
+        "embedding cosine against per-intent exemplars - so a query in a "
         "language the lexical patterns don't cover still fires. Default OFF "
         "because the measured finding is the semantic tier doesn't beat lexical "
         "with the default embedder; enable only after an intent eval.",
@@ -226,7 +226,7 @@ SCHEMA: dict[str, _Setting] = {
         "surface a recall hit only if its top score clears this floor. "
         "Set to 0.0 to always surface; raise to 0.5 to suppress noisy hits. "
         "NOTE: `score` is min-max-normalized over the candidate set, so this "
-        "floor is RELATIVE — see auto_recall.evidence_min_cosine for the "
+        "floor is RELATIVE - see auto_recall.evidence_min_cosine for the "
         "absolute companion gate.",
         min=0.0, max=1.0,
     ),
@@ -238,8 +238,8 @@ SCHEMA: dict[str, _Setting] = {
         "top hit's UN-normalized vector similarity (signals.raw_cosine = "
         "1/(1+L2_distance), in [0,1]) to clear this bar, so a question the "
         "workspace knows nothing about surfaces nothing. NOTE the scale is "
-        "compressed (real matches land ~0.05–0.15 with the default embedder, "
-        "not 0.5+), so the right floor is small and DATA-dependent — keep this "
+        "compressed (real matches land ~0.05-0.15 with the default embedder, "
+        "not 0.5+), so the right floor is small and DATA-dependent - keep this "
         "0.0 (off) until the V1 recall eval measures the relevant-vs-noise "
         "distribution on your corpus and picks the floor.",
         min=0.0, max=1.0,
@@ -266,7 +266,7 @@ SCHEMA: dict[str, _Setting] = {
         "decisions and the extra query is wasted.",
     ),
 
-    # ── Ambient memory (auto-write) — memory journals the agent itself ──
+    # ── Ambient memory (auto-write) - memory journals the agent itself ──
     # PostToolUse logs the agent's actions; the Stop hook synthesizes an
     # activity entry ONLY if the agent didn't journal its own work this turn.
     # ON by default: a memory that captures work the agent forgot to record
@@ -276,9 +276,9 @@ SCHEMA: dict[str, _Setting] = {
     "autowrite.enabled": _Setting(
         bool, True,
         "Ambient auto-write: the Stop hook journals what the agent did this "
-        "turn — but ONLY if the agent didn't call record_* itself (so it "
+        "turn - but ONLY if the agent didn't call record_* itself (so it "
         "never duplicates the agent's own, richer summary). Observes actions "
-        "via the PostToolUse hook. ON by default: this is PMB's signature — "
+        "via the PostToolUse hook. ON by default: this is PMB's signature - "
         "memory that captures work even when the agent stays silent. Every "
         "entry is tagged source=autowrite, shown as auto, and removable in "
         "one command (`pmb forget-auto`). Turn off with "
@@ -288,7 +288,7 @@ SCHEMA: dict[str, _Setting] = {
     "autowrite.min_actions": _Setting(
         int, 2,
         "Minimum number of SIGNIFICANT observed actions (edits / tests / "
-        "commits — not reads or ls) before ambient memory bothers to write. "
+        "commits - not reads or ls) before ambient memory bothers to write. "
         "2 is the sweet spot: catches a real unit of work (an edit + a test, "
         "or a couple of edits) without journaling trivial one-offs. Higher = "
         "fewer, chunkier entries.",
@@ -298,8 +298,8 @@ SCHEMA: dict[str, _Setting] = {
         float, 0.45,
         "Quality bar, not just a count: a turn is journaled only if its "
         "estimated importance clears this. Importance comes from OUTCOME "
-        "signals — tests passed, an error got fixed, a deploy/migrate ran, "
-        "the breadth of edits — NOT from how many files were touched alone. "
+        "signals - tests passed, an error got fixed, a deploy/migrate ran, "
+        "the breadth of edits - NOT from how many files were touched alone. "
         "So 'edited two files and nothing else' (score ~0.30) is skipped, "
         "while 'edited + tests green' (~0.55) is kept and ranks higher in "
         "recall. Lower it to capture more; raise it to keep only clear "
@@ -329,7 +329,7 @@ SCHEMA: dict[str, _Setting] = {
     "autowrite.llm_timeout_s": _Setting(
         float, 20.0,
         "Timeout for the LLM synthesizer. On timeout we fall back to the "
-        "template — the turn is never blocked.",
+        "template - the turn is never blocked.",
         min=3.0, max=120.0,
     ),
     "overview.max_events": _Setting(
@@ -386,7 +386,7 @@ SCHEMA: dict[str, _Setting] = {
     ),
     "recall.ppr_enabled": _Setting(
         bool, True,
-        "Personalized PageRank over the entity graph — diffuses relevance "
+        "Personalized PageRank over the entity graph - diffuses relevance "
         "for multi-hop questions. Gated by intent detection (`ppr_always` "
         "off), so single-entity lookups skip it. Default ON since the gate "
         "keeps cost ~0 for non-multi-hop queries and the upside on "
@@ -426,7 +426,7 @@ SCHEMA: dict[str, _Setting] = {
         int, 15000,
         "Overall wall-clock budget (ms) for recall_smart escalation. The "
         "interactive path returns its best-so-far result the moment this is "
-        "exceeded — no stage may start past the deadline. This is a safety "
+        "exceeded - no stage may start past the deadline. This is a safety "
         "ceiling, not a target: the fast path still returns in milliseconds "
         "when confidence is high. Set 30000 to allow up to 30s.",
         min=200, max=120000,
@@ -447,7 +447,7 @@ SCHEMA: dict[str, _Setting] = {
         "the matching keyed fact so the live value "
         "supersedes any stale one; the original fact is kept as history. "
         "Conservative: fires only on explicit present-state phrasing from "
-        "user-origin facts — never reflections / project index / autowrite.",
+        "user-origin facts - never reflections / project index / autowrite.",
     ),
     "keyed.close_on_negation": _Setting(
         bool, True,
@@ -462,14 +462,14 @@ SCHEMA: dict[str, _Setting] = {
         "When a positive keyed value is set (e.g. user::city = Tampa), archive "
         "older active facts that NEGATE or mark-unknown that same attribute "
         "(\"the user does not currently live in Warsaw; current city is "
-        "unknown\") — they assert ignorance about a now-known attribute. "
+        "unknown\") - they assert ignorance about a now-known attribute. "
         "Archive-only (reversible, tagged superseded_by); skips pinned events "
         "and lessons. This is a bug-class fix, so it defaults ON.",
     ),
     "write.quality_gate": _Setting(
         bool, True,
         "Write-time junk gate (default ON since the detector became length-safe "
-        "in 0.6.0 — it flags only empty / placeholder / test-pattern / "
+        "in 0.6.0 - it flags only empty / placeholder / test-pattern / "
         "pure-stopword content, never real short facts like 'O+'). A flagged "
         "fact is NOT rejected: it is tagged metadata.quality_flag=suspect_junk, "
         "its importance is capped at 0.2, and it is excluded from keyed-fact "
@@ -557,7 +557,7 @@ SCHEMA: dict[str, _Setting] = {
         "Exact-duplicate suppression window for `activity` events, in HOURS. "
         "Activities are session-scoped working memory that agents often re-log "
         "seconds apart; within this window an exact-normalized duplicate of an "
-        "ACTIVE activity does not create a new row — the existing row's "
+        "ACTIVE activity does not create a new row - the existing row's "
         "access_count / last_accessed are bumped and its ULID is returned with "
         "{deduped: true}. A single indexed SQL probe, no embedding. Facts and "
         "goals keep their own L1+L2 dedup path (see dedup.*). 0 = off (every "
@@ -567,7 +567,7 @@ SCHEMA: dict[str, _Setting] = {
     "recall.singleflight": _Setting(
         bool, True,
         "Collapse concurrent IDENTICAL top-level recalls (same workspace, query "
-        "and top_k) so the work runs once and followers reuse the result — "
+        "and top_k) so the work runs once and followers reuse the result - "
         "useful in the daemon / multi-agent fan-out. A no-op for single-client "
         "stdio. Followers fall back to an independent recall on timeout, so it "
         "can never deadlock.",
@@ -590,7 +590,7 @@ SCHEMA: dict[str, _Setting] = {
         bool, True,
         "Durable write outbox for record_batch_async. When ON (default), an "
         "async batch is persisted to the write_outbox table synchronously "
-        "before returning, then replayed by a background drainer — so a crash "
+        "before returning, then replayed by a background drainer - so a crash "
         "between accept and write loses nothing. OFF restores the old "
         "fire-and-forget daemon-thread path (only for bisecting).",
     ),
@@ -727,7 +727,7 @@ SCHEMA: dict[str, _Setting] = {
         "of synchronously. ON by default: under concurrent recalls this turns "
         "~16 SQLite write-lock acquisitions per second into ~4. Set False when "
         "recall's side-effects must be visible IMMEDIATELY after the call "
-        "(deterministic tests, single-shot CLI scripts) — recall then drains "
+        "(deterministic tests, single-shot CLI scripts) - recall then drains "
         "the touch buffer inline before returning.",
     ),
     "embed.queue_autoload": _Setting(
@@ -737,7 +737,7 @@ SCHEMA: dict[str, _Setting] = {
         "Default false: the worker passively waits for the model to be loaded "
         "by a legitimate consumer (prewarm/recall/warmup). Eager loading in a "
         "cold stdio MCP process was the cause of Codex 'timed out awaiting "
-        "tools/call after 120s' — a write spawned a full torch model load "
+        "tools/call after 120s' - a write spawned a full torch model load "
         "whose GIL bursts starved the server's event loop under memory "
         "pressure. Writes are durable without the model (embed_queue_pending).",
     ),
@@ -759,14 +759,14 @@ SCHEMA: dict[str, _Setting] = {
         bool, True,
         "v0.9: log which character n-grams co-fire with each anchor so the "
         "maintenance tick can distil them into a per-workspace lexical cache "
-        "($PMB_HOME/lang/auto.yaml) — this is what keeps the COLD path "
+        "($PMB_HOME/lang/auto.yaml) - this is what keeps the COLD path "
         "multilingual without any hand-written language data (ALD, Phase D).",
     ),
     "extract.anchor_keyed": _Setting(
         bool, False,
         "v0.9 C2: warm-only keyed-fact extraction by hypothesis margin when the "
         "regex/pack tier misses (multilingual: RU 'Ya zhivu v Kieve' -> city=Kieve). "
-        "Default OFF — additive, gated on by the F4 keyed-parity eval. Never "
+        "Default OFF - additive, gated on by the F4 keyed-parity eval. Never "
         "loads the model on a cold write path.",
     ),
     "extract.confidence_recall": _Setting(
@@ -786,7 +786,7 @@ SCHEMA: dict[str, _Setting] = {
     "lang.anchor_log_retention_days": _Setting(
         int, 30,
         "v0.9 D3: the ALD distiller only mines anchor-fire rows newer than this, "
-        "and the tick deletes older rows — so the auto.yaml lexical cache reflects "
+        "and the tick deletes older rows - so the auto.yaml lexical cache reflects "
         "RECENT traffic and phrasings the user stopped using age out (recency "
         "self-healing, complementing D2's per-tick precision rebuild).",
     ),
@@ -795,7 +795,7 @@ SCHEMA: dict[str, _Setting] = {
         "v0.9 E1: derive stopwords from this workspace's own document frequency "
         "(>25%) in the maintenance tick instead of a hand list, and union them "
         "into distinctive_tokens / lesson matching (IDF made explicit). Default "
-        "OFF — additive; the English+pack floor stays the bootstrap.",
+        "OFF - additive; the English+pack floor stays the bootstrap.",
     ),
     "recall.weight_learning": _Setting(
         bool, False,
@@ -806,7 +806,7 @@ SCHEMA: dict[str, _Setting] = {
     ),
     "recall.channel_weights": _Setting(
         str, "",
-        "X2 adaptive scoring weights — a JSON object scaling the base recall "
+        "X2 adaptive scoring weights - a JSON object scaling the base recall "
         "channels, e.g. '{\"hit\": 1.1, \"importance\": 0.9, \"recency\": 1.0}'. "
         "Empty (default) = identity = byte-identical to the old fixed formula. "
         "`pmb.reasoning.scoring.propose_channel_weights` can SUGGEST a vector "
@@ -816,7 +816,7 @@ SCHEMA: dict[str, _Setting] = {
         bool, True,
         "R9: rank find_lessons results by lexical strength × importance × "
         "follow-history damping (a rule that surfaces 10×+ and is never "
-        "followed fades) with recency as a tiebreak — instead of lexical "
+        "followed fades) with recency as a tiebreak - instead of lexical "
         "overlap alone. Off restores the legacy (strong, sim, overlap) sort. "
         "Only reorders results; never changes WHICH lessons match.",
     ),
@@ -827,7 +827,7 @@ SCHEMA: dict[str, _Setting] = {
         "surface (find_lessons / auto-recall). 1 is the sweet spot: the "
         "stopword set already strips generic/path noise, so a single "
         "distinctive overlap (pnpm, numpy, lancedb) is a real signal. Raise to "
-        "2 for stricter precision — fewer, surer lessons, which is what makes "
+        "2 for stricter precision - fewer, surer lessons, which is what makes "
         "the adherence follow-rate meaningful instead of drowning in noise.",
         min=1, max=5,
     ),
@@ -836,7 +836,7 @@ SCHEMA: dict[str, _Setting] = {
         "EXPERIMENTAL semantic tier for lesson surfacing: alongside the lexical "
         "token gate, score lessons by cosine on the embeddings recall already "
         "uses, to catch paraphrase / synonym / cross-lingual matches. Not an "
-        "LLM call, just a vector cosine. OFF by default — and a real-workspace "
+        "LLM call, just a vector cosine. OFF by default - and a real-workspace "
         "eval (June 8 2026) with the default MiniLM embedder showed it did NOT "
         "reliably beat the lexical tier: it MISSED obvious matches (e.g. a "
         "LanceDB lesson for an 'apple-silicon vector store' query) and added "
@@ -1111,7 +1111,7 @@ SCHEMA: dict[str, _Setting] = {
         "current-state keyed facts (city/employer/…) from plain facts the "
         "cheap regex missed. confidence>=0.8 positives are upserted via the "
         "canonical keyed-fact path (+ negation-tombstone cleanup); weaker ones "
-        "are tagged metadata.suggested_key. Offline only — never on recall; "
+        "are tagged metadata.suggested_key. Offline only - never on recall; "
         "timeout-clamped + circuit-broken. Default ON (it runs offline anyway).",
     ),
     "consolidate.similarity_threshold": _Setting(
@@ -1240,7 +1240,7 @@ SCHEMA: dict[str, _Setting] = {
     "graph.llm_timeout_s": _Setting(
         float, 30.0,
         "Per-event timeout (seconds) for the LLM extractor CLI. On timeout "
-        "we silently fall back to the regex extractor — never block a write.",
+        "we silently fall back to the regex extractor - never block a write.",
         min=3.0, max=300.0,
     ),
     "graph.async_llm": _Setting(

@@ -1,4 +1,4 @@
-"""`pmb daemon` — manage the persistent memory daemon (B-phase).
+"""`pmb daemon` - manage the persistent memory daemon (B-phase).
 
 The daemon holds ONE warm Engine + embedding model + LanceDB so hook-based
 auto-recall gets real semantic recall instead of the per-process cold skip.

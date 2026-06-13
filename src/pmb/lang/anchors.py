@@ -1,10 +1,10 @@
-"""Semantic Anchor Engine (SAE) — language-free classification of the roles the
+"""Semantic Anchor Engine (SAE) - language-free classification of the roles the
 hand-written lang packs enumerate.
 
 Every function a pack serves (is this a goals question? a trivial ack? a
 self-referential statement?) is re-expressed as a small set of ENGLISH-ONLY
-exemplars: POSITIVES plus HARD NEGATIVES. A text is classified by MARGIN —
-`max cos(text, positives) − max cos(text, negatives)` — against a calibrated
+exemplars: POSITIVES plus HARD NEGATIVES. A text is classified by MARGIN -
+`max cos(text, positives) − max cos(text, negatives)` - against a calibrated
 per-set threshold, with a floor on the positive similarity to reject garbage
 matches. The multilingual embedder already shipped (and already loaded on the
 daemon path) does the cross-lingual transfer: a German or Japanese "what are my
@@ -40,14 +40,14 @@ CALIBRATION_FILE = "anchor_calibration.json"
 @dataclass(frozen=True)
 class AnchorSet:
     """One classifiable role. `name` is dotted (`intent.goals_query`).
-    `positives`/`negatives` are ENGLISH exemplars (8–15 positives is plenty;
+    `positives`/`negatives` are ENGLISH exemplars (8-15 positives is plenty;
     negatives should be NEAR-MISSES, not random sentences). `tau` is the margin
     threshold (recalibrated in A2); `floor` is the minimum positive cosine.
 
     `group` scopes the one-vs-rest competition: a set's rivals are only OTHER
     sets in the SAME group. So the query-intent sets compete among themselves
-    (B1) while the statement detectors (B2 — is-this-a-lesson / future-plan)
-    compete among themselves, and the two tasks never suppress each other — a
+    (B1) while the statement detectors (B2 - is-this-a-lesson / future-plan)
+    compete among themselves, and the two tasks never suppress each other - a
     future-plan statement must not have to out-score `goals_query`."""
     name: str
     positives: tuple[str, ...]
@@ -91,7 +91,7 @@ class AnchorIndex:
         # Thresholds default to the dataclass placeholders; A2's calibration
         # snapshot (keyed by the SAME (model, anchor-defs) hash as the .npz
         # cache) overrides them per set. Editing an anchor's exemplars changes
-        # the key, so a stale snapshot is ignored until recalibrated — the
+        # the key, so a stale snapshot is ignored until recalibrated - the
         # freeze test then fails loudly rather than silently scoring new anchors
         # against thresholds tuned for the old ones.
         self._tau: dict[str, float] = {s.name: s.tau for s in self._sets}
@@ -153,7 +153,7 @@ class AnchorIndex:
 
     def _scores(self, text: str) -> list[tuple[AnchorSet, float, float]]:
         """Per set: pos = best cosine to its positives; margin = pos minus the
-        STRONGEST competing signal — the best positive of any other set IN THE
+        STRONGEST competing signal - the best positive of any other set IN THE
         SAME GROUP (one-vs-rest within the task, so a class must out-score its
         rivals) OR this set's own hard negatives (which catch same-topic-but-
         wrong-act cases other classes can't, e.g. 'I finished that goal').
@@ -275,7 +275,7 @@ INTENT_ANCHORS: list[AnchorSet] = [
     ),
 ]
 
-# B2 — STATEMENT-level binary detectors. Each lives in its OWN group, so it has
+# B2 - STATEMENT-level binary detectors. Each lives in its OWN group, so it has
 # NO rivals (margin = pos − hard-negative only): they are independent yes/no
 # detectors, not a one-vs-rest classification, and must not compete with the
 # intent tier or each other. Consumed warm-only by memory_quality.is_lesson_intent

@@ -68,7 +68,7 @@ def make_handler(engine):
             self.wfile.write(data)
 
         def log_message(self, fmt, *args):
-            # Quiet — don't spam stdout per request
+            # Quiet - don't spam stdout per request
             log.debug(fmt, *args)
 
         # ------------------------------------------------------------------
@@ -193,7 +193,7 @@ def make_handler(engine):
             ulids = [e.ulid for e in evs]
             # Bulk-load top entities per event so the Timeline UI can group
             # by project without N+1 queries. We pick the 3 highest-mention
-            # entities per event — that's plenty for the lane assignment
+            # entities per event - that's plenty for the lane assignment
             # heuristic ("project = top entity") plus a tooltip.
             ent_map: dict[str, list[dict]] = {u: [] for u in ulids}
             if ulids:
@@ -400,7 +400,7 @@ def make_handler(engine):
                 return {"error": str(e)}
 
         def _handle_dedup_sweep(self, payload: dict) -> dict:
-            """Trigger a full workspace sweep (background-ish — blocks request)."""
+            """Trigger a full workspace sweep (background-ish - blocks request)."""
             threshold = float(payload.get("threshold", 0.92))
             try:
                 return engine.dedupe_sweep(threshold=threshold)
@@ -413,7 +413,7 @@ def make_handler(engine):
             Top-N entities by mentions; only edges between included nodes.
 
             Honors `graph.viz_min_mentions` so one-off concepts (mentions=1) can
-            be hidden from the dashboard without touching the DB — useful when
+            be hidden from the dashboard without touching the DB - useful when
             the regex extractor produces a long tail of word-noise.
             """
             import sqlite3
@@ -456,7 +456,7 @@ def make_handler(engine):
                     "target": r["entity_b"],
                     "weight": r["weight"],
                     # All graph edges in PMB are entity co-occurrence within
-                    # the same event. There is no verb / typed relation yet —
+                    # the same event. There is no verb / typed relation yet -
                     # we expose this explicitly so the UI can label correctly.
                     "kind": "co_occurrence",
                 }
@@ -578,7 +578,7 @@ def make_handler(engine):
 
 
 def run_dashboard(engine, host: str = "127.0.0.1", port: int = 8765) -> None:
-    """Blocking — runs until KeyboardInterrupt."""
+    """Blocking - runs until KeyboardInterrupt."""
     handler = make_handler(engine)
     server = ThreadingHTTPServer((host, port), handler)
     print(f"PMB dashboard at http://{host}:{port}")

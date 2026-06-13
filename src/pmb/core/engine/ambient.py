@@ -1,22 +1,22 @@
-"""Ambient memory — the memory observes the agent and journals on its own.
+"""Ambient memory - the memory observes the agent and journals on its own.
 
 The write side of PMB historically depended on the agent remembering to
 call `record_batch`. It often doesn't. Ambient memory closes that gap the
 same way auto-recall closed the read side: a PostToolUse hook streams the
-agent's ACTIONS into a lightweight log, and a Stop hook decides — only if
-the agent didn't journal anything itself this turn — whether to synthesize
+agent's ACTIONS into a lightweight log, and a Stop hook decides - only if
+the agent didn't journal anything itself this turn - whether to synthesize
 an activity entry from those raw actions.
 
 This mixin is the data + policy layer:
 
-  • record_agent_action      — append one observed action (PostToolUse)
-  • recent_agent_actions     — read the raw action log for a window
-  • agent_wrote_recently     — did the agent call record_* this turn?
-  • is_significant_action     — filter: a code edit counts, `ls` doesn't
-  • forget_auto_written      — user control: drop memory the agent wrote
+  • record_agent_action      - append one observed action (PostToolUse)
+  • recent_agent_actions     - read the raw action log for a window
+  • agent_wrote_recently     - did the agent call record_* this turn?
+  • is_significant_action     - filter: a code edit counts, `ls` doesn't
+  • forget_auto_written      - user control: drop memory the agent wrote
                                 itself (kept honest + reversible)
 
-No model, no network — pure SQLite. The synthesis + CLI live elsewhere
+No model, no network - pure SQLite. The synthesis + CLI live elsewhere
 (pmb.hooks.autowrite, `pmb track-action`, `pmb autowrite`).
 """
 
@@ -41,7 +41,7 @@ from pmb.core.ambient_log import (
 
 class AmbientMixin:
     # ──────────────────────────────────────────────────────────────────
-    # schema / significance — delegate to ambient_log
+    # schema / significance - delegate to ambient_log
     # ──────────────────────────────────────────────────────────────────
     def _ensure_agent_actions_table(self, conn: sqlite3.Connection) -> None:
         _ensure_table(conn)
@@ -129,11 +129,11 @@ class AmbientMixin:
                 return bool(row and row[0] > 0)
         except Exception:
             # mcp_calls table may not exist (non-MCP workspace). If we can't
-            # tell, assume the agent did NOT write — ambient is opt-in anyway.
+            # tell, assume the agent did NOT write - ambient is opt-in anyway.
             return False
 
     # ──────────────────────────────────────────────────────────────────
-    # control — user owns every byte
+    # control - user owns every byte
     # ──────────────────────────────────────────────────────────────────
     def forget_auto_written(self, minutes: float | None = None) -> int:
         """Archive activity events that ambient memory wrote itself

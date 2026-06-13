@@ -27,8 +27,9 @@ from pmb.lang.anchors import (
     AnchorIndex,
 )
 
-_SNAP_PATH = Path(__file__).resolve().parents[1] / "src" / "pmb" / "lang" / \
-    CALIBRATION_FILE
+_SNAP_PATH = next(
+    p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()
+) / "src" / "pmb" / "lang" / CALIBRATION_FILE
 
 
 def _snapshot() -> dict:

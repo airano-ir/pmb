@@ -1,20 +1,20 @@
-"""Project observer — ambient memory for MCP-only agents (Cursor, VS Code,
+"""Project observer - ambient memory for MCP-only agents (Cursor, VS Code,
 Zed, Gemini, Windsurf, …).
 
 Those hosts give PMB no hooks and no parseable action log, so we can't watch
 the *agent*. But the agent's work lands as **file changes in the project**,
-and those we CAN watch — independently of the host. The observer polls git
+and those we CAN watch - independently of the host. The observer polls git
 for changed files (cross-platform, no extra deps, no watchdog), records each
-as an agent action, and — after the project goes idle for a bit (the
-"turn-ended" signal we don't get from a Stop hook) — runs the same ambient
+as an agent action, and - after the project goes idle for a bit (the
+"turn-ended" signal we don't get from a Stop hook) - runs the same ambient
 auto-write as Claude Code / Codex.
 
 Tradeoffs vs hook-based ambient (honest):
   • Sees file edits, not shell commands (no Bash/pytest/commit unless they
-    change tracked files — though commits show up via git log separately).
+    change tracked files - though commits show up via git log separately).
   • "Turn end" is approximated by an idle timer, not an exact Stop event.
   • Attributes any change in the working tree, including ones you made by
-    hand — it's "what happened in the project", not strictly "what the agent
+    hand - it's "what happened in the project", not strictly "what the agent
     did". That's usually fine for a journal.
 
 Pure stdlib + git subprocess. Used by `pmb ambient-watch`.
@@ -57,7 +57,7 @@ def _dirty_files(repo: Path) -> list[str]:
             continue
         code, path = line[:2], line[3:].strip()
         if code.strip() in ("D", "DD") or code == " D":
-            continue  # deletion — skip
+            continue  # deletion - skip
         # Renames look like "old -> new"; take the new path.
         if " -> " in path:
             path = path.split(" -> ", 1)[1]

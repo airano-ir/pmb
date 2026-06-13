@@ -1,6 +1,6 @@
 """Process-wide circuit breaker for flaky / slow backends (issue #12).
 
-After N consecutive failures (timeouts or errors) a backend is "opened" — its
+After N consecutive failures (timeouts or errors) a backend is "opened" - its
 calls are skipped for a cooldown window, so PMB degrades to cheaper local
 behaviour instead of hammering a dead backend on every request. A single
 success closes it again.
@@ -8,7 +8,7 @@ success closes it again.
 In-memory and process-wide (the MCP server is a single long-lived process),
 deliberately dependency-free. Current state is exposed via ``status()`` for the
 ``stats`` tool / dashboard. The same primitives can wrap any backend
-(``"llm"``, ``"reranker"``, ``"embedding"``, …) — wire a call site with
+(``"llm"``, ``"reranker"``, ``"embedding"``, …) - wire a call site with
 ``is_open`` + ``record_failure`` / ``record_success``.
 """
 from __future__ import annotations
@@ -69,7 +69,7 @@ def reset(backend: str | None = None) -> None:
 
 
 def status() -> dict:
-    """Snapshot of all known breakers — for `stats` / dashboard / `pmb health`."""
+    """Snapshot of all known breakers - for `stats` / dashboard / `pmb health`."""
     now = time.time()
     out: dict[str, dict] = {}
     for name, st in _BREAKERS.items():

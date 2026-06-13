@@ -1,5 +1,5 @@
 """
-Reflective Memory — the core of PMB v2.
+Reflective Memory - the core of PMB v2.
 
 What it does:
   For each new event (or a batch in sleep), an LLM asks itself:
@@ -11,11 +11,11 @@ What it does:
 The LLM's answers are saved as NEW events with event_type='reflection',
 metadata.source_ulid pointing back to the original. Because they live in
 the regular events table, the existing hybrid+graph+rerank recall pipeline
-finds them automatically — no new index, no read-time LLM.
+finds them automatically - no new index, no read-time LLM.
 
 Why this beats classic RAG memory:
   Multi-hop questions like "what did Alice do after meeting Bob?" fail in
-  classic RAG because the answer event mentions only Alice — not Bob, not
+  classic RAG because the answer event mentions only Alice - not Bob, not
   'after'. Pure similarity search can't bridge.
   With reflection, the meeting event spawns a reflection containing
   'might-answer: what did Alice do after seeing Bob?'. That reflection
@@ -34,7 +34,7 @@ Cost model:
   user never waits.
 
 Failure mode:
-  If LLM is unavailable, reflections aren't generated. PMB still works —
+  If LLM is unavailable, reflections aren't generated. PMB still works -
   it just doesn't get the multi-hop boost. Graceful degradation.
 """
 
@@ -63,20 +63,20 @@ Your job: extract DEEP semantic context that makes this event findable for
 future questions, even questions that don't share the event's exact words.
 
 Output VALID JSON with these keys:
-  "significance":   one sentence — why does this matter? what makes it notable?
-  "implications":   array of 1-3 short strings — what this sets up, enables, or rules out
+  "significance":   one sentence - why does this matter? what makes it notable?
+  "implications":   array of 1-3 short strings - what this sets up, enables, or rules out
   "might_answer":   array of 2-4 short hypothetical user questions this event helps answer.
                     These should phrase the same fact in different ways and capture multi-hop angles.
   "linked_themes":  array of 1-3 short topic tags ("relationship_with_bob", "postgres_migration", etc.)
   "people":         array of person names mentioned (lowercase, distinct)
-  "time_anchor":    short string — when did this happen? ("dec 2025", "after the trip", etc.) or "" if unclear
+  "time_anchor":    short string - when did this happen? ("dec 2025", "after the trip", etc.) or "" if unclear
 
 Rules:
 - Output ONLY the JSON, no preamble, no markdown fences.
 - Keep each string under 120 chars.
 - Be specific. Don't paraphrase the event; extract what's IMPLIED.
 - 'might_answer' is the most important field. Imagine someone reading
-  this event 6 months later — what questions would point them here?
+  this event 6 months later - what questions would point them here?
 
 Event content:
 \"\"\"
@@ -218,7 +218,7 @@ class Reflector:
         if hasattr(self.llm, "complete"):
             return self.llm.complete(prompt) or ""
         if hasattr(self.llm, "consolidate"):
-            # Existing consolidate client returns dict — repurpose by stuffing
+            # Existing consolidate client returns dict - repurpose by stuffing
             # our prompt as the only text.
             out = self.llm.consolidate([prompt])
             if isinstance(out, dict):

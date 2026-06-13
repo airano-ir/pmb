@@ -12,7 +12,7 @@ What it does right now:
   5. On exit (Ctrl-D / Ctrl-C / `/exit`), optionally run `pmb consolidate`.
 
 This is enough to demonstrate end-to-end "agent + PMB + custom compaction"
-on a tiny scale. It is NOT a Claude Code replacement — no tool use, no
+on a tiny scale. It is NOT a Claude Code replacement - no tool use, no
 file editing, no multi-turn tool chaining. See `PLAN.md` for what's
 missing.
 """
@@ -35,7 +35,7 @@ You are a coding assistant with persistent project memory.
 You have access to a local PMB store via injected recall context below.
 
 When the user asks a project-specific question, the latest recall pack is
-already in the system prompt — use it, cite specific points, do not
+already in the system prompt - use it, cite specific points, do not
 invent details that aren't in either the recall or the live conversation.
 """
 
@@ -72,7 +72,7 @@ class AgentLoop:
         self.budget = TokenBudget(
             window=self.config.window, target_max=self.config.target_max,
         )
-        # Selective policy needs an LLM for summarization — wire the same
+        # Selective policy needs an LLM for summarization - wire the same
         # backend selector consolidation uses, so both share a transport.
         if policy is not None:
             self.policy = policy
@@ -107,7 +107,7 @@ class AgentLoop:
     def _try_make_summary_llm(self):
         """Best-effort LLM for narrative summarization in SelectivePolicy.
 
-        Falls back to None — SelectivePolicy will use a head+tail heuristic
+        Falls back to None - SelectivePolicy will use a head+tail heuristic
         when no LLM is available.
         """
         try:

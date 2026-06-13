@@ -1,15 +1,15 @@
 """Shared lexical-matching primitives for lesson relevance.
 
 Two places judge whether a lesson relates to a piece of text:
-  • `find_lessons` (surface side) — should this lesson surface for this message?
-  • `hooks.followcheck` (confirm side) — did the agent's work follow the lesson?
+  • `find_lessons` (surface side) - should this lesson surface for this message?
+  • `hooks.followcheck` (confirm side) - did the agent's work follow the lesson?
 
 They must use the SAME yardstick, or we get the worst case: a lesson surfaces
 on a loose match (one common word) but then can never be confirmed followed,
 so it just drags the adherence denominator down. Centralising the tokenizer,
 the stopword set, and the "strong token" test here keeps both sides symmetric.
 
-Pure stdlib (`re`), no embeddings — cheap enough for the per-turn hot path.
+Pure stdlib (`re`), no embeddings - cheap enough for the per-turn hot path.
 """
 
 from __future__ import annotations
@@ -33,25 +33,25 @@ STOPWORDS: frozenset[str] = frozenset({
     "any", "all", "more", "most", "less", "only", "just", "also", "still",
     "here", "there", "where", "while", "until", "they", "them", "their",
     "make", "made", "need", "want", "like", "such", "very", "much", "many",
-    # (Russian/Ukrainian stop-ish words — incl. "pmb" spelled in Cyrillic —
+    # (Russian/Ukrainian stop-ish words - incl. "pmb" spelled in Cyrillic -
     # live in the packs under text_match_stopwords and merge in below, keeping
     # this module Cyrillic-free.)
-    # PMB-generic — appear in almost every lesson, no discriminating power
+    # PMB-generic - appear in almost every lesson, no discriminating power
     "pmb", "lesson", "rule", "agent", "code", "file", "test", "run", "tests",
     "thing", "things", "stuff", "case", "cases", "time", "times", "work",
-    # Filesystem-path noise (Windows + generic) — coincidental on any path
+    # Filesystem-path noise (Windows + generic) - coincidental on any path
     "users", "appdata", "local", "roaming", "program", "programdata", "temp",
     "tmp", "windows", "documents", "desktop", "onedrive", "home", "path",
     "folder", "directory", "drive",
 })
 
 # Per-deployment extension: reference.yaml `stopwords`, then active language
-# packs (extend-only — both no-ops without the respective files).
+# packs (extend-only - both no-ops without the respective files).
 STOPWORDS = _extend_set("stopwords", STOPWORDS)
 from pmb import lang as _lang  # noqa: E402
 
 STOPWORDS = _lang.merged_set("stopwords", STOPWORDS)
-# RU/UK lesson-keyword stopwords relocated out of the inline set (L1) — a
+# RU/UK lesson-keyword stopwords relocated out of the inline set (L1) - a
 # DEDICATED category so they never bleed into pamvr's `stopwords` consumer.
 STOPWORDS = _lang.merged_set("text_match_stopwords", STOPWORDS)
 
@@ -68,11 +68,11 @@ def apply_corpus_stopwords(words) -> None:
     global _CORPUS_STOPWORDS
     _CORPUS_STOPWORDS = {str(w).strip().lower() for w in (words or ()) if str(w).strip()}
 
-# A "distinctive" token: a word-char start, then word chars / - . — so
+# A "distinctive" token: a word-char start, then word chars / - . - so
 # identifiers like record_batch / qwen2.5 / paraphrase-multilingual survive
 # intact. Length and stopword filtering happen in distinctive_tokens.
-# E2: the start class is now `\w` (str-level Unicode word char) — letters of ANY
-# script, digits, underscore — so Cyrillic / Greek / accented Latin / CJK all
+# E2: the start class is now `\w` (str-level Unicode word char) - letters of ANY
+# script, digits, underscore - so Cyrillic / Greek / accented Latin / CJK all
 # tokenize with NO enumerated script range. Identical to the old explicit class
 # for Latin/Cyrillic/digit starts; only additive for other scripts.
 _TOKEN = re.compile(r"\w[\w\-.]{2,}", re.UNICODE)
@@ -95,14 +95,14 @@ def is_strong(tok: str) -> bool:
 
 
 def distinctive_tokens(text: str) -> set[str]:
-    """Lower-cased, length->=4, non-stopword, non-pure-digit tokens — the set
+    """Lower-cased, length->=4, non-stopword, non-pure-digit tokens - the set
     we measure overlap on.
 
     Identifiers stay intact (record_batch, qwen2.5). For HYPHENATED compounds
     we keep BOTH the whole token and its parts (lesson-surfacing -> also
     'surfacing'; cold-start -> also 'cold', 'start'). Hyphens join compound
     words, so without the split a query word like 'surfacing' would miss a
-    'lesson-surfacing' lesson — the previous \\W+ tokenizer split these, and
+    'lesson-surfacing' lesson - the previous \\W+ tokenizer split these, and
     keeping hyphens for identifiers must not silently drop compound-word
     recall. Underscores (identifier-internal: record_batch) are NOT split."""
     out: set[str] = set()
@@ -136,7 +136,7 @@ def relevance(query: str, content: str) -> tuple[int, int]:
 def is_relevant(query: str, content: str, *, min_overlap: int = 2) -> bool:
     """Symmetric relevance bar: the lesson relates to the query if they share
     >= `min_overlap` distinctive tokens OR >= 1 strong (identifier-grade)
-    token. One common word is NOT enough — that's the low bar that floods
+    token. One common word is NOT enough - that's the low bar that floods
     surfacing with noise. An empty query (no distinctive tokens) is treated as
     'no opinion' → True, so callers that want recency-only still get results."""
     q = distinctive_tokens(query)

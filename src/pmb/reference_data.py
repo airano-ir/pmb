@@ -7,7 +7,7 @@ A missing or malformed file → defaults only (identical behaviour), with a
 logged warning on malformed input.
 
 This keeps PMB's deterministic core as DATA the user can grow without editing
-Python — a step toward the "small core + config + offline-LLM" architecture.
+Python - a step toward the "small core + config + offline-LLM" architecture.
 
 reference.yaml schema (all keys optional):
 

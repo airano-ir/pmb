@@ -4,7 +4,7 @@
 inlined, no CDN, no network) that draws the workspace's entity/association
 graph as an interactive force-directed canvas: zoom/pan, drag, hover, click a
 node to focus its neighbours, search, filter by kind, and re-size nodes by
-mention count or recency. It is meant to be a shareable artifact — one file you
+mention count or recency. It is meant to be a shareable artifact - one file you
 can open offline or send to someone.
 
 Read-only: pulls from the graph store, never touches recall ranking.
@@ -44,7 +44,7 @@ def build_memory_html(
     return (
         _TEMPLATE
         .replace("/*__DATA__*/null", data_json)
-        .replace("__TITLE__", (title or f"PMB memory — {payload['workspace']}"))
+        .replace("__TITLE__", (title or f"PMB memory - {payload['workspace']}"))
     )
 
 

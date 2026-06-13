@@ -1,10 +1,10 @@
-"""`pmb declutter` — sweep obvious junk out of memory (archive-only).
+"""`pmb declutter` - sweep obvious junk out of memory (archive-only).
 
 Heuristic-first: test artifacts, near-empty / pure-stopword content, exact
 duplicates, and negation tombstones already obsoleted by a positive keyed
 value. An optional bounded-LLM judge (--llm) reviews ONLY the low-value
 borderline remainder, capped and behind the SAME circuit breaker as recall's
-decomposition — never on a hot path (this is a manual maintenance command).
+decomposition - never on a hot path (this is a manual maintenance command).
 
 Everything is archive-only (reversible) and tagged
 metadata.archived_reason="declutter" + declutter_reason=<why>.
@@ -19,13 +19,13 @@ from collections import defaultdict
 from pmb import lang as _lang
 
 # E2: word tokenizer uses a Unicode letters+digits class (`[^\W_]`, any script)
-# plus apostrophe — no enumerated Cyrillic range, still tokenizes RU/UK content.
+# plus apostrophe - no enumerated Cyrillic range, still tokenizes RU/UK content.
 _WORD_TOK = r"(?:[^\W_]|')+"
 
 # Keys/content that scream "test data". Content markers are deliberately
 # HIGH-PRECISION (declutter ARCHIVES): we dropped collision-prone keyboard
-# mashes — "asdf" is a real tool (asdf-vm), "qwerty"/"foobar" appear in real
-# notes — and keep only unambiguous test/placeholder strings.
+# mashes - "asdf" is a real tool (asdf-vm), "qwerty"/"foobar" appear in real
+# notes - and keep only unambiguous test/placeholder strings.
 _TEST_KEY_RE = re.compile(r"test_attr|tmp_|dummy|placeholder|__test__", re.IGNORECASE)
 _TEST_CONTENT_RE = re.compile(
     r"\b(?:final_value|lorem ipsum|test123|placeholder text)\b|x{5,}",
@@ -57,10 +57,10 @@ def _is_pure_stopwords(content: str) -> bool:
 
 def is_suspect_junk(content: str) -> bool:
     """Cheap write-time quality heuristic shared with the declutter sweeper:
-    True only for EVIDENCE of junk — empty, placeholder/test patterns, or pure
+    True only for EVIDENCE of junk - empty, placeholder/test patterns, or pure
     stopwords. Length ALONE never condemns content: real memories are routinely
     2-7 chars ("O+", "B-", "HIV+", "ADHD", "INTJ", "Tampa"). Used by the
-    optional write-time quality gate (config write.quality_gate). Conservative —
+    optional write-time quality gate (config write.quality_gate). Conservative -
     it only FLAGS, never rejects."""
     s = (content or "").strip()
     if not s:
@@ -78,12 +78,12 @@ def _protected(meta: dict, importance: float) -> bool:
 
 
 def find_heuristic_candidates(engine) -> list[dict]:
-    """Return [{ulid, reason, content}] for clear junk — no LLM.
+    """Return [{ulid, reason, content}] for clear junk - no LLM.
 
     Reasons that are SAFE to auto-archive (apply set): quality_flag,
     test_artifact, near_empty (empty/stopword only), exact_duplicate.
     The `short_review` reason (1-7 char non-stopword content like "O+",
-    "ADHD") is REVIEW-ONLY — surfaced in the dry-run table but excluded from
+    "ADHD") is REVIEW-ONLY - surfaced in the dry-run table but excluded from
     `--apply` unless the caller passes aggressive=True, because short ≠ junk.
     """
     out: list[dict] = []
@@ -132,7 +132,7 @@ def find_heuristic_candidates(engine) -> list[dict]:
             chosen.add(r["ulid"])
             continue
         # 2. near-empty / short plain facts & activities. A KEYED value ("O+"
-        #    under user::blood_type) is structure, never near-empty — skip it.
+        #    under user::blood_type) is structure, never near-empty - skip it.
         if r["event_type"] in ("fact", "activity") and not key:
             stripped = content.strip()
             if not stripped or _is_pure_stopwords(stripped):
@@ -141,7 +141,7 @@ def find_heuristic_candidates(engine) -> list[dict]:
                 chosen.add(r["ulid"])
                 continue
             if len(stripped) < 8:
-                # short but NOT empty/stopword — review-only, never auto-applied
+                # short but NOT empty/stopword - review-only, never auto-applied
                 out.append({"ulid": r["ulid"], "reason": "short_review",
                             "content": content[:100]})
                 chosen.add(r["ulid"])
@@ -156,7 +156,7 @@ def find_heuristic_candidates(engine) -> list[dict]:
                     "access": int(r["access_count"] or 0),
                 })
 
-    # 3b. duplicates — keep the most VALUABLE copy (importance, then access
+    # 3b. duplicates - keep the most VALUABLE copy (importance, then access
     #     count, then recency), archive the rest. Keeping "newest" alone would
     #     discard a pinned-adjacent / frequently-recalled older original.
     for norm, lst in dup_groups.items():
@@ -258,7 +258,7 @@ def declutter(engine, apply: bool = False, use_llm: bool = False,
     """Find (and optionally archive) junk memories.
 
     `aggressive=True` also archives the review-only `short_review` class
-    (1-7 char non-stopword facts) — off by default because short ≠ junk.
+    (1-7 char non-stopword facts) - off by default because short ≠ junk.
 
     Returns {candidates: [{ulid, reason, content}], n, n_applied, dry_run,
     llm_used, aggressive, by_reason: {reason: count}}.
@@ -297,7 +297,7 @@ def declutter(engine, apply: bool = False, use_llm: bool = False,
     if apply and candidates:
         for c in candidates:
             if not _applyable(c["reason"]):
-                continue  # review-only class — never auto-archived
+                continue  # review-only class - never auto-archived
             try:
                 engine.events.archive(c["ulid"])
                 with sqlite3.connect(str(engine.workspace.db_path)) as conn:

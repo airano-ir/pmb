@@ -7,11 +7,11 @@ Three tables (created by migration v2 on first open):
     UNIQUE(workspace_id, kind, name)
 
   graph_event_entities (event_ulid, entity_id, PRIMARY KEY)
-    — many-to-many; lets us answer "which events mention entity X"
+    - many-to-many; lets us answer "which events mention entity X"
 
   graph_edges (workspace_id, entity_a, entity_b, weight, last_seen)
     PRIMARY KEY (workspace_id, entity_a, entity_b)
-    — co-mention edges; weight increments on each fresh co-occurrence
+    - co-mention edges; weight increments on each fresh co-occurrence
 
 Edges are undirected; we always store with `entity_a < entity_b` (by id)
 to avoid double-counting.
@@ -135,7 +135,7 @@ class GraphStore:
 
         Single atomic UPSERT: the previous SELECT-then-INSERT raced under
         concurrent writers (two threads both miss the SELECT, the second
-        INSERT dies on the UNIQUE(workspace_id, kind, name) constraint —
+        INSERT dies on the UNIQUE(workspace_id, kind, name) constraint -
         seen live from parallel record_fact calls). ON CONFLICT converts the
         loser's INSERT into the mention bump instead. RETURNING needs
         SQLite ≥ 3.35 (2021)."""
@@ -325,7 +325,7 @@ class GraphStore:
         self, workspace_id: str, limit: int = 300, max_edges: int = 4000
     ) -> dict:
         """Nodes + edges for the memory visualization: the top `limit` entities
-        by mention count and the edges among them. Read-only — never touches
+        by mention count and the edges among them. Read-only - never touches
         recall ranking. Returns plain JSON-ready dicts.
         """
         with self._conn() as conn:

@@ -1,5 +1,5 @@
 """
-`pmb doctor` — diagnose install and runtime state.
+`pmb doctor` - diagnose install and runtime state.
 
 Prints a checklist for the user: Python, deps, embedding model, git,
 PMB_HOME writability, MCP config hint. No fixes, just reporting.
@@ -46,7 +46,7 @@ def _fail(msg: str) -> dict:
 def check_python() -> dict:
     v = sys.version_info
     if (v.major, v.minor) < MIN_PY:
-        return _fail(f"Python {v.major}.{v.minor} — requires >= {MIN_PY[0]}.{MIN_PY[1]}")
+        return _fail(f"Python {v.major}.{v.minor} - requires >= {MIN_PY[0]}.{MIN_PY[1]}")
     return _ok(f"Python {v.major}.{v.minor}.{v.micro}")
 
 
@@ -66,7 +66,7 @@ def check_deps() -> dict:
         except ImportError:
             missing.append(dep)
     if missing:
-        return _fail(f"missing deps: {', '.join(missing)} — run `pip install -e .[dev]`")
+        return _fail(f"missing deps: {', '.join(missing)} - run `pip install -e .[dev]`")
     return _ok("all deps importable: " + ", ".join(f"{k}={v}" for k, v in versions.items()))
 
 
@@ -81,7 +81,7 @@ def check_embedding_model() -> dict:
         if p.exists():
             return _ok(f"embedding model cache found: {p}")
     return _warn(
-        "embedding model not cached yet — first recall will download ~80MB. "
+        "embedding model not cached yet - first recall will download ~80MB. "
         f"Cache root: {hf_cache}"
     )
 
@@ -126,7 +126,7 @@ def check_consolidation_backend() -> dict:
     if available:
         primary = available[0]
         return _ok(
-            f"`pmb consolidate` ready — available: {', '.join(available)}. "
+            f"`pmb consolidate` ready - available: {', '.join(available)}. "
             f"`auto` will use [{primary}]."
         )
     return _warn(
@@ -141,7 +141,7 @@ def check_consolidation_backend() -> dict:
 def check_git() -> dict:
     git = shutil.which("git")
     if not git:
-        return _warn("git not found in PATH — git sync will be a no-op")
+        return _warn("git not found in PATH - git sync will be a no-op")
     try:
         out = subprocess.run(
             [git, "--version"], capture_output=True, text=True, timeout=2,
@@ -162,7 +162,7 @@ def check_current_workspace() -> dict:
     meta_exists = ws.meta_path.exists()
     if not meta_exists:
         return _warn(
-            f"no workspace metadata at {ws.storage_dir} yet — run `pmb init`"
+            f"no workspace metadata at {ws.storage_dir} yet - run `pmb init`"
         )
 
     try:
@@ -195,7 +195,7 @@ def check_recent_errors() -> dict:
         return _ok("no errors in the last 24h")
     total = sum(counts.values())
     top = ", ".join(f"{k}={v}" for k, v in list(counts.items())[:5])
-    return _warn(f"{total} swallowed error(s) in last 24h — {top}")
+    return _warn(f"{total} swallowed error(s) in last 24h - {top}")
 
 
 def check_quality_flags() -> dict:
@@ -220,7 +220,7 @@ def check_quality_flags() -> dict:
         return _ok(f"quality-flag count unavailable: {e}")
     if not n:
         return _ok("no facts flagged as junk in the last 30d")
-    return _ok(f"{n} fact(s) flagged suspect_junk (30d) — review with "
+    return _ok(f"{n} fact(s) flagged suspect_junk (30d) - review with "
                f"`pmb declutter`")
 
 
@@ -234,7 +234,7 @@ def mcp_config_hint() -> dict:
     server["env"] = {"PMB_CWD": str(Path.cwd())}
     snippet = {"mcpServers": {"pmb": server}}
     return _ok(
-        "MCP server entry — LOCAL (paste into Claude Code mcp.json):\n"
+        "MCP server entry - LOCAL (paste into Claude Code mcp.json):\n"
         + json.dumps(snippet, indent=2, ensure_ascii=False)
     )
 
@@ -263,7 +263,7 @@ def mcp_remote_config_hint(remote: str) -> dict:
         }
     }
     return _ok(
-        "MCP server entry — REMOTE (PMB and Ollama live on the server):\n"
+        "MCP server entry - REMOTE (PMB and Ollama live on the server):\n"
         + json.dumps(snippet, indent=2, ensure_ascii=False)
         + "\n\nPrereqs:\n"
         + f"  - passwordless SSH to {target} (key in ~/.ssh/authorized_keys)\n"
@@ -362,7 +362,7 @@ def check_graph_extractor() -> dict:
 
 def check_channel_weights() -> dict:
     """F3: surface the X2 channel-weights SUGGESTION the tick proposed (never
-    auto-applied — the user inspects and applies it explicitly)."""
+    auto-applied - the user inspects and applies it explicitly)."""
     try:
         import json as _json
 
@@ -378,7 +378,7 @@ def check_channel_weights() -> dict:
         wtxt = ", ".join(f"{k}:{float(v):.2f}" for k, v in w.items())
         return {"status": "warn",
                 "msg": f"learned {{{wtxt}}} from {s.get('n_useful')}/"
-                       f"{s.get('n_samples')} useful samples — apply with: "
+                       f"{s.get('n_samples')} useful samples - apply with: "
                        f"pmb config set recall.channel_weights '{_json.dumps(w)}'"}
     except Exception:
         return {"status": "ok", "msg": "channel-weights check skipped"}

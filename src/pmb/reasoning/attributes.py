@@ -2,25 +2,25 @@
 current-state statements.
 
 A keyed fact is stored under a `subject::attribute` key (e.g. ``user::city``).
-Without canonicalization, synonymous attribute labels — ``city`` /
+Without canonicalization, synonymous attribute labels - ``city`` /
 ``current_city`` / ``current_city_2026`` / ``lives_in`` and their localized
-aliases — produce INDEPENDENT keys that then compete in recall instead of one
+aliases - produce INDEPENDENT keys that then compete in recall instead of one
 superseding the
 next. That is exactly how a stale ``user::city = Warsaw`` kept out-ranking a
 live ``user lives in Tampa`` fact.
 
 This module is the single source of truth for:
-  * ``canonicalize_attribute`` — collapse synonymous labels to one attribute.
-  * ``keyed_fact_key`` — build the canonical ``subject::attribute`` key used
+  * ``canonicalize_attribute`` - collapse synonymous labels to one attribute.
+  * ``keyed_fact_key`` - build the canonical ``subject::attribute`` key used
     by every keyed-fact read/write path.
-  * ``detect_current_state`` — conservatively recognise a plain fact that
+  * ``detect_current_state`` - conservatively recognise a plain fact that
     states a CURRENT, mutable personal attribute ("I now live in Tampa") so
     it can update the matching keyed fact instead of just piling up.
 
 The alias map is deliberately broad and extensible (location, work, contact,
-status, …) — it is NOT city-specific. Unknown attributes pass through
+status, …) - it is NOT city-specific. Unknown attributes pass through
 normalized, so brand-new attributes still get a stable key; they simply have
-no alias group yet. Add groups freely — that's the only step needed.
+no alias group yet. Add groups freely - that's the only step needed.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ _ALIAS_GROUPS: dict[str, set[str]] = {
         "lives_in", "live_in", "living_in", "residence", "resides_in",
         "location", "current_location", "based_in",
     },
-    # Hometown is immutable ORIGIN, NOT current residence — it must never share
+    # Hometown is immutable ORIGIN, NOT current residence - it must never share
     # the `city` key, or "I'm from Kyiv" would overwrite "I live in Tampa".
     "hometown": {
         "hometown", "home_city", "home_town", "birthplace", "born_in",
@@ -120,7 +120,7 @@ def keyed_fact_key(subject: str, attribute: str) -> str:
 # ── current-state detection (conservative, regex, no LLM) ──────────────────
 #
 # Each entry: (compiled_pattern, canonical_attribute). The pattern MUST imply
-# a present, personal, mutable state — we require an explicit subject cue
+# a present, personal, mutable state - we require an explicit subject cue
 # (I / user / my) AND, for location/work, a present-tense verb. Capture group
 # 1 is the raw value. Order matters: first match wins.
 _VALUE_TAIL = r"(.+?)"
@@ -134,11 +134,11 @@ _END = (
 # Every verb-based pattern requires an EXPLICIT present-state marker
 # (now / currently / their localized equivalents / moved-to), so a generic
 # biography fact
-# like "I live in Paris" is NOT auto-promoted — only deliberate "this is my
+# like "I live in Paris" is NOT auto-promoted - only deliberate "this is my
 # CURRENT X" statements are. "my current X is …" / "moved to …" are inherently
 # present-state and need no extra marker.
 _CURRENT_STATE_PATTERNS: list[tuple[re.Pattern, str]] = [
-    # English — location
+    # English - location
     (re.compile(
         r"\b(?:i|user)\s+(?:currently|now)\s+(?:live|lives|reside|resides|am\s+living|is\s+living)\s+in\s+"
         + _VALUE_TAIL + _END, re.IGNORECASE), "city"),
@@ -151,7 +151,7 @@ _CURRENT_STATE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(
         r"\b(?:i|user)\s+(?:just\s+)?moved\s+to\s+" + _VALUE_TAIL + _END,
         re.IGNORECASE), "city"),
-    # English — employer / role
+    # English - employer / role
     (re.compile(
         r"\b(?:i|user)\s+(?:currently|now)\s+(?:work|works|am\s+working|is\s+working)\s+(?:at|for)\s+"
         + _VALUE_TAIL + _END, re.IGNORECASE), "employer"),
@@ -205,14 +205,14 @@ def detect_current_state(content: str) -> tuple[str, str] | None:
     """If CONTENT plainly states a current, mutable personal attribute,
     return (canonical_attribute, value); else None.
 
-    Deliberately conservative — only fires on explicit first-/second-person
+    Deliberately conservative - only fires on explicit first-/second-person
     present-state phrasing, so arbitrary recorded text (project notes,
     reflections, code) does not get mis-promoted into keyed facts.
     """
     if not content or len(content) > 400:
         return None
     if _NEGATION_RE.search(content):
-        return None  # negated / meta-instruction — not a current-state assertion
+        return None  # negated / meta-instruction - not a current-state assertion
     for pat, attr in _CURRENT_STATE_PATTERNS:
         m = pat.search(content)
         if not m:
@@ -228,13 +228,13 @@ def detect_current_state(content: str) -> tuple[str, str] | None:
 #
 # Once a POSITIVE keyed value exists ("user lives in Tampa"), an older fact
 # that says "the user does NOT live in Warsaw; current city is unknown" is
-# pure stale noise — it asserts ignorance about a now-known attribute. These
+# pure stale noise - it asserts ignorance about a now-known attribute. These
 # patterns find such facts so the write/repair paths can archive them.
 #
 # Precision is paramount: a false positive ARCHIVES a real fact. The earlier
 # design checked a subject cue and a negation INDEPENDENTLY anywhere in the
 # text, so "I learned that Alice no longer lives in Paris" was mis-read as the
-# USER negating their own city — and recording the user's real city then
+# USER negating their own city - and recording the user's real city then
 # auto-archived a fact about Alice. The fix: the user subject must sit
 # IMMEDIATELY before the negated verb (one optional adverb allowed), evaluated
 # per sentence, so a first-person cue in one clause can't license a
@@ -242,11 +242,11 @@ def detect_current_state(content: str) -> tuple[str, str] | None:
 
 # Subject cue that must be ADJACENT to the negation: "I no longer live",
 # "the user does not currently live" (and localized equivalents). Longest alternatives
-# first so "I've"/"I'm" win over bare "i". NOTE: deliberately excludes "my" —
+# first so "I've"/"I'm" win over bare "i". NOTE: deliberately excludes "my" -
 # possessive belongs to the "<poss> X is unknown" form (`_POSS`), not here.
 def _alt(en: list, cat: str) -> str:
     """EN regex fragments + the RU/UK fragments an active pack adds for `cat`,
-    joined into an alternation body (L1 — keeps the woven Cyrillic out of this
+    joined into an alternation body (L1 - keeps the woven Cyrillic out of this
     module while EN+RU+UK matching stays byte-identical; gated by
     tests/test_regex_parity.py)."""
     return "|".join(list(en) + _lang.merged_list(cat))
@@ -296,7 +296,7 @@ _NEGATED_STATE_PATTERNS: list[tuple[re.Pattern, str]] = [
 ]
 
 # Fallback for the two-clause corpus form where the negation clause has no
-# recognised verb but a sibling clause says "current <attr> is unknown" — only
+# recognised verb but a sibling clause says "current <attr> is unknown" - only
 # fires when a user-adjacent negation is present in the SAME sentence, so a
 # bare "current city is unknown" with no subject stays None. NOTE: these use
 # SUBSETS of the noun sets above (the bare forms drop two localized synonyms),
@@ -317,7 +317,7 @@ _BARE_UNK_RE: list[tuple[re.Pattern, str]] = [
 
 # Broad "could this be about the user at all" prefilter (first-person / user
 # mention ANYWHERE). Used to gate the offline keyed-suggestion LLM (#A2) so
-# third-party facts never reach it. Broad on purpose — it's a cheap prefilter;
+# third-party facts never reach it. Broad on purpose - it's a cheap prefilter;
 # the precise gate is the LLM answer's `subject` field. NOT used by
 # detect_negated_state (which needs adjacency, above).
 _USER_CUE_RE = re.compile(
@@ -342,7 +342,7 @@ def _pack_first_person() -> frozenset:
 
 def has_user_subject_cue(content: str) -> bool:
     """True if CONTENT mentions the user / first person anywhere. Cheap, broad
-    prefilter for the offline keyed-suggestion LLM — keeps "Alice relocated to
+    prefilter for the offline keyed-suggestion LLM - keeps "Alice relocated to
     Berlin" from ever being proposed as the user's city. EN/RU markers are
     built in; an enabled language pack's first_person markers extend it (C4)
     so keyed extraction also works for that language."""
@@ -380,7 +380,7 @@ _FUTURE_INTENT_RE = re.compile(
 def looks_like_future_intent(content: str, engine=None) -> bool:
     """True if CONTENT reads like a forward-looking PLAN ("next we'll do X")
     rather than a settled fact. Used only to FLAG (metadata.suggest_goal),
-    never to auto-convert — past statements ("we decided X yesterday") and
+    never to auto-convert - past statements ("we decided X yesterday") and
     plain facts must not trip it.
 
     Lexical regex first; then, when a warm `engine` is supplied, the B2
@@ -406,7 +406,7 @@ def detect_negated_state(content: str) -> str | None:
 
     Conservative and per-sentence: the user subject must sit immediately before
     the negated verb, so "I learned that Alice no longer lives in Paris" and
-    "my sister doesn't work at Google" return None — they are about other
+    "my sister doesn't work at Google" return None - they are about other
     people and must never archive the user's own facts."""
     if not content or len(content) > 400:
         return None

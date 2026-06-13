@@ -18,7 +18,7 @@ What it does:
 4. LanceDB compaction (if supported)
 
 The cold storage schema is the same as main, but in a separate file. If
-desired it can be left unopened at startup — saving memory.
+desired it can be left unopened at startup - saving memory.
 """
 
 from __future__ import annotations
@@ -164,7 +164,7 @@ class StorageCompactor:
         # behind. This is safe (drops noise, never touches events) and keeps
         # the entity graph from drifting upward forever. A full `pmb regraph`
         # (rerunning the extractor over all active events) is intentionally
-        # NOT automatic — it's expensive with LLM backends and the user
+        # NOT automatic - it's expensive with LLM backends and the user
         # should run it manually after upgrading the extractor.
         graph_prune = None
         try:

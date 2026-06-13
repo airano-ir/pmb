@@ -1,4 +1,4 @@
-"""`pmb index ...` — extracted from cli/main.py (no behavior change)."""
+"""`pmb index ...` - extracted from cli/main.py (no behavior change)."""
 
 from __future__ import annotations
 

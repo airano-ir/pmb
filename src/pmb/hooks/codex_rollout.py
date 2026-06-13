@@ -1,9 +1,9 @@
-"""Codex rollout parser — the ambient observer for OpenAI Codex CLI.
+"""Codex rollout parser - the ambient observer for OpenAI Codex CLI.
 
 Claude Code gives PMB a PostToolUse hook to observe each action. Codex has
 no per-tool hook, but it writes a full session log (`~/.codex/sessions/
 YYYY/MM/DD/rollout-*.jsonl`) containing every `function_call` the agent
-made. So we observe Codex the same way auto-recall observes Claude — by
+made. So we observe Codex the same way auto-recall observes Claude - by
 reading what's already there.
 
 A Codex `notify` program (fired on `agent-turn-complete`) calls
@@ -11,13 +11,13 @@ A Codex `notify` program (fired on `agent-turn-complete`) calls
 
   • find the active rollout,
   • parse the NEW function_calls since the last turn (offset-tracked),
-  • map them to (tool, target, status) — shell_command → Bash,
-    apply_patch → Edit — and detect record_* calls (the agent journaled
+  • map them to (tool, target, status) - shell_command → Bash,
+    apply_patch → Edit - and detect record_* calls (the agent journaled
     itself → coordination gate),
 
 then ambient auto-write runs exactly as on Claude Code.
 
-Pure stdlib (json + pathlib) — no heavy imports, this is a hot-ish path.
+Pure stdlib (json + pathlib) - no heavy imports, this is a hot-ish path.
 """
 
 from __future__ import annotations

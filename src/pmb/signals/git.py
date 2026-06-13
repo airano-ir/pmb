@@ -4,14 +4,14 @@ Git signals capture.
 Captures into memory:
 - git commits with message, author, files
 - branch changes
-- diff summary (not the full diff — too large)
+- diff summary (not the full diff - too large)
 
 Stored in EventStore with event_type="git".
 
 Tracking:
 - last_sync_timestamp is stored in meta (workspace.last_git_sync)
 - On each sync call we capture commits since last_sync_timestamp
-- Default first sync — the last 7 days
+- Default first sync - the last 7 days
 
 Idempotency:
 - Each commit has a stable hash → we use it as part of the metadata

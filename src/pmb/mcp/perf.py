@@ -20,7 +20,7 @@ from pathlib import Path
 # S9: buffer perf rows and flush them in batches instead of one
 # connect+INSERT+commit per MCP tool call (which contended with the events DB
 # write lock on the hot path). Telemetry is best-effort, so at most
-# `_PERF_FLUSH_EVERY-1` rows can be lost on a hard crash — acceptable for perf
+# `_PERF_FLUSH_EVERY-1` rows can be lost on a hard crash - acceptable for perf
 # stats. Same DB target as before, so readers (dashboard / `pmb stats`) are
 # unchanged; only the write cadence moves off the per-call path.
 _PERF_BUF: dict[str, list[tuple]] = {}
@@ -78,7 +78,7 @@ _INDEX_DDLS = [
 
 _schema_ready_paths: set = set()
 
-# Columns added after the original schema (issue #11 — recall_smart stage
+# Columns added after the original schema (issue #11 - recall_smart stage
 # visibility). Added via idempotent ALTER so existing perf DBs upgrade in place.
 _MIGRATION_COLUMNS = [
     ("stages_json", "TEXT"),       # recall_smart/recall_deep escalation diag
@@ -150,7 +150,7 @@ def make_timing_wrapper(db_path: Path, workspace_id: str | None):
             ...
     """
     # The server's client-side timeout (ms): a call finishing AFTER this had
-    # already elapsed means the client gave up — flag it, don't count it as a
+    # already elapsed means the client gave up - flag it, don't count it as a
     # clean success (#11).
     try:
         _client_to_ms = float(os.environ.get("PMB_MCP_CLIENT_TIMEOUT_MS") or 120000)
@@ -167,7 +167,7 @@ def make_timing_wrapper(db_path: Path, workspace_id: str | None):
             err_msg: str | None = None
             result = None
             try:
-                # S9: cheap size estimate — `len(str(kwargs))` instead of a full
+                # S9: cheap size estimate - `len(str(kwargs))` instead of a full
                 # json.dumps re-serialization of (possibly large) tool args.
                 args_size = len(str(kwargs)) if kwargs else 0
             except Exception:
@@ -323,11 +323,11 @@ def get_perf_stats(db_path: Path, workspace_id: str | None = None,
             "avg_ms": round(sum(durs) / len(durs), 2) if durs else 0.0,
         })
 
-    # Recent turns — cluster MCP calls by time-gap. A new turn starts when
+    # Recent turns - cluster MCP calls by time-gap. A new turn starts when
     # the gap to the previous call exceeds 30 seconds. For each turn we show:
     # - time-range (first → last call)
     # - tools used (sequence)
-    # - context (matched from events table — research-activity / user-fact)
+    # - context (matched from events table - research-activity / user-fact)
     turns = _cluster_into_turns(rows, gap_seconds=30.0)
     enriched_turns = _enrich_turns_with_context(db_path, workspace_id, turns[:20])
 
@@ -384,10 +384,10 @@ def _enrich_turns_with_context(
     db_path: Path, workspace_id: str | None, turns: list[dict],
 ) -> list[dict]:
     """For each turn, look up events in the same time-window from the
-    events table — gives us the actual question/content the user wrote.
+    events table - gives us the actual question/content the user wrote.
 
     Priority:
-      1. activity(kind="research")  — what AI saved as 'user asked about X'
+      1. activity(kind="research")  - what AI saved as 'user asked about X'
       2. Any fact / activity created in the same window
     """
     if not turns:

@@ -1,4 +1,4 @@
-"""`pmb` capture root commands — extracted from cli/main.py (no behavior change).
+"""`pmb` capture root commands - extracted from cli/main.py (no behavior change).
 
 cli/main.py imports this module so these @app.command registrations run."""
 
@@ -130,7 +130,7 @@ def warmup():
     console.print(
         "[green]Engine warm for THIS process.[/] CLI recalls in this shell are "
         "now fast.\n[dim]For warm hook-based auto-recall, run "
-        "[/][cyan]pmb daemon start[/][dim] — one persistent process serves the "
+        "[/][cyan]pmb daemon start[/][dim] - one persistent process serves the "
         "hooks so they get real semantic recall, not the per-process cold "
         "skip.[/]"
     )
@@ -144,7 +144,7 @@ def warmup():
                 "[yellow]Model cold-load was slow (>10s).[/] Consider the "
                 "lower-RAM, faster-starting [cyan]fastembed[/] backend:\n"
                 "  [dim]pmb config set embedding.backend fastembed  &&  pmb reindex[/]\n"
-                "  [dim](reindex is required — never mix embedders in one index.)[/]"
+                "  [dim](reindex is required - never mix embedders in one index.)[/]"
             )
     except Exception:
         pass
@@ -696,7 +696,7 @@ def overview(
 
 @app.command()
 def pin(ulid: str = typer.Argument(...)):
-    """Pin an event — high importance, never auto-archived."""
+    """Pin an event - high importance, never auto-archived."""
     eng = Engine()
     eng.pin(ulid)
     console.print(f"[green]Pinned[/] {ulid}")
@@ -704,7 +704,7 @@ def pin(ulid: str = typer.Argument(...)):
 
 @app.command()
 def forget(ulid: str = typer.Argument(...)):
-    """Archive an event. Not deleted permanently — restore with unforget."""
+    """Archive an event. Not deleted permanently - restore with unforget."""
     eng = Engine()
     eng.forget(ulid)
     console.print(f"[yellow]Archived[/] {ulid}")

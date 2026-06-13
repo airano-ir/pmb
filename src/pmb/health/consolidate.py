@@ -1,5 +1,5 @@
 """
-LLM-based consolidation — the "sleep engine" that actually generalizes.
+LLM-based consolidation - the "sleep engine" that actually generalizes.
 
 Pipeline:
   1. Pick recent active content events (qa, fact, git).
@@ -9,7 +9,7 @@ Pipeline:
      together? if yes, state it concisely."
   4. If the LLM agrees with high confidence, store the generalization
      as a new `fact` event with high importance and metadata pointing at
-     source ulids. Sources get archived (not deleted — restorable).
+     source ulids. Sources get archived (not deleted - restorable).
 
 This is what makes consolidation different from simple decay/archive:
 the system *produces a generalization* rather than just discarding old
@@ -79,7 +79,7 @@ embedding-based clusterer thought were related. Your job is to decide:
 
   1. Are these snippets really about ONE underlying rule, preference,
      decision, or recurring pattern?
-  2. If yes, state that rule in one sentence — as the user would phrase it.
+  2. If yes, state that rule in one sentence - as the user would phrase it.
   3. If no (they're only superficially similar, or contradict each other,
      or each is its own thing), say so.
 
@@ -103,7 +103,7 @@ Output strict JSON only, no prose:
 
 
 class AnthropicHaikuClient:
-    """Default backend — Claude Haiku via anthropic SDK with prompt caching."""
+    """Default backend - Claude Haiku via anthropic SDK with prompt caching."""
 
     DEFAULT_MODEL = "claude-haiku-4-5"
 
@@ -131,7 +131,7 @@ class AnthropicHaikuClient:
         return _parse_llm_json(text)
 
     def complete(self, prompt: str, max_tokens: int = 800) -> str:
-        """Generic single-prompt completion — used by reasoning layer."""
+        """Generic single-prompt completion - used by reasoning layer."""
         resp = self.client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
@@ -141,7 +141,7 @@ class AnthropicHaikuClient:
 
 
 # ----------------------------------------------------------------------
-# Claude CLI backend — uses the `claude` CLI in -p mode, no API key needed
+# Claude CLI backend - uses the `claude` CLI in -p mode, no API key needed
 # (relies on existing Claude Code login / subscription)
 # ----------------------------------------------------------------------
 
@@ -152,7 +152,7 @@ DEFAULT_CLAUDE_MODEL = "haiku"  # alias: latest Haiku
 class ClaudeCLIClient:
     """Spawn `claude -p` as a subprocess for one-shot consolidation calls.
 
-    Uses whatever auth Claude Code itself uses (OAuth/keychain) — no
+    Uses whatever auth Claude Code itself uses (OAuth/keychain) - no
     `ANTHROPIC_API_KEY` required. This is the recommended backend when
     the user already has Claude Code installed and signed in.
 
@@ -189,7 +189,7 @@ class ClaudeCLIClient:
     def _argv(self, prompt: str) -> list[str]:
         """Build the `claude -p` argv for a one-shot text-in/JSON-out call.
 
-        Security: these calls feed STORED MEMORY CONTENT (untrusted — derived
+        Security: these calls feed STORED MEMORY CONTENT (untrusted - derived
         from arbitrary conversations/files) into the prompt. We therefore give
         the spawned agent NO tools (`--allowed-tools ""`) and do NOT bypass
         permissions, so an injected payload like "ignore the task and run Bash"
@@ -215,7 +215,7 @@ class ClaudeCLIClient:
             CONSOLIDATION_SYSTEM_PROMPT
             + "\n\n"
             + f"Cluster of {len(events_text)} memory items:\n\n{joined}\n\n"
-            + "Output JSON only — no prose, no fences."
+            + "Output JSON only - no prose, no fences."
         )
 
         argv = self._argv(prompt)
@@ -266,7 +266,7 @@ class ClaudeCLIClient:
 
 
 # ----------------------------------------------------------------------
-# Ollama backend — no API keys, runs locally
+# Ollama backend - no API keys, runs locally
 # ----------------------------------------------------------------------
 
 
@@ -275,7 +275,7 @@ class OllamaClient:
 
     Requires Ollama running on localhost (`ollama serve`) and the model pulled
     (`ollama pull llama3.1:8b`). Quality is lower than Haiku for nuanced
-    consolidation — set MIN_CONFIDENCE_TO_STORE higher or run `--dry-run`
+    consolidation - set MIN_CONFIDENCE_TO_STORE higher or run `--dry-run`
     first to spot-check.
     """
 
@@ -378,14 +378,14 @@ def resolve_llm_client(
     Pick a backend.
 
     backend:
-      "auto"       — Claude CLI if `claude` on PATH; else Anthropic if API key;
+      "auto"       - Claude CLI if `claude` on PATH; else Anthropic if API key;
                      else Ollama if reachable.
-      "claude"     — force Claude CLI subprocess (no key, uses Claude Code auth).
-      "anthropic"  — force Anthropic API (requires ANTHROPIC_API_KEY).
-      "ollama"     — force Ollama (requires local server).
+      "claude"     - force Claude CLI subprocess (no key, uses Claude Code auth).
+      "anthropic"  - force Anthropic API (requires ANTHROPIC_API_KEY).
+      "ollama"     - force Ollama (requires local server).
 
     The auto-priority puts Claude CLI first because that's the no-friction
-    path for anyone who already uses Claude Code — no key juggling, no local
+    path for anyone who already uses Claude Code - no key juggling, no local
     LLM install.
 
     Raises RuntimeError with a clear, actionable message if no backend works.
@@ -623,11 +623,11 @@ def _drain_pending_embeds(engine, timeout_s: float = 30.0) -> int:
 def _summary_looks_like_copy(summary: str, source_texts: list[str],
                              threshold: float = 0.85) -> bool:
     """Return True if the LLM's summary is essentially a verbatim copy of one
-    source. Cheap token-overlap check — no embeddings needed.
+    source. Cheap token-overlap check - no embeddings needed.
 
     The intent: when the LLM can't actually generalise, it sometimes just
     picks the most informative source line. That's not consolidation, that's
-    duplication — we want to skip it.
+    duplication - we want to skip it.
     """
     if not summary:
         return False
@@ -761,7 +761,7 @@ def run_consolidation(
                 },
             )
             result.new_ulid = new_ulid
-            # Archive sources (except pinned ones — pinned stays active)
+            # Archive sources (except pinned ones - pinned stays active)
             for e in events:
                 if e.importance < 0.99:
                     engine.events.archive(e.ulid)

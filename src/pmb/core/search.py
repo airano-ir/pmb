@@ -231,7 +231,7 @@ class SearchHit:
     vec_score: float
     importance: float
     recency_score: float
-    # R3: ABSOLUTE evidence — the un-normalized vector similarity 1/(1+dist) in
+    # R3: ABSOLUTE evidence - the un-normalized vector similarity 1/(1+dist) in
     # [0,1]. `score`/`vec_score` are min-max normalized over the candidate set
     # (great for RANKING, meaningless as an absolute threshold). raw_vec is the
     # real "how close is this actually" signal that gates can trust.
@@ -278,7 +278,7 @@ class _ModelCache:
         base_url: str | None = None,
     ):
         """Return the cached model ONLY if already constructed for this exact
-        (name, backend, base_url) — NEVER triggers a load. Lets the passive
+        (name, backend, base_url) - NEVER triggers a load. Lets the passive
         embed-queue worker attach instantly when another consumer in this
         process already paid the load, while a truly cold process stays
         load-free (the Codex 120s-timeout fix)."""
@@ -455,7 +455,7 @@ class HybridSearch:
 
     def attach_cached_model(self) -> bool:
         """Adopt the process-wide cached model if (and only if) it is ALREADY
-        constructed — never triggers a load. True when ready afterwards."""
+        constructed - never triggers a load. True when ready afterwards."""
         if self._model is not None:
             return True
         cached = _ModelCache.peek(
@@ -746,7 +746,7 @@ class HybridSearch:
     def _ensure_bm25(self):
         if self._bm25 is None and self._bm25_tokens:
             # rank_bm25 divides by zero in _calc_idf when the corpus has NO
-            # terms at all — every doc tokenized to empty, or a transient empty
+            # terms at all - every doc tokenized to empty, or a transient empty
             # index during a fresh-workspace recall before the embed/index
             # queue drained. Require at least one non-empty doc, and fall back
             # to no-BM25 (vector search still answers) on any error, instead of

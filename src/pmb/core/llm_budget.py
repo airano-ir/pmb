@@ -2,7 +2,7 @@
 
 Per-call timeouts bound a SINGLE call; they do nothing about a loop that makes
 40 sequential calls of 15 s each (10 minutes). Every batched/offline LLM loop
-— keyed-state suggestions, the declutter judge, consolidation clusters —
+- keyed-state suggestions, the declutter judge, consolidation clusters -
 constructs one budget at the top and checks ``allow()`` before EVERY call so
 the WHOLE pass is bounded.
 

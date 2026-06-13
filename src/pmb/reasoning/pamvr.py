@@ -50,12 +50,12 @@ _STOP = {
     "all", "more", "than", "but", "not", "now", "before", "previously",
     "going", "use", "using",
 }
-# Active language packs ($PMB_HOME/lang/*.yaml) EXTEND the stopword set — no-op
+# Active language packs ($PMB_HOME/lang/*.yaml) EXTEND the stopword set - no-op
 # unless the user enabled one (`pmb lang enable de`).
 _STOP = _lang.merged_set("stopwords", _STOP)
 
 # E2: the relation/word tokenizers below use a Unicode LETTER class directly
-# (`[^\W\d_]` = a letter of any script — Latin/Cyrillic/Greek/CJK), so no
+# (`[^\W\d_]` = a letter of any script - Latin/Cyrillic/Greek/CJK), so no
 # enumerated Cyrillic range is needed. Both call sites tokenize already-
 # lowercased text. `_WORD_TOK` = one-or-more (letter | apostrophe).
 _WORD_TOK = r"(?:[^\W\d_]|')+"
@@ -134,7 +134,7 @@ _NOT_PROPER = {
 }
 
 # Per-deployment extension: reference.yaml `not_proper`, then active language
-# packs (extend-only — both no-ops without the respective files).
+# packs (extend-only - both no-ops without the respective files).
 _NOT_PROPER = _extend_set("not_proper", _NOT_PROPER)
 _NOT_PROPER = _lang.merged_set("not_proper", _NOT_PROPER)
 
@@ -148,7 +148,7 @@ def _extract_proper_nouns(query: str) -> set[str]:
         raw = m.group(0).strip("'")
         if len(raw) < 3:
             continue
-        # Capitalised word: first letter upper, the rest lowercase — matches the
+        # Capitalised word: first letter upper, the rest lowercase - matches the
         # old [A-Z][a-z]{2,} shape, so acronyms ("NASA") stay excluded.
         if not (raw[0].isupper() and raw[1:].islower()):
             continue
@@ -268,7 +268,7 @@ def prepare_query_features(
     Replaces the 4-6 regex/tokenize calls that used to run per candidate.
 
     `verb_match=False` (B4, set by recall when `lang.mode=anchors`) drops the
-    lexical verb-synonym boost — the vector channel already encodes verb
+    lexical verb-synonym boost - the vector channel already encodes verb
     synonymy there, so the BM25-era crutch is redundant.
     """
     f = _QueryFeatures(query=query, ql=query.lower())

@@ -1,5 +1,5 @@
 """
-LRU cache for recall results — the "working memory" buffer in front of the
+LRU cache for recall results - the "working memory" buffer in front of the
 hybrid search. Two purposes:
 
   1. Speed. If the agent issues the same recall twice within the TTL we
@@ -35,7 +35,7 @@ class _Entry:
 class RecallCache:
     """Tiny LRU cache. Guarded by a lock (S9): the memory daemon serves recalls
     from a worker-thread pool and bumps the generation on writes, so get/put/
-    bump_generation can interleave across threads — an unguarded OrderedDict
+    bump_generation can interleave across threads - an unguarded OrderedDict
     raises `RuntimeError: OrderedDict mutated during iteration` or drops counts
     under that race. The lock is uncontended in the single-process CLI path."""
 
@@ -114,5 +114,5 @@ def make_recall_cache_key(
     query: str, top_k: int, recency_half_life_days: float,
     graph_boost: float, rerank: bool, rerank_top_n: int,
 ) -> str:
-    """Stable key. We deliberately exclude time-of-day — TTL handles that."""
+    """Stable key. We deliberately exclude time-of-day - TTL handles that."""
     return f"{query}|{top_k}|{recency_half_life_days}|{graph_boost}|{rerank}|{rerank_top_n}"

@@ -1,13 +1,13 @@
 """
-Event Store — SQLite-based append-only event log.
+Event Store - SQLite-based append-only event log.
 
 Event types:
-- "qa"      — Q/A pair from the agent
-- "fact"    — extracted key=value fact
-- "pin"     — explicit user pin
-- "git"     — git event (commit, branch change)
-- "file"    — file modification context
-- "test"    — test result context
+- "qa"      - Q/A pair from the agent
+- "fact"    - extracted key=value fact
+- "pin"     - explicit user pin
+- "git"     - git event (commit, branch change)
+- "file"    - file modification context
+- "test"    - test result context
 
 Schema (v1):
 - events (id, ulid, workspace_id, event_type, content, metadata_json,
@@ -37,7 +37,7 @@ SCHEMA_VERSION = 6
 
 # Memory tiers (loose analogy to STM/MTM/LTM in human memory).
 # Each event lives in exactly one tier at any time. Tiers differ only in
-# how fast importance decays — recall reads all active tiers equally.
+# how fast importance decays - recall reads all active tiers equally.
 TIER_WORKING = "working"      # new memory, fast decay if not reinforced (~1 day half-life)
 TIER_EPISODIC = "episodic"    # confirmed memory of a specific event (~46 day half-life)
 TIER_SEMANTIC = "semantic"    # abstracted fact / decision / rule (~1 year half-life)
@@ -175,7 +175,7 @@ _DDL = [
     # become an indexed lookup instead of a full-table `metadata_json LIKE
     # '%"kind":"lesson"%'` scan on every recall + hook message. COALESCE folds
     # both spellings (lessons use metadata.kind; activity-style decisions use
-    # metadata.activity_kind) into one indexed value. Pure additive DDL — no
+    # metadata.activity_kind) into one indexed value. Pure additive DDL - no
     # column, no write-path change, no backfill; also whitespace-robust where
     # the old LIKE needed two spacing variants. The query expression MUST match
     # this one verbatim for the planner to use the index.
@@ -191,7 +191,7 @@ _DDL = [
     )
     """,
     # ------------------------------------------------------------------
-    # v4: reasoning layer — direct event-to-event edges, narrative arcs.
+    # v4: reasoning layer - direct event-to-event edges, narrative arcs.
     # Reflections live in `events` with event_type='reflection' + metadata
     # pointing to source ulid, so no new table for them.
     # ------------------------------------------------------------------
@@ -282,7 +282,7 @@ _DDL = [
     #
     # write_outbox: record_batch_async enqueues a row HERE synchronously
     # (~1ms) before returning, so a crash between accept and the background
-    # write loses nothing — the drainer (and recover_on_start) replay pendings.
+    # write loses nothing - the drainer (and recover_on_start) replay pendings.
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS write_outbox (
@@ -442,7 +442,7 @@ class EventStore:
         """
         if not ulids:
             return {}
-        # Dedup while preserving order — caller might pass duplicates
+        # Dedup while preserving order - caller might pass duplicates
         seen: set[str] = set()
         unique: list[str] = []
         for u in ulids:
@@ -639,7 +639,7 @@ class EventStore:
             )
 
     def pin(self, ulid: str, importance: float = 1.0):
-        """Pin — high importance, never auto-archived."""
+        """Pin - high importance, never auto-archived."""
         with self._conn() as conn:
             conn.execute(
                 """

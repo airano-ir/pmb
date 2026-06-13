@@ -1,11 +1,11 @@
 """
-Auto VOCAB_BRIDGES — mine domain-specific vocabulary bridges from workspace events.
+Auto VOCAB_BRIDGES - mine domain-specific vocabulary bridges from workspace events.
 
 PAMVR's hand-curated VOCAB_BRIDGES (typing↔mypy, database↔Postgres, …) work
 great on coding-agent queries but slightly regress on personal-conversation
 domains because the lexicon is dev-flavoured. This module mines a per-
 workspace bridge table from the user's own event history so PAMVR adapts to
-whatever domain the user actually writes about — coding, personal, research,
+whatever domain the user actually writes about - coding, personal, research,
 business, …
 
 Approach (no ML, no external deps):
@@ -18,12 +18,12 @@ Approach (no ML, no external deps):
 
          PMI(a, b) = log( P(a, b) / (P(a) · P(b)) )
 
-     Pairs with high PMI co-occur much more than chance — that's exactly
+     Pairs with high PMI co-occur much more than chance - that's exactly
      the relationship VOCAB_BRIDGES models ("typing" and "mypy" appear in
      the same event much more than their individual rates would predict).
   4. Filter:
-        - count(a, b) >= MIN_COUNT  (default 3 — kill noise)
-        - PMI >= MIN_PMI            (default 2.0 — keep ~top 5%)
+        - count(a, b) >= MIN_COUNT  (default 3 - kill noise)
+        - PMI >= MIN_PMI            (default 2.0 - keep ~top 5%)
         - len(a), len(b) > 2 and both alphabetic
         - drop entirely-numeric tokens and unicode-mixed garbage
   5. Group by first token: {"typing": ["mypy", "type_hints"], ...}
@@ -34,7 +34,7 @@ The result is merged with PAMVR's hand-curated VOCAB_BRIDGES at lookup time
 Cache: written to `~/.pmb/workspaces/<id>/vocab_bridges.json`. Refreshed
 when the workspace gains >= REFRESH_THRESHOLD events since last mine.
 
-Cost: ~50 ms per 1000 events. Triggered async — never blocks recall.
+Cost: ~50 ms per 1000 events. Triggered async - never blocks recall.
 """
 
 from __future__ import annotations
@@ -62,13 +62,13 @@ _STOP = {
 }
 
 
-# Token regex: a Unicode letter start, then word chars (letters/digits/_) —
+# Token regex: a Unicode letter start, then word chars (letters/digits/_) -
 # keeps "type_hints" intact. Identical to the old Latin+Cyrillic class on EN/RU;
 # also keeps other scripts' letters. Deliberately NO hyphens in the class:
 # including them silently broke compound-word matching (caught by a live run).
 _TOKEN_RE = re.compile(r"[^\W\d_][\w]{2,}", re.UNICODE)
 
-# Default parameters — chosen empirically so a 200-event workspace yields
+# Default parameters - chosen empirically so a 200-event workspace yields
 # ~50-150 bridges, low noise.
 DEFAULT_WINDOW = 6           # ±6 tokens around each position
 DEFAULT_MIN_COUNT = 3        # pair must appear ≥3 times
@@ -255,7 +255,7 @@ def mine_workspace(
     """High-level: load cache → check freshness → re-mine if needed.
 
     Returns the active bridges dict (possibly cached, possibly freshly mined).
-    Safe to call on every Engine() init — fast when cache is fresh.
+    Safe to call on every Engine() init - fast when cache is fresh.
     """
     contents = fetch_event_contents(db_path)
     n = len(contents)

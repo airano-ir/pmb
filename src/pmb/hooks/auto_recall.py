@@ -1,12 +1,12 @@
-"""Auto-recall — zero-cooperation memory injection.
+"""Auto-recall - zero-cooperation memory injection.
 
 PMB's biggest UX problem: the agent has to remember to call `recall` /
 `prepare` / `project_overview`. It often doesn't. The Adherence dashboard
-shows `prepare_rate` near 0% on most workspaces — instructions in
+shows `prepare_rate` near 0% on most workspaces - instructions in
 CLAUDE.md are good intentions, not enforcement.
 
 This module fixes the dependency. It runs from the UserPromptSubmit hook
-(`pmb hooks install`) and decides — without asking the model — which PMB
+(`pmb hooks install`) and decides - without asking the model - which PMB
 calls to pre-execute and inject as context. Pure regex intent
 classification + parallel-safe dispatch over the engine. No LLM, no
 network, no API keys. Sub-100ms p95 on a warm workspace.
@@ -66,7 +66,7 @@ def _ialt(en_frags: list[str], *cats: str) -> str:
     """Join English inline regex fragments with the RU/UK fragments an active
     lang pack contributes for `cats`, into one alternation body (no outer
     group). Keeps this module Cyrillic-free (L1): the EN fragments stay inline,
-    the Cyrillic equivalents live in packs/{ru,uk}.yaml. Order is irrelevant —
+    the Cyrillic equivalents live in packs/{ru,uk}.yaml. Order is irrelevant -
     these feed iterate-all `search()` matchers."""
     frags = list(en_frags)
     for c in cats:
@@ -184,7 +184,7 @@ def detect_intents(
 
     out: list[str] = []
 
-    # Project detection — purely substring (case-insensitive). Avoid
+    # Project detection - purely substring (case-insensitive). Avoid
     # spurious matches by requiring word-boundary. `known_projects` come
     # from engine.detect_project_in_text or the entity graph.
     project_hit = False
@@ -206,7 +206,7 @@ def detect_intents(
         else:
             out.append(Intent.PROJECT_OVERVIEW)
 
-    # Past / recent / goals / lessons — explicit question patterns.
+    # Past / recent / goals / lessons - explicit question patterns.
     if _RECENT_QUERY.search(s):
         out.append(Intent.RECENT_QUERY)
     if _PAST_QUERY.search(s):
@@ -222,7 +222,7 @@ def detect_intents(
     if not out and _HAS_QUESTION.search(s):
         out.append(Intent.GENERIC_FACTUAL)
 
-    # R4: a WORK REQUEST — an imperative / work verb, no project, no question.
+    # R4: a WORK REQUEST - an imperative / work verb, no project, no question.
     # "tighten the retry logic" / "refactor the auth module" used to return
     # [SKIP] (no "?"), so the agent did real work with ZERO surfaced lessons or
     # decisions. Fire a non-SKIP intent so the always-on lessons + decisions
@@ -256,7 +256,7 @@ class AutoContextResult:
     skip_reason: str | None = None
 
     def is_empty(self) -> bool:
-        """True if nothing useful matched — hook should print nothing."""
+        """True if nothing useful matched - hook should print nothing."""
         return not any([
             self.project,
             self.arcs,
@@ -294,10 +294,10 @@ def _known_projects_uncached(engine) -> set[str]:
     """Pull all known project-entity names this workspace has.
 
     Combines two sources:
-      1. The workspace's own name (always treat it as a known project —
+      1. The workspace's own name (always treat it as a known project -
          on fresh workspaces the graph hasn't extracted entities yet,
          and we still want "fix bug in <workspace>" to trigger PREP).
-      2. graph_top_entities — the canonical entity-set used by
+      2. graph_top_entities - the canonical entity-set used by
          engine.detect_project_in_text. Only includes the kinds that
          could plausibly be projects (skip 1-char / pure-digit noise).
     """
@@ -311,20 +311,20 @@ def _known_projects_uncached(engine) -> set[str]:
     except Exception:
         pass
 
-    # 2. Graph entities — but ONLY plausible PROJECT entities (R5). The old
-    # `kind=None, len>=2` swept in every concept the extractor emitted —
+    # 2. Graph entities - but ONLY plausible PROJECT entities (R5). The old
+    # `kind=None, len>=2` swept in every concept the extractor emitted -
     # 'tests' / 'fails' / 'cloud' (concept) and mis-classified tool names as
-    # 'person' — so "fix the tests" faked a PROJECT_PREP and a junk
+    # 'person' - so "fix the tests" faked a PROJECT_PREP and a junk
     # project_overview ate the context budget ahead of the lessons. A graph
     # entity now has to EARN "known project" status: a project-ish kind, a real
     # recurrence (n_mentions >= floor), and a name that isn't a bare stopword.
-    # (The workspace-name default added above bypasses this — the user's own
+    # (The workspace-name default added above bypasses this - the user's own
     # project always fires.)
     try:
         entities = engine.graph_top_entities(kind=None, limit=200)
     except Exception:
         return out
-    # A SMALL generic function-word set — NOT text_match.STOPWORDS, which also
+    # A SMALL generic function-word set - NOT text_match.STOPWORDS, which also
     # contains dev-noise like 'pmb'/'code'/'test'/'file' that are perfectly
     # valid PROJECT names. We only want to reject bare grammar words here.
     _NAME_STOP = {
@@ -364,7 +364,7 @@ def _resolve_project_name(
     """Pick the project name to dispatch on.
 
     Strategy:
-      1. Ask engine.detect_project_in_text with a relaxed threshold —
+      1. Ask engine.detect_project_in_text with a relaxed threshold -
          even 1 mention is enough for the auto-recall hook (we'd
          rather over-fire than miss).
       2. If that returns nothing, fall back to a longest-substring
@@ -404,7 +404,7 @@ def run_auto_context(
 ) -> AutoContextResult:
     """Classify the message and dispatch the matching PMB queries.
 
-    Pure orchestration — no I/O outside the engine itself. All branches
+    Pure orchestration - no I/O outside the engine itself. All branches
     are wrapped in best-effort try/except so a single failure doesn't
     blank the whole context.
     """
@@ -421,7 +421,7 @@ def run_auto_context(
 
     # Non-message noise: task-notification / system-reminder / raw tool-output
     # blocks get routed through the hook the same as user text, but they are
-    # NOT requests. Surfacing memory on them is pure noise — on the real
+    # NOT requests. Surfacing memory on them is pure noise - on the real
     # workspace this was ~half of all lesson surfaces. Skip before classifying.
     _head = msg.lstrip()[:120].lower()
     if any(mk in _head for mk in (
@@ -434,7 +434,7 @@ def run_auto_context(
         res.latency_ms = int((time.perf_counter() - t0) * 1000)
         return res
 
-    # Trivial skip BEFORE touching the engine — saves a DB roundtrip on
+    # Trivial skip BEFORE touching the engine - saves a DB roundtrip on
     # greetings/acks/very-short input. `is_trivial` is regex-only.
     if is_trivial(msg, min_chars=min_chars):
         res.intents = [Intent.SKIP]
@@ -454,7 +454,7 @@ def run_auto_context(
     # D3 shadow-T1 (sampled): when the COLD lexical tier fired a recall intent,
     # occasionally check the WARM anchor and log whether they agreed, so the
     # distiller can prune an auto.yaml category that misleads the cold path.
-    # Warm-only, gated (lang.anchor_log), ~5% sample — negligible cost.
+    # Warm-only, gated (lang.anchor_log), ~5% sample - negligible cost.
     try:
         import random as _rnd
         if (intents != [Intent.SKIP] and _rnd.random() < 0.05
@@ -473,7 +473,7 @@ def run_auto_context(
 
     if intents == [Intent.SKIP]:
         # C5: lexical detection found nothing. If semantic intents are enabled
-        # AND the engine is warm (daemon-served — never load the model on the
+        # AND the engine is warm (daemon-served - never load the model on the
         # cold per-process hook path), try an embedding-based classification so
         # a query in a language the lexical patterns don't cover still fires.
         sem = None
@@ -482,7 +482,7 @@ def run_auto_context(
             # B1: the calibrated anchor tier (`lang.anchors`, on by default) is
             # the multilingual fallback; the legacy centroid tier still honours
             # the explicit `hooks.semantic_intents` opt-in. Either way we only
-            # touch the model when WARM (daemon-served) — never on the cold hook.
+            # touch the model when WARM (daemon-served) - never on the cold hook.
             want_sem = warm and (
                 engine.config.get("lang.anchors")
                 or engine.config.get("hooks.semantic_intents"))
@@ -498,7 +498,7 @@ def run_auto_context(
             intents = [sem]
             res.intents = intents + ["SEMANTIC_INTENT"]
         else:
-            # Safety net — detect_intents shouldn't return SKIP for non-trivial
+            # Safety net - detect_intents shouldn't return SKIP for non-trivial
             # input, but if it does, treat the same as trivial.
             res.skipped = True
             res.skip_reason = "no-intent-matched"
@@ -531,7 +531,7 @@ def run_auto_context(
     # Cold-start guard: the hook spawns a fresh Python process each turn,
     # so loading sentence-transformers from disk for every recall would
     # add 10-20s per user message. Skip the recall when the engine isn't
-    # warm — the model loads in the BACKGROUND for the next turn, and
+    # warm - the model loads in the BACKGROUND for the next turn, and
     # the other intents (project/lessons/recent/goals) still fire from
     # pure-SQL paths. To keep recall always-on, run `pmb warmup` once
     # after install to seed the on-disk cache.
@@ -560,12 +560,12 @@ def run_auto_context(
                 pd = pack.to_dict() if pack else {}
                 hits = pd.get("results") or []
                 conf = float(pd.get("confidence") or 0.0)
-                # GENERIC_FACTUAL is best-effort — only surface if the top
+                # GENERIC_FACTUAL is best-effort - only surface if the top
                 # hit is reasonably confident. PAST_QUERY is explicit so
                 # we always surface what we got.
                 # R3: the `score` gate runs on a MIN-MAX-normalized scale (top
                 # hit ≈ 1.0 even for an irrelevant corpus), so it nearly always
-                # passes — the main false-positive channel. When
+                # passes - the main false-positive channel. When
                 # recall_evidence_min > 0, ALSO require the top hit's ABSOLUTE
                 # vector similarity (signals.raw_cosine) to clear the bar, so a
                 # query the workspace knows nothing about surfaces nothing.
@@ -627,7 +627,7 @@ def run_auto_context(
 
     # Decisions (the "why we did X" rationale): always run when enabled.
     # Surfacing past decisions next to lessons means "before you do this,
-    # here's what we already decided about it" — the agent doesn't have to
+    # here's what we already decided about it" - the agent doesn't have to
     # think to ask. Only attached when find_decisions exists (newer engine).
     if surface_decisions and hasattr(engine, "find_decisions"):
         try:
@@ -696,7 +696,7 @@ def format_context(
                 buf.append(f"  - {_trim(f.get('content',''), 160)}")
         proj_lessons = pc.get("lessons") or []
         if proj_lessons:
-            buf.append("Project lessons (RULES — FOLLOW):")
+            buf.append("Project lessons (RULES - FOLLOW):")
             for L in proj_lessons[:5]:
                 sid = L.get("surface_id")
                 tag = f" [surface_id={sid}]" if sid else ""
@@ -750,7 +750,7 @@ def format_context(
             tag = f" [surface_id={sid}]" if sid else ""
             buf.append(f"  ! {_trim(L.get('content',''), 200)}{tag}")
 
-    # Past decisions (rationale) — so the agent doesn't re-decide a settled
+    # Past decisions (rationale) - so the agent doesn't re-decide a settled
     # call. Surfaced only if project_overview didn't already include them.
     proj_decisions = (res.project or {}).get("decisions") or []
     if res.decisions and not proj_decisions:
@@ -780,7 +780,7 @@ def format_context(
     # auto-recall HOOK, not requested. Tell the agent so it doesn't spend a turn
     # re-calling prepare()/recall() for what's already here.
     buf.append("")
-    buf.append("(auto-recall ran for this message — only call recall() / "
+    buf.append("(auto-recall ran for this message - only call recall() / "
                "find_lessons() for specifics not shown above.)")
 
     text = "\n".join(buf)

@@ -1,4 +1,4 @@
-"""Project structure ingestion — scan a code repo, extract per-file
+"""Project structure ingestion - scan a code repo, extract per-file
 symbols + imports, save as PMB events that the agent can later recall
 ("where is the auth flow", "what files use LanceDB").
 
@@ -24,7 +24,7 @@ Design:
   * Idempotent: per-file sha1 is checked before write. Re-running on a
     clean repo writes nothing.
 
-This module never spawns a heavy parser per file — Python uses the
+This module never spawns a heavy parser per file - Python uses the
 stdlib `ast` module, other languages use cheap regex. For deep AST
 parsing of TS/Rust we'd need tree-sitter; deferred (60% of the value
 for 5% of the work).
@@ -46,7 +46,7 @@ log = logging.getLogger(__name__)
 
 
 # ----------------------------------------------------------------------
-# File walking — respect .gitignore + common ignore directories
+# File walking - respect .gitignore + common ignore directories
 # ----------------------------------------------------------------------
 
 # Directories we never descend into. Covers most ecosystems.
@@ -145,7 +145,7 @@ def _walk_files(root: Path) -> Iterable[Path]:
             continue
         if _is_ignored("/".join(rel_parts), gitignore):
             continue
-        # Skip files >5 MB — they're likely data, not source.
+        # Skip files >5 MB - they're likely data, not source.
         try:
             if p.stat().st_size > 5 * 1024 * 1024:
                 continue
@@ -159,7 +159,7 @@ def _walk_files(root: Path) -> Iterable[Path]:
 # ----------------------------------------------------------------------
 
 def _extract_python(text: str) -> tuple[list[str], list[str]]:
-    """Returns (symbols, imports). Uses stdlib ast — no syntax errors leak."""
+    """Returns (symbols, imports). Uses stdlib ast - no syntax errors leak."""
     try:
         from pmb.reasoning.code_ast import extract_python_symbols
         syms = extract_python_symbols(text)
@@ -249,7 +249,7 @@ def _hash_text(s: str) -> str:
 
 
 def _is_file_indexed(engine: Engine, project_path: str, file_path: str, sha1: str) -> bool:
-    """Idempotency check — has this file with this exact content already been
+    """Idempotency check - has this file with this exact content already been
     indexed for this project?"""
     import sqlite3
     try:
@@ -301,7 +301,7 @@ def index_project(
     Args:
         engine: live PMB Engine
         path: project root
-        importance: per-file event importance (default 0.55 — high signal)
+        importance: per-file event importance (default 0.55 - high signal)
         force: re-index files even if their sha1 already exists
         max_files: safety cap so a giant repo doesn't lock the workspace
 
@@ -379,7 +379,7 @@ def index_project(
         if len(sample_files) < 30:
             sample_files.append(str(rel))
 
-        # Compose the content — content drives BM25 + vector recall, so
+        # Compose the content - content drives BM25 + vector recall, so
         # we put the most informative things first.
         head = f"File: {rel} ({lang}, {loc} lines)"
         symbols_str = ", ".join(symbols[:20]) if symbols else "(no symbols)"

@@ -1,7 +1,7 @@
 """Persistent error breadcrumbs.
 
 PMB's write/maintenance paths are full of best-effort `try/except` blocks that
-must NOT crash a user turn — but a bare `except Exception: pass` makes a real
+must NOT crash a user turn - but a bare `except Exception: pass` makes a real
 failure invisible. This module is the middle ground: swallow the exception so
 the turn survives, but drop ONE durable row describing it, so `pmb doctor` and
 the status panel can show "N errors in the last 24h" instead of silence.
@@ -17,7 +17,7 @@ import time
 import traceback
 from pathlib import Path
 
-# Prune counter — every Nth insert we drop rows older than the retention window
+# Prune counter - every Nth insert we drop rows older than the retention window
 # so the table can't grow unbounded on a chronically-failing path.
 _PRUNE_EVERY = 200
 _RETENTION_S = 14 * 24 * 3600.0
@@ -62,7 +62,7 @@ def recent_errors(
     limit: int = 200,
 ) -> list[dict]:
     """Return error rows from the last `since_s` seconds (newest first).
-    Best-effort — returns [] if the table is missing or unreadable."""
+    Best-effort - returns [] if the table is missing or unreadable."""
     try:
         cutoff = time.time() - float(since_s)
         with sqlite3.connect(str(db_path)) as conn:

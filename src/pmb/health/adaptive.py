@@ -1,5 +1,5 @@
 """
-Adaptive Importance — learns from failed self-test queries.
+Adaptive Importance - learns from failed self-test queries.
 
 When a self-test fails on query X (the expected event E wasn't in the top-K),
 that's a signal that E doesn't have enough importance to compete with others.
@@ -7,7 +7,7 @@ that's a signal that E doesn't have enough importance to compete with others.
 Adaptation strategies:
 1. Boost the importance of failed events by 10% (saturating)
 2. Additionally log the failure pattern in adaptive_log.jsonl
-3. If the same event fails > 3 times — apply a bigger blanket importance boost
+3. If the same event fails > 3 times - apply a bigger blanket importance boost
 
 This is slow learning: each weekly self-test → a small adjustment.
 
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 BOOST_PER_FAILURE = 0.10
-SUPERBOOST_THRESHOLD = 3  # after 3 failures — bigger boost
+SUPERBOOST_THRESHOLD = 3  # after 3 failures - bigger boost
 SUPERBOOST_VALUE = 0.85
 
 
@@ -137,7 +137,7 @@ def adaptive_history(engine: Engine, limit: int = 100) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Feedback-driven adaptive — uses REAL user signal, not synthetic self-test
+# Feedback-driven adaptive - uses REAL user signal, not synthetic self-test
 # ---------------------------------------------------------------------------
 
 FEEDBACK_USEFUL_PROMOTE_AT = 3   # n useful → strong promote
@@ -154,7 +154,7 @@ def apply_feedback_adaptive(engine: Engine) -> dict:
     Aggregate feedback counts and promote / demote importance.
 
     Run periodically (e.g. weekly with self-test). Operates on totals,
-    so repeated calls don't compound — promoting to a target is idempotent.
+    so repeated calls don't compound - promoting to a target is idempotent.
 
     Returns counts of events touched.
     """
