@@ -1,0 +1,37 @@
+{
+  "name": "pmb-ai",
+  "version": "0.9.1",
+  "description": "Local-first persistent memory for AI coding agents. Thin npm launcher for the Python package on PyPI.",
+  "bin": {
+    "pmb-ai": "./bin/pmb-ai.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "package.json"
+  ],
+  "keywords": [
+    "mcp",
+    "ai",
+    "memory",
+    "agents",
+    "python",
+    "local-first",
+    "claude",
+    "cursor",
+    "codex"
+  ],
+  "homepage": "https://github.com/oleksiijko/pmb#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oleksiijko/pmb.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oleksiijko/pmb/issues"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "mcpName": "io.github.oleksiijko/pmb-ai"
+}
