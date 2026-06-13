@@ -47,7 +47,7 @@ src/pmb/
   agent_wrapper/    - pmb-chat (optional standalone chat loop)
   health/           - consolidation, doctor checks
   eval/             - LoCoMo judge helpers
-tests/              - pytest, no fixtures spanning files
+tests/              - pytest, grouped by subsystem (lang/recall/engine/hooks/…)
 scripts/            - benchmarks, demos, profilers
 ```
 
@@ -71,7 +71,8 @@ scripts/            - benchmarks, demos, profilers
 
 ## Tests
 
-- Unit tests live in `tests/`. They use temp workspaces (`tempfile.mkdtemp`); don't write to `~/.pmb/` from a test.
+- Tests are grouped by subsystem under `tests/`: `lang/`, `recall/`, `engine/`, `hooks/`, `mcp/`, `ingest/`, `maintenance/`, `security/`, `cli/`, `integration/`, `eval/`, `meta/`. Put a new test in the folder matching what it exercises; frozen baselines live in `tests/fixtures/`.
+- Tests use temp workspaces (`tempfile.mkdtemp`); don't write to `~/.pmb/` from a test.
 - For features that touch recall scoring, add a test in `tests/engine/test_graph.py` style that asserts ordering, not exact scores.
 - The full LoCoMo bench (`scripts/benchmark_locomo.py`) is the integration test for retrieval quality.
 
