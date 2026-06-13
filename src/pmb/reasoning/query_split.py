@@ -2,13 +2,13 @@
 Pattern-based query splitting for compound recall.
 
 Compound queries like "when was the last time I went to the gym and why
-haven't I gone all week" lose recall when treated as a single bag-of-tokens —
+haven't I gone all week" lose recall when treated as a single bag-of-tokens -
 the two sub-questions ("when did I go" vs "why didn't I go") get averaged into
 a diffuse query vector that matches neither sub-fact well.
 
 Solution: split on natural join markers, run each sub-query through the
 normal recall pipeline, and fuse the candidate lists via Reciprocal Rank
-Fusion (RRF). No LLM needed — patterns cover ~80% of compound queries.
+Fusion (RRF). No LLM needed - patterns cover ~80% of compound queries.
 
 When to fire:
   - Query length >= 8 tokens (single-clause queries are short)
@@ -43,7 +43,7 @@ _SPLIT_CONJ = ["and"] + sorted(_lang.merged_set("query_split_conj", set()))
 _SPLIT_WH = ["why", "how", "when", "where", "who", "what"] + sorted(
     _lang.merged_set("query_split_wh", set()))
 _SPLIT_PATTERNS: list[tuple[re.Pattern, str]] = [
-    # Strong WH-conjunction (clearly two questions) — assembled EN + pack
+    # Strong WH-conjunction (clearly two questions) - assembled EN + pack
     (re.compile(
         r"\s+(?:" + "|".join(_SPLIT_CONJ) + r")\s+(?=(?:"
         + "|".join(_SPLIT_WH) + r")\b)", re.IGNORECASE),
@@ -62,7 +62,7 @@ _SPLIT_PATTERNS: list[tuple[re.Pattern, str]] = [
 # a fragment like a bare conjunction + WH-word)
 _MIN_SUB_TOKENS = 2
 
-# Skip splitting on very short queries — they are by definition single-clause
+# Skip splitting on very short queries - they are by definition single-clause
 _MIN_LEN_FOR_SPLIT = 6
 
 
@@ -92,7 +92,7 @@ def split_query(query: str, max_parts: int = 3) -> list[str]:
     """Split a compound query into sub-queries.
 
     Returns a list with at least one element (the original query). When no
-    pattern fires, the list is `[query]` — callers should treat that as
+    pattern fires, the list is `[query]` - callers should treat that as
     "no split occurred".
 
     Empty/short queries pass through unchanged.
@@ -103,7 +103,7 @@ def split_query(query: str, max_parts: int = 3) -> list[str]:
     if len(q) < _MIN_LEN_FOR_SPLIT:
         return [q]
     # Pre-gate: query must have at least 2 content tokens overall.
-    # We don't gate harder — the per-piece check below decides if a split
+    # We don't gate harder - the per-piece check below decides if a split
     # is meaningful.
     if _count_content_tokens(q) < 2:
         return [q]
@@ -121,7 +121,7 @@ def split_query(query: str, max_parts: int = 3) -> list[str]:
             counts = [_count_content_tokens(p) for p in pieces]
             # Quality gate: split is real only when both halves carry a
             # content token (kills splits like "and?" or ".?"). For very
-            # short content-token halves (1+1) we still trust the marker —
+            # short content-token halves (1+1) we still trust the marker -
             # patterns are strong enough that a "and why" or "potomu chto"
             # really does separate two questions.
             if len(pieces) >= 2 and all(c >= 1 for c in counts):

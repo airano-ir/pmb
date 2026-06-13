@@ -1,7 +1,7 @@
 """
 Approximate token budgeting for the chat loop.
 
-We do not have to be exact — we only need to know "are we getting close to
+We do not have to be exact - we only need to know "are we getting close to
 the context window so we should compact?" A 5% error in token count is
 fine; what matters is monotonicity (adding messages strictly increases the
 estimate).

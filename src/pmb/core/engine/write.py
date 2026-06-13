@@ -158,7 +158,7 @@ class WriteMixin:
             return dup_hit.canonical_ulid
 
         # Write-time quality gate (#8, default OFF): FLAG (never reject)
-        # suspected junk — cap importance and tag it so it can't be promoted to
+        # suspected junk - cap importance and tag it so it can't be promoted to
         # a keyed fact and is a first-class declutter candidate. A memory
         # system must never silently drop user input, so we only down-weight.
         if self.config.get("write.quality_gate"):
@@ -180,7 +180,7 @@ class WriteMixin:
         # R13: importance-spam containment. Agents habitually stamp 0.95 on
         # routine facts (the global CLAUDE.md even says importance=0.95 for
         # "remember"), and importance_factor = 0.5+0.5·imp gives a ~2× ranking
-        # edge — so spam pollutes ranking. Cap how many >0.9 fact writes land
+        # edge - so spam pollutes ranking. Cap how many >0.9 fact writes land
         # per rolling day; past the budget, clamp to a normal level and leave a
         # breadcrumb. Keyed/lesson facts are exempt; PINNED facts are exempt
         # automatically because pin() resets importance to 1.0 afterwards.
@@ -210,7 +210,7 @@ class WriteMixin:
 
         # Plan detector (#9): flag forward-looking "next we'll do X" facts so
         # the dashboard / `pmb goals` can suggest promoting them to a goal.
-        # Non-destructive (a hint only) — we never auto-convert, since durable
+        # Non-destructive (a hint only) - we never auto-convert, since durable
         # preferences ("we will always use pnpm") would false-positive.
         try:
             _m = clean_metadata if isinstance(clean_metadata, dict) else {}
@@ -281,7 +281,7 @@ class WriteMixin:
         except Exception:
             pass
 
-        # L2.5: borderline candidate detected — enqueue for async LLM verify
+        # L2.5: borderline candidate detected - enqueue for async LLM verify
         if borderline is not None and self.config.get("dedup.async_verify"):
             try:
                 from pmb.reasoning.dedup import enqueue_borderline
@@ -324,16 +324,16 @@ class WriteMixin:
         try:
             meta = metadata if isinstance(metadata, dict) else {}
             if meta.get("keyed_fact_key"):
-                return  # already a keyed fact — don't re-key (prevents recursion)
+                return  # already a keyed fact - don't re-key (prevents recursion)
             if meta.get("quality_flag") == "suspect_junk":
-                return  # write-time gate flagged this as junk — never promote it
+                return  # write-time gate flagged this as junk - never promote it
             if not self.config.get("keyed.auto_detect_current_state"):
                 return
             if meta.get("source") not in self._CURRENT_STATE_SOURCES:
                 return  # only user-origin facts, never internal pipelines
             hit = detect_current_state(content)
             if not hit:
-                # C2 (warm-only, gated): the regex/pack tier missed — try the
+                # C2 (warm-only, gated): the regex/pack tier missed - try the
                 # multilingual hypothesis-margin extractor before giving up.
                 self._anchor_promote_keyed(content, meta, importance)
                 return
@@ -399,7 +399,7 @@ class WriteMixin:
                 return
             attr = detect_negated_state(content)  # post-A1: user-subject only
             if not attr:
-                # F2: the regex tier missed — try the anchor anti-hypothesis
+                # F2: the regex tier missed - try the anchor anti-hypothesis
                 # against the user's CURRENT keyed values (warm-only, gated).
                 self._anchor_close_on_negation(content, new_ulid, now_ts)
                 return
@@ -552,7 +552,7 @@ class WriteMixin:
             prior_values = []
 
         # C2 cosine-merge: if the new value is an INFLECTION of a prior value
-        # (RU "Kieve" vs "Kiev", a German dative), converge them — store the
+        # (RU "Kieve" vs "Kiev", a German dative), converge them - store the
         # shorter / nominative-looking form so one fact doesn't churn into two
         # competing keyed values. Warm-only + gated (extract.anchor_keyed);
         # byte-identical values already collapse for free upstream.
@@ -565,7 +565,7 @@ class WriteMixin:
                         value = min(value, pv, key=len)   # shorter ≈ nominative
                         break
                 # If the merge converged onto an existing value, this is a pure
-                # inflected RESTATEMENT — keep the current fact as-is instead of
+                # inflected RESTATEMENT - keep the current fact as-is instead of
                 # churning it into an archived duplicate (identical content would
                 # otherwise dedup-collide with the very row we'd archive).
                 if any(pv.lower() == value.lower() for pv in prior_values):
@@ -600,7 +600,7 @@ class WriteMixin:
             metadata=meta,
         )
 
-        # 3. Archive priors — they stay in SQLite (queryable as history)
+        # 3. Archive priors - they stay in SQLite (queryable as history)
         # but `archived_at IS NULL` filter removes them from recall.
         for old_ulid in prior_ulids:
             try:
@@ -626,7 +626,7 @@ class WriteMixin:
 
         # Negation-tombstone cleanup (#5): now that a positive value exists,
         # retire older "user does NOT live in X / current city is unknown"
-        # facts for the same attribute — they assert ignorance about a
+        # facts for the same attribute - they assert ignorance about a
         # now-known attribute and are pure stale noise. Archive-only.
         negated = self._archive_obsolete_negations(
             canonicalize_attribute(attribute), new_ulid, now_ts,
@@ -680,7 +680,7 @@ class WriteMixin:
                 if meta.get("kind") == "lesson" or meta.get("source") == "lesson":
                     continue  # lessons are instructions, not state
                 if float(r["importance"] or 0.0) >= 0.99:
-                    continue  # pinned — never auto-archive
+                    continue  # pinned - never auto-archive
                 if detect_negated_state(r["content"] or "") != canon_attribute:
                     continue
                 self.events.archive(r["ulid"])
@@ -768,7 +768,7 @@ class WriteMixin:
                 continue
             new_ulid, val_ts = attrs_with_value[attr]
             if r["timestamp"] >= val_ts:
-                continue  # negation is newer than the positive value — leave it
+                continue  # negation is newer than the positive value - leave it
             plan.append({"attribute": attr, "ulid": r["ulid"],
                          "content": (r["content"] or "")[:120],
                          "superseded_by": new_ulid})
@@ -931,7 +931,7 @@ class WriteMixin:
         rest (``superseded_by`` + ``valid_to``), and rewrite the survivor's key
         to canonical so future upserts supersede it correctly.
 
-        Non-destructive — only archives + retags, never deletes. ``dry_run``
+        Non-destructive - only archives + retags, never deletes. ``dry_run``
         (default True) reports the plan without writing.
 
         Returns {groups, n_archived, n_recanonicalized, dry_run}.
@@ -1131,7 +1131,7 @@ class WriteMixin:
         prefilter before the LLM is even called, (2) the LLM's own
         subject=="user" verdict, (3) flagged-junk facts are skipped.
 
-        Open-ended understanding belongs OFFLINE — invoked by consolidation /
+        Open-ended understanding belongs OFFLINE - invoked by consolidation /
         `pmb consolidate`, NEVER on the recall hot path. Each call is
         timeout-clamped (≤15s) and behind the recall circuit breaker; the WHOLE
         pass is bounded by an LLMBudget (config llm.offline_max_calls /
@@ -1182,11 +1182,11 @@ class WriteMixin:
                 continue  # gate 3: flagged junk never becomes user state
             content = r["content"] or ""
             # gate 1: third-party text ("Alice relocated to Berlin") never even
-            # reaches the LLM — only facts that mention the user/first person.
+            # reaches the LLM - only facts that mention the user/first person.
             if not has_user_subject_cue(content):
                 continue
             if detect_current_state(content):
-                continue  # cheap regex already covers it — no LLM needed
+                continue  # cheap regex already covers it - no LLM needed
             cands.append((r["ulid"], content))
             if len(cands) >= limit:
                 break
@@ -1312,7 +1312,7 @@ class WriteMixin:
         Copies active events from `source` (workspace id or name) into the
         current workspace, tagged ``project=<name>`` so they can be filtered
         with recall_scoped. The SOURCE is read-only here (raw SQL) and never
-        modified — so this is fully reversible: the original workspace stays
+        modified - so this is fully reversible: the original workspace stays
         intact. Idempotent: events already migrated (matched by
         ``migrated_ulid``) are skipped. ``dry_run`` (default) only reports.
 
@@ -1423,7 +1423,7 @@ class WriteMixin:
         """Improvement P: store a main fact + multiple atomic subfacts.
 
         The main fact gets the requested importance. Subfacts inherit the
-        main's importance × 0.85 (slightly lower — they're supplementary)
+        main's importance × 0.85 (slightly lower - they're supplementary)
         and link back via metadata.parent_ulid.
 
         Use this when one event has multiple atomic data points worth
@@ -1602,7 +1602,7 @@ class WriteMixin:
     ) -> str:
         """Improvement J: record an image with optional CLIP embedding.
 
-        The `description` is what's searchable via text — make it specific
+        The `description` is what's searchable via text - make it specific
         ('screenshot of auth flow diagram with arrows', not 'image').
 
         encode_clip=True triggers CLIP encoding (requires open_clip or
@@ -1615,7 +1615,7 @@ class WriteMixin:
         att = attach_image(path, description=description, encode_clip=encode_clip)
         meta = dict(metadata or {})
         meta.update(att.to_metadata())
-        # The event's content IS the description — that's what's indexed
+        # The event's content IS the description - that's what's indexed
         content = description or f"image: {Path(att.path).name}"
         return self.record_event(
             event_type="image",

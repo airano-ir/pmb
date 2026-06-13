@@ -1,9 +1,9 @@
 """
 Predictive Pre-Computation cache (Improvement F).
 
-Idea — taken from human "intuitive answer":
+Idea - taken from human "intuitive answer":
   When a human is asked a question they've thought about before, the
-  answer comes instantly — they don't search memory from scratch. The
+  answer comes instantly - they don't search memory from scratch. The
   brain has pre-baked the connection between probable questions and
   their resolutions during idle time / sleep.
 
@@ -23,7 +23,7 @@ Storage: SQLite table `predictive_cache` (v5 schema).
 
 Why this is genuinely new:
   - mem0/Letta/Zep don't pre-compute anything; they run recall on every query
-  - HippoRAG, GraphRAG, RAG-Fusion — all pure on-demand retrieval
+  - HippoRAG, GraphRAG, RAG-Fusion - all pure on-demand retrieval
   - The closest concept is "Anticipatory Memory" (cog-sci theory) but it
     hasn't been deployed in a memory-for-agent system in this form
 
@@ -78,8 +78,8 @@ Cover different angles:
 
 Rules:
 - Output VALID JSON: a list of strings.
-- Questions should be naturally phrased — what a real user would type.
-- Don't repeat questions in different wordings — diversify topics.
+- Questions should be naturally phrased - what a real user would type.
+- Don't repeat questions in different wordings - diversify topics.
 - Maximum 15 questions. Be selective: the most LIKELY questions only.
 
 Recent events:

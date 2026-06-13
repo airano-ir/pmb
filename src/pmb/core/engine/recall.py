@@ -46,7 +46,7 @@ _ATTR_RE = re.compile(
     re.IGNORECASE,
 )
 # E2: lexical-overlap tokenizer uses a Unicode letters+digits class (`[^\W_]` =
-# word char minus underscore — any script), so no enumerated Cyrillic range.
+# word char minus underscore - any script), so no enumerated Cyrillic range.
 _WORD_NUM = r"[^\W_]+"
 
 
@@ -75,10 +75,10 @@ class RecallMixin:
         "My name is X" / "my name is …" facts (any language). Cached.
 
         Refreshed when: (a) first call, (b) a name-statement write marked the
-        cache dirty — so a newly recorded name takes effect on the very NEXT
+        cache dirty - so a newly recorded name takes effect on the very NEXT
         recall, not after 25 more events, (c) 25 writes have accrued, or (d) a
         300 s TTL elapsed (covers a name written by ANOTHER process). No
-        per-recall ``SELECT COUNT(*)`` — the common path is a flag check, which
+        per-recall ``SELECT COUNT(*)`` - the common path is a flag check, which
         matters in a long-lived daemon serving many recalls.
 
         Single source of truth for BOTH the PAMVR self-reference rescue and the
@@ -135,7 +135,7 @@ class RecallMixin:
         _skip_decompose: bool = False,
     ) -> RecallPack:
         """D4 singleflight wrapper: collapse concurrent IDENTICAL top-level
-        recalls (daemon multi-client / agent fan-out) so the work runs once —
+        recalls (daemon multi-client / agent fan-out) so the work runs once -
         followers wait for the leader and reuse its result. On timeout or a
         leader error they compute independently, so this can never deadlock.
         Recursive sub-query calls (``_skip_decompose=True``) and the disabled
@@ -221,7 +221,7 @@ class RecallMixin:
                 return fused
             # Fallthrough: decomposition failed → run original single-shot
 
-        # Pattern-based query splitting (Improvement UU). Cheap, no LLM —
+        # Pattern-based query splitting (Improvement UU). Cheap, no LLM -
         # catches compound queries like "why X and why Y" / "X because Y"
         # (the RU/UK split markers live in the lang packs).
         # When a split fires, each sub-query runs through the normal recall
@@ -229,7 +229,7 @@ class RecallMixin:
         # queries that single-shot recall would otherwise diffuse.
         #
         # Hardening note (H1): we intentionally do NOT wrap this whole block
-        # in a bare `except: pass` — silent fallback hides real bugs (a
+        # in a bare `except: pass` - silent fallback hides real bugs (a
         # missing RecallPack field would have looked indistinguishable from
         # "no split fired"). We only catch the specific failure modes we
         # accept (sub-recall raising, fusion edge cases). Constructor /
@@ -261,7 +261,7 @@ class RecallMixin:
                     # Round-robin interleave per-sub top results. Each
                     # sub-pack's top-1 is guaranteed a slot in the final
                     # top-N, which is what the user expects for compound
-                    # queries — "X and Y" should surface BOTH X-answer
+                    # queries - "X and Y" should surface BOTH X-answer
                     # and Y-answer near the top, not have RRF blend them
                     # into a single diluted ranking.
                     #
@@ -331,7 +331,7 @@ class RecallMixin:
                         return pack
             self._pattern_split_last_returned = False
 
-        # LRU cache hit — short-circuit the whole pipeline. The cache is
+        # LRU cache hit - short-circuit the whole pipeline. The cache is
         # invalidated automatically on any event write via bump_generation().
         cache_key = make_recall_cache_key(
             query,
@@ -387,13 +387,13 @@ class RecallMixin:
         # User-name set (mined from "My name is X" facts in any language,
         # cached, refreshed every 25 writes). Computed ONCE per recall and
         # reused by the router (identity-by-name), PAMVR self-reference
-        # rescue, and the identity-marker boost — so no path hardcodes a
+        # rescue, and the identity-marker boost - so no path hardcodes a
         # personal name.
         user_names = self._get_user_names()
 
         # Stage 0: Adaptive Layer Routing (Improvement E). Classify the query
         # and get per-layer multipliers; applied later in scoring loop.
-        # Cheap — pure regex.
+        # Cheap - pure regex.
         layer_weights = None
         if self.config.get("recall.adaptive_routing"):
             try:
@@ -406,7 +406,7 @@ class RecallMixin:
 
         # Stage 0.5: Predictive cache check (Improvement F).
         # ~3-5ms cosine over pre-baked questions. If we have a near-identical
-        # cached query, return its top-K ulids directly — bypassing all
+        # cached query, return its top-K ulids directly - bypassing all
         # downstream stages. This is the "intuitive answer" path.
         if self.config.get("recall.predictive_enabled"):
             try:
@@ -473,7 +473,7 @@ class RecallMixin:
                 pass  # cache failure → normal recall
 
         # Read-your-writes: embeds parked while the process was cold (the
-        # passive worker never loads the model — the Codex-timeout fix) are
+        # passive worker never loads the model - the Codex-timeout fix) are
         # flushed HERE, because recall is a legitimate model consumer: it
         # embeds the query on the next line anyway. Bounded inline drain so a
         # record→recall sequence sees its own vectors; big backlogs finish via
@@ -490,11 +490,11 @@ class RecallMixin:
             top_k=top_k * 5,  # headroom for the archived filter
         )
 
-        # Stage 2: graph expansion — entities in the query may surface events
+        # Stage 2: graph expansion - entities in the query may surface events
         # that BM25/vec missed entirely. We weight each matched entity by
         # rarity (IDF-ish): an event that matches multiple rare entities
         # gets a stronger boost than one that matches a single common word.
-        # Improvement C: temporal anchor — parse a date reference from the
+        # Improvement C: temporal anchor - parse a date reference from the
         # query when it looks temporal. Used later to boost candidates with
         # nearby event_time.
         temporal_anchor: float | None = None
@@ -548,7 +548,7 @@ class RecallMixin:
                         if e.id is None:
                             continue
                         eid_to_idf[e.id] = 1.0 / math.log(2.0 + max(0, e.n_mentions))
-                    # Bump pair limit (was top_k * 20 = 200 — too tight for
+                    # Bump pair limit (was top_k * 20 = 200 - too tight for
                     # multi-hop, where the right event may be ranked far down
                     # in raw graph traversal but emerges via multi-entity bonus
                     # below). 100x top_k gives ample room without paying for it.
@@ -564,7 +564,7 @@ class RecallMixin:
                     # Multi-hop bonus: an event mentioning N distinct query
                     # entities gets weight × (1 + 0.5*(N-1)). Two entities =
                     # 1.5x, three = 2x. This is the bridge for multi-hop
-                    # questions: "what did Alice do in December?" — answer
+                    # questions: "what did Alice do in December?" - answer
                     # event has both 'alice' AND 'december', so it dominates
                     # single-entity matches.
                     multi_bonus = self.config.get("recall.multi_entity_bonus") or 0.5
@@ -576,7 +576,7 @@ class RecallMixin:
 
         # Stage 2.4: Personalized PageRank (HippoRAG). Cheap multi-hop boost
         # that uses the entity graph we already built. Diffuses probability
-        # from query entities through the graph for many hops in one shot —
+        # from query entities through the graph for many hops in one shot -
         # this is what lets the answer event (which only mentions ONE query
         # entity directly but is multi-hop close to the rest) surface.
         #
@@ -608,7 +608,7 @@ class RecallMixin:
                             if e.id is None:
                                 continue
                             seed_eids.append(e.id)
-                            # IDF-ish — rare entity weighted more
+                            # IDF-ish - rare entity weighted more
                             seed_w.append(1.0 / math.log(2.0 + max(0, e.n_mentions)))
                     # Intent gate: PPR only when query is multi-hop or has 2+
                     # matched entities. Single-entity exact-match queries are
@@ -659,7 +659,7 @@ class RecallMixin:
         # Stage 2.6: narrative arc expansion. If query looks narrative
         # ("tell me about X", "history of Y"), search arc summaries via
         # BM25-ish substring match and inject member events of best-matching
-        # arc into the candidate pool. Very cheap — no LLM.
+        # arc into the candidate pool. Very cheap - no LLM.
         arc_ulids: set[str] = set()
         arc_summaries_hit: list[dict] = []
         if self.config.get("recall.arc_expansion"):
@@ -729,7 +729,7 @@ class RecallMixin:
                 elapsed_ms=(time.perf_counter() - t0) * 1000.0,
             )
 
-        # Stage 3: batched fetch — union of search + graph + causation + arc hits
+        # Stage 3: batched fetch - union of search + graph + causation + arc hits
         seen_for_dedupe = {h.ulid for h in raw_hits}
         all_ulids: list[str] = [h.ulid for h in raw_hits]
         for u in graph_ulids:
@@ -757,7 +757,7 @@ class RecallMixin:
         # a cheap SQL scan (~5ms on a 1000-event workspace) gated on a tight
         # regex so non-personal queries pay nothing.
         # Two-token intent gate: needs BOTH a question word AND a
-        # personal-pronoun/user-cue. Either alone fires too often —
+        # personal-pronoun/user-cue. Either alone fires too often -
         # "how does X work" should not inject keyed-facts (no personal
         # cue), and "user works on PMB" should not inject either (no
         # question cue).
@@ -889,7 +889,7 @@ class RecallMixin:
         for ulid, ev in rows.items():
             h = search_hits_by_ulid.get(ulid)
             if h is None:
-                # Graph-only hit — synthesize a SearchHit at low base score so
+                # Graph-only hit - synthesize a SearchHit at low base score so
                 # graph evidence alone can still surface a strong importance event.
                 h = SearchHit(
                     ulid=ulid,
@@ -942,7 +942,7 @@ class RecallMixin:
                 ab_mul = layer_weights.arc_boost_mul if layer_weights else 1.0
                 base += arc_boost * ab_mul * importance_factor * (1.0 + 0.2 * recency)
             # PPR augmentation: events with high PPR mass from query entities
-            # get a boost. This is the multi-hop unlock — events that don't
+            # get a boost. This is the multi-hop unlock - events that don't
             # appear in raw search but are graph-close to query entities.
             if ppr_event_scores:
                 pscore = ppr_event_scores.get(ulid, 0.0)
@@ -991,12 +991,12 @@ class RecallMixin:
             # supersession so we never boost a stale value here.
             #
             # Two-step boost:
-            #   (a) MIN FLOOR — keyed-facts have weak text overlap with
+            #   (a) MIN FLOOR - keyed-facts have weak text overlap with
             #       natural-language questions ("where do I live" vs
             #       "user.city: Warsaw"). Bring the base up to a floor
             #       so it competes with topical matches.
-            #   (b) ADDITIVE — recency-weighted, importance-scaled.
-            #   (c) MULTIPLICATIVE — keyed-facts answering personal
+            #   (b) ADDITIVE - recency-weighted, importance-scaled.
+            #   (c) MULTIPLICATIVE - keyed-facts answering personal
             #       questions are USUALLY the right answer. Bump above
             #       merely-topical hits.
             _boost_keyed = (
@@ -1018,12 +1018,12 @@ class RecallMixin:
                     _ex = ev.metadata.get("extract")
                     if isinstance(_ex, dict) and isinstance(_ex.get("margin"), (int, float)):
                         conf = 0.7 + 0.3 * min(1.0, max(0.0, float(_ex["margin"])) / 0.15)
-                # (a) Floor — keyed-fact text is short ("user city: X")
+                # (a) Floor - keyed-fact text is short ("user city: X")
                 # so vector + BM25 base often underestimates.
                 base = max(base, 0.50)
-                # (b) additive — recency and importance scaled, confidence-weighted.
+                # (b) additive - recency and importance scaled, confidence-weighted.
                 base += keyed_boost * importance_factor * (1.0 + 0.3 * recency) * conf
-                # (c) multiplicative — keyed-fact-on-personal-query is
+                # (c) multiplicative - keyed-fact-on-personal-query is
                 # almost always the right answer (full 1.4 at conf=1.0).
                 base *= 1.0 + 0.4 * conf
             # Improvement B: query-keyword overlap boost. If most of the
@@ -1058,7 +1058,7 @@ class RecallMixin:
                 and layer_weights.identity_marker_boost > 1.0
             ):
                 content_head = (ev.content or "")[:60].lower()
-                # Generic first-person / role markers — language-functional,
+                # Generic first-person / role markers - language-functional,
                 # NOT personal data, so they stay inline.
                 is_identity = (
                     content_head.startswith("user's ")
@@ -1070,7 +1070,7 @@ class RecallMixin:
                 )
                 # A fact that opens with the user's OWN name ("Bob's
                 # terminal is ...") is an identity fact too. Driven by the
-                # mined user-name cache (user_names) — never a hardcoded
+                # mined user-name cache (user_names) - never a hardcoded
                 # personal-name literal.
                 if not is_identity and user_names:
                     first_tok = content_head.split(" ", 1)[0]
@@ -1093,7 +1093,7 @@ class RecallMixin:
                 kind = meta.get("activity_kind") or meta.get("kind") or ""
                 if kind in ("decision", "decided", "agreed", "resolved", "concluded"):
                     base *= layer_weights.decision_boost
-            # PAMVR (Predicate-Aware Multi-View Reranking) — 14 small
+            # PAMVR (Predicate-Aware Multi-View Reranking) - 14 small
             # content-based boost rules empirically tuned to lift top-1
             # accuracy from ~60% to 93%+. Verb match, entity strict,
             # vocab bridges, topic constraint, time-duration, etc. See
@@ -1109,7 +1109,7 @@ class RecallMixin:
             scored.append((h, ev, base, recency))
 
         # Stage 3.25: collapse reflections onto their source events.
-        # Reflections are meta — they exist to make sources findable via
+        # Reflections are meta - they exist to make sources findable via
         # their LLM-generated 'might_answer' text. The final result list
         # should always be source events, with the reflection's score
         # added to the source's. If the source isn't in candidates yet,
@@ -1161,7 +1161,7 @@ class RecallMixin:
         #   VV upgrade: ADD a "confidence-required" stage after the CE
         #   produces scores. Only commit the reranked order if the new
         #   top-1's CE score beats the previous top-1's by >= swap_margin.
-        #   When confidence is low, KEEP the hybrid order — the cross-
+        #   When confidence is low, KEEP the hybrid order - the cross-
         #   encoder isn't sure enough to override it.
         #
         #   Net effect: gating fires more often (helps where hybrid was
@@ -1219,7 +1219,7 @@ class RecallMixin:
                     prev_top1_score = float(reranked[prev_top1_in_rerank].score)
                     swap_margin = float(self.config.get("recall.rerank_swap_margin") or 0.20)
                     if (new_top1_score - prev_top1_score) < swap_margin:
-                        # CE not confident enough — restore prev top-1 at pos 0
+                        # CE not confident enough - restore prev top-1 at pos 0
                         old_idx = prev_top1_in_rerank
                         reranked = [reranked[old_idx]] + [
                             h for i, h in enumerate(reranked) if i != old_idx
@@ -1230,7 +1230,7 @@ class RecallMixin:
         # Stage 3.6: optional LLM-as-judge rerank (Improvement XX).
         # Asks a small local LLM (qwen2.5:1.5b by default, via Ollama)
         # to pick the single best candidate from the current top-N.
-        # OFF by default — adds ~100-300ms but lifts top-1 by 5-15pp on
+        # OFF by default - adds ~100-300ms but lifts top-1 by 5-15pp on
         # hard queries where lexical+semantic+CE all give close scores.
         if self.config.get("recall.llm_rerank") and len(scored) >= 2:
             try:
@@ -1270,7 +1270,7 @@ class RecallMixin:
         scored = scored[:top_k]
 
         # Stage 4: hydrate + reinforcement. Collect side effects so we
-        # can flush them in a single SQLite transaction at the end —
+        # can flush them in a single SQLite transaction at the end -
         # this is the biggest latency win on warm recall.
         from pmb.core.events import (
             PROMOTE_EPISODIC_TO_SEMANTIC_ACCESS,
@@ -1337,7 +1337,7 @@ class RecallMixin:
             n_total_in_workspace=n_total,
             elapsed_ms=elapsed_ms,
         )
-        # Spreading activation — prime graph neighbours of every hit. Like
+        # Spreading activation - prime graph neighbours of every hit. Like
         # priming in human associative memory: thinking about X makes
         # related concepts easier to retrieve next time.
         if self.config.get("recall.spreading_activation") and results:
@@ -1356,7 +1356,7 @@ class RecallMixin:
                     pass
 
             # S9: the pack is already built, so priming is a pure side effect on
-            # FUTURE recalls — get it OFF the synchronous return in the long-lived
+            # FUTURE recalls - get it OFF the synchronous return in the long-lived
             # daemon (touch_async on) by running it on a background thread. When
             # touch_async is off (tests / one-shot CLI) run inline so priming is
             # deterministic and visible immediately.
@@ -1419,7 +1419,7 @@ class RecallMixin:
           * ONE wall-clock budget (`recall.smart_deadline_ms`, default 15s).
             No stage may START once it's exhausted; the best result we
             already have is returned immediately.
-          * The fast path is LOCAL ONLY — BM25+vec+graph, plus a local
+          * The fast path is LOCAL ONLY - BM25+vec+graph, plus a local
             cross-encoder rerank only if that model is already warm. It
             never resolves an LLM client / spawns the Claude CLI, so a hung
             backend cannot stall an interactive answer.
@@ -1459,7 +1459,7 @@ class RecallMixin:
                 pass
             return pack
 
-        # Stage 1 — fast LOCAL recall. _skip_decompose guarantees we never
+        # Stage 1 - fast LOCAL recall. _skip_decompose guarantees we never
         # drop into the LLM decomposition path even if recall.adaptive_
         # decompose is enabled globally; the interactive answer stays local.
         stages.append("local")
@@ -1468,7 +1468,7 @@ class RecallMixin:
         if pack.confidence >= confidence_threshold:
             return _finish(best, "confidence_met")
 
-        # Stage 2 — cheap local escalation: wider candidate pool + a local
+        # Stage 2 - cheap local escalation: wider candidate pool + a local
         # cross-encoder rerank, but ONLY if the reranker model is already
         # loaded (never block the interactive path on a cold model load).
         if max_escalations >= 1 and _budget_left() > 0:
@@ -1490,7 +1490,7 @@ class RecallMixin:
             else:
                 stages.append("rerank_skipped_cold")
 
-        # Stage 3 — OPT-IN bounded LLM decomposition. OFF by default. Even
+        # Stage 3 - OPT-IN bounded LLM decomposition. OFF by default. Even
         # when on it runs inside the remaining budget, and is skipped while
         # the LLM backend is in cooldown after a recent timeout.
         if (
@@ -1544,7 +1544,7 @@ class RecallMixin:
         """Explicit DEEP recall: always ATTEMPTS LLM query-decomposition
         (RAG-Fusion), bounded by a deadline (default 2x the interactive
         budget). Use only when the caller knowingly wants the slow, thorough
-        pass — never on the latency-sensitive interactive path. Falls back
+        pass - never on the latency-sensitive interactive path. Falls back
         to a single-shot local recall if decomposition is unavailable."""
         kwargs.pop("_skip_decompose", None)
         if top_k is None:
@@ -1595,7 +1595,7 @@ class RecallMixin:
     ) -> RecallPack:
         """recall(), optionally scoped to a single project (issue #7).
 
-        `project` is a FILTER over the unified user memory — NOT a separate
+        `project` is a FILTER over the unified user memory - NOT a separate
         store or workspace. When given, we over-fetch and keep only events
         tied to that project (project_name / project / project_path metadata,
         case-insensitive substring). When None/empty this is plain recall(),
@@ -1643,7 +1643,7 @@ class RecallMixin:
         so caller can fall back to single-shot recall.
 
         `budget_s`, when given, clamps the resolved LLM client's own timeout
-        to the remaining wall-clock budget — so a slow Claude CLI / Ollama
+        to the remaining wall-clock budget - so a slow Claude CLI / Ollama
         call can never outlive the recall_smart deadline."""
         # Circuit breaker (#12): skip the LLM entirely while it's tripped.
         if _breaker.is_open("llm"):
@@ -1671,7 +1671,7 @@ class RecallMixin:
                 cache_dir=self.workspace.storage_dir,
             )
             decomp = decomposer.decompose(query)
-            _breaker.record_success("llm")  # the LLM responded — backend healthy
+            _breaker.record_success("llm")  # the LLM responded - backend healthy
             if len(decomp.sub_queries) <= 1:
                 # Decomposer said it's already single-hop; cancel decomposition
                 return None

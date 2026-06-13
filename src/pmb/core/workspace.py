@@ -1,5 +1,5 @@
 """
-Workspace — isolated per-project memory storage.
+Workspace - isolated per-project memory storage.
 
 Detection priority:
 1. PMB_WORKSPACE env variable (explicit override)
@@ -204,7 +204,7 @@ def detect_workspace(
 
     # 4. Persisted default (set via `pmb workspace use <name>`). Slots in
     # AFTER a project's explicit .pmb/workspace.yaml but BEFORE the
-    # git/cwd auto-detection fallback — so a user who picked a default
+    # git/cwd auto-detection fallback - so a user who picked a default
     # ("personal") gets it everywhere except inside a configured project,
     # while setups that never run `use` resolve exactly as before.
     default_id = read_default_workspace(pmb_home)
@@ -237,7 +237,7 @@ def detect_workspace(
 def _build_workspace(ws_id: str, name: str, root: Path, pmb_home: Path, source: str) -> Workspace:
     storage = pmb_home / "workspaces" / ws_id
     if (storage / "meta.yaml").exists():
-        # Existing workspace — load preserved metadata
+        # Existing workspace - load preserved metadata
         ws = Workspace.load_meta(storage, pmb_home)
         return ws
     ws = Workspace(id=ws_id, name=name, root=root, pmb_home=pmb_home, source=source)

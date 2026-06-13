@@ -11,7 +11,7 @@ Background:
 
   2. Any exception inside `search.add()` (LanceDB temporarily down,
      model load error, OOM during encode) silently dropped the work.
-     `except Exception: pass` — no retry, no log.
+     `except Exception: pass` - no retry, no log.
 
 Solution:
   A small SQLite table `embed_queue_pending` colocated with the events

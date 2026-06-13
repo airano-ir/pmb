@@ -9,15 +9,15 @@ import os
 # config.toml env block to control which tools the LLM sees. Fewer tool
 # definitions = faster LLM thinking + less choice confusion.
 #
-#   "minimal" — 13 tools, the absolute essentials
-#   "lean"    — 26 tools: default MINUS the pure read-status browse tools a
+#   "minimal" - 13 tools, the absolute essentials
+#   "lean"    - 26 tools: default MINUS the pure read-status browse tools a
 #               host HOOK already covers (what_just_happened, recent_activity,
 #               list_recent, overview). KEEPS session_brief. Set by
 #               `pmb connect claude-code` when it installs the hooks, so the
 #               agent isn't offered a slow MCP version of what auto-recall /
 #               session-restore already inject for free.
-#   "default" — 30 tools, day-to-day usage (this is the default)
-#   "full"    — all 65 tools incl. admin (consolidate, compact, run_self_test,
+#   "default" - 30 tools, day-to-day usage (this is the default)
+#   "full"    - all 65 tools incl. admin (consolidate, compact, run_self_test,
 #               graph_stats, dedupe_run_pending, …). Use for debugging/dev.
 #
 # Even when an admin tool is HIDDEN from the agent, you can still call it
@@ -58,8 +58,8 @@ _DEFAULT_TOOLS = _MINIMAL_TOOLS | {
 # "lean" = the default set MINUS the read-status tools a host HOOK already
 # delivers for free, AND that nothing else (rules / deliberate use) needs.
 # We KEEP `prepare`, `recall`, `record_batch`, `project_overview`,
-# `find_lessons`, goals, `mark_lesson_followed` — deliberate, agent-composed
-# calls no hook can make — and `session_brief`, which the agent may invoke
+# `find_lessons`, goals, `mark_lesson_followed` - deliberate, agent-composed
+# calls no hook can make - and `session_brief`, which the agent may invoke
 # mid-session to re-orient (and which the CLAUDE.md rules reference). Only the
 # pure-duplicate browse tools are trimmed. See `pmb connect claude-code`.
 _LEAN_TOOLS = _DEFAULT_TOOLS - {
@@ -79,7 +79,7 @@ _LEAN_TOOLS = _DEFAULT_TOOLS - {
 # here keep their docstring unchanged.
 _SHORT_DESC: dict[str, str] = {
     "record_batch": (
-        "⚡ PREFERRED for any message with multiple memories — stores N atomic "
+        "⚡ PREFERRED for any message with multiple memories - stores N atomic "
         "items in ONE call (each ~3-5s of agent thinking saved vs separate "
         "record_* calls). items: list of dicts, each with a `type`: "
         "fact{content,importance} | fact_tree{main,subfacts[],importance} | "
@@ -90,7 +90,7 @@ _SHORT_DESC: dict[str, str] = {
     "prepare": (
         "READ-FIRST bundle at the start of work on a known project. "
         "prepare(message=<the user's message>) returns project_context, "
-        "surfaced lessons (each with surface_id — FOLLOW them, then "
+        "surfaced lessons (each with surface_id - FOLLOW them, then "
         "mark_lesson_followed), recent_activity and open_goals in one ~10ms "
         "call. Replaces several recall() calls."
     ),
@@ -111,13 +111,13 @@ _SHORT_DESC: dict[str, str] = {
         "as the user's recorded reality."
     ),
     "recall_smart": (
-        "recall for IMPORTANT queries — auto-escalates on low confidence within "
+        "recall for IMPORTANT queries - auto-escalates on low confidence within "
         "a bounded wall-clock budget. recall_smart(query, top_k=5). Returns "
         "escalation info so you don't fan out more recalls."
     ),
     "recall_deep": (
         "Explicit slow/deep recall with LLM query-decomposition. "
-        "recall_deep(query). Opt-in — use only when recall/recall_smart aren't "
+        "recall_deep(query). Opt-in - use only when recall/recall_smart aren't "
         "enough; may take seconds."
     ),
     "record_activity": (
@@ -137,7 +137,7 @@ _SHORT_DESC: dict[str, str] = {
     ),
     "record_keyed_fact": (
         "Upsert a mutable personal attribute. record_keyed_fact(subject, "
-        "attribute, value) — e.g. user/city/Tampa. A new value SUPERSEDES the "
+        "attribute, value) - e.g. user/city/Tampa. A new value SUPERSEDES the "
         "old under one canonical key instead of piling up."
     ),
     "project_overview": (
@@ -152,7 +152,7 @@ _SHORT_DESC: dict[str, str] = {
     "mark_lesson_followed": (
         "Report whether a surfaced lesson changed your behaviour. "
         "mark_lesson_followed(surface_id, followed=True|False, note='...'). "
-        "Call after acting on a lesson — powers the self-improvement loop."
+        "Call after acting on a lesson - powers the self-improvement loop."
     ),
     "overview": (
         "Structured 'what do I know about <topic>'. overview(topic) → facts, "
@@ -172,7 +172,7 @@ _SHORT_DESC: dict[str, str] = {
     ),
     "list_recent": (
         "List the last N events of any type. list_recent(limit=20, "
-        "event_type?). A plain browse — recall/recent_activity are usually "
+        "event_type?). A plain browse - recall/recent_activity are usually "
         "better."
     ),
     "list_goals": (
@@ -180,11 +180,11 @@ _SHORT_DESC: dict[str, str] = {
         "goals/what's in flight'."
     ),
     "index_pdf": (
-        "Ingest a PDF into memory. index_pdf(path) — extracts, chunks and "
+        "Ingest a PDF into memory. index_pdf(path) - extracts, chunks and "
         "embeds the document so its content is recallable."
     ),
     "index_project": (
-        "Ingest a code-project's structure into memory. index_project(path) — "
+        "Ingest a code-project's structure into memory. index_project(path) - "
         "indexes files/symbols for project-aware recall."
     ),
 }
@@ -219,7 +219,7 @@ def _maybe_tool(mcp_instance, tool_name: str):
     """
     if _should_register(tool_name):
         return mcp_instance.tool()
-    # No-op decorator — function body still defined but never registered
+    # No-op decorator - function body still defined but never registered
     def _noop(fn):
         return fn
     return _noop

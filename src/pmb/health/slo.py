@@ -1,4 +1,4 @@
-"""X4 — Service Level Objectives as code.
+"""X4 - Service Level Objectives as code.
 
 The quality / latency / durability targets PMB commits to, each tied to the
 test that ENFORCES it. Keeping them here (not only in prose) means an SLO can't

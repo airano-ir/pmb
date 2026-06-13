@@ -1,11 +1,11 @@
-"""E1 — corpus-derived stopwords (document frequency), not a hand-written list.
+"""E1 - corpus-derived stopwords (document frequency), not a hand-written list.
 
 A token that appears in more than `df_threshold` of THIS workspace's documents
-carries almost no discriminative signal — that is exactly what BM25 encodes
+carries almost no discriminative signal - that is exactly what BM25 encodes
 implicitly via IDF. The explicit consumers (`distinctive_tokens`, lesson
 relevance) never used it. This computes the high-document-frequency tokens once
 in the maintenance tick, caches them per workspace, and `text_match` unions them
-into its stopword set (gated, additive — the English floor stays inline as the
+into its stopword set (gated, additive - the English floor stays inline as the
 bootstrap for empty/new workspaces). No language data: it is pure statistics
 over the user's own corpus, so it works in any language.
 """
@@ -16,7 +16,7 @@ import re
 import sqlite3
 from collections import Counter
 
-# 4+ letter Unicode word tokens (no digits/underscore) — same shape the
+# 4+ letter Unicode word tokens (no digits/underscore) - same shape the
 # distinctive tokenizer keeps, so the stopword set lines up with its vocabulary.
 _WORD = re.compile(r"[^\W\d_]{4,}", re.UNICODE)
 

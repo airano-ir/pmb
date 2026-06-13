@@ -105,7 +105,7 @@ _LESSON_INTENT_MARKERS = (
 def is_lesson_intent(query: str, engine=None) -> bool:
     """Guidance-seeking query? Lexical markers first (en/ru/uk); then, when a
     warm `engine` is supplied, the B2 `query.lesson_intent` anchor so the boost
-    also fires for languages the markers don't cover. Warm-only — a cold caller
+    also fires for languages the markers don't cover. Warm-only - a cold caller
     (engine=None or cold engine) stays purely lexical."""
     q = (query or "").lower()
     if any(m in q for m in _LESSON_INTENT_MARKERS):

@@ -1,10 +1,10 @@
 """
-User-name auto-detect — closes the "Where does <Name> live?" recall gap.
+User-name auto-detect - closes the "Where does <Name> live?" recall gap.
 
 Background: in assistant memory, the user's own name lives in ONE fact
 ("my name is <Name>") and their location in ANOTHER ("I live in <City>").
 A query like "Where does <Name> live?" can't be answered by either fact
-alone — it needs a JOIN. PAMVR's strict-entity check killed the location
+alone - it needs a JOIN. PAMVR's strict-entity check killed the location
 fact (no "<Name>") and the name fact (no "live").
 
 Fix: at recall time, if the query proper noun matches a known user name
@@ -36,7 +36,7 @@ from pmb import lang as _lang
 
 # Patterns that declare a name: extract group "name". The English patterns are
 # inline; the RU/UK ones live in the built-in ru.yaml / uk.yaml packs under
-# `name_statement_patterns` (L1 — keeps this module Cyrillic-free). Order is
+# `name_statement_patterns` (L1 - keeps this module Cyrillic-free). Order is
 # irrelevant; all patterns are tried.
 _NAME_PATTERNS = [
     re.compile(r"\bmy\s+name\s+is\s+(?P<name>[A-Z][\w]+)", re.IGNORECASE),
@@ -46,7 +46,7 @@ _NAME_PATTERNS = [
 ] + _lang.compile_patterns("name_statement_patterns")
 
 
-# Self-reference markers in content — when candidate has these, it's a
+# Self-reference markers in content - when candidate has these, it's a
 # first-person fact about the user. EN inline; RU/UK reflexives from the packs.
 SELF_MARKERS = {
     "i", "i'm", "im", "ive", "my", "i've", "myself",

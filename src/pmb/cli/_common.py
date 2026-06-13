@@ -2,7 +2,7 @@
 
 This lives in its own module (not in pmb.cli.main) so that the per-area command
 modules under `pmb.cli.commands.*` can register onto the SAME `app` and reuse
-`console` without importing `pmb.cli.main` — main imports those command modules
+`console` without importing `pmb.cli.main` - main imports those command modules
 to trigger their `@app.command` registrations, so the command modules importing
 main back would be a cycle. They import from here instead.
 """
@@ -73,7 +73,7 @@ def _agent_toggles_from_config() -> dict | None:
         return None
 
 
-# Duration parsing + TTL stamping — shared by capture (note/learn/fact --ttl)
+# Duration parsing + TTL stamping - shared by capture (note/learn/fact --ttl)
 # and the `ttl` / `prune-expired` management commands.
 _DUR_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400,
               "w": 604800, "mo": 2592000, "y": 31536000}

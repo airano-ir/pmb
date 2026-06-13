@@ -1,5 +1,5 @@
 """
-Recall feedback log — real-user signal source.
+Recall feedback log - real-user signal source.
 
 The point of this module: replace the closed-loop self-test as the primary
 source of "which recalls actually matter" data. Self-test stays as fallback
@@ -9,9 +9,9 @@ Per-workspace `recall_feedback.jsonl` lines:
   {timestamp, ulid, verdict, query?, expected_ulid?, session_id?}
 
 Verdicts:
-  useful      — the returned event was what the agent/user needed
-  wrong       — returned but not what was wanted (with optional expected_ulid)
-  irrelevant  — should not have been retrieved at all
+  useful      - the returned event was what the agent/user needed
+  wrong       - returned but not what was wanted (with optional expected_ulid)
+  irrelevant  - should not have been retrieved at all
 
 Aggregation (`summary`) returns:
   total, useful, wrong, irrelevant, useful_rate, n_unique_queries,
@@ -75,7 +75,7 @@ def record_feedback(
     if verdict not in VALID_VERDICTS:
         raise ValueError(f"verdict must be one of {sorted(VALID_VERDICTS)}, got {verdict!r}")
 
-    # Validate ULIDs against storage — silently accepting typos pollutes the
+    # Validate ULIDs against storage - silently accepting typos pollutes the
     # feedback log permanently. Only validate within this workspace.
     target = engine.events.get_by_ulid(ulid)
     if target is None or target.workspace_id != engine.workspace.id:
@@ -114,7 +114,7 @@ def record_feedback(
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
 
-    # Lightweight reinforcement — explicit user signal beats synthetic self-test
+    # Lightweight reinforcement - explicit user signal beats synthetic self-test
     if target.importance < 0.99:
         if verdict == "useful":
             new_imp = min(1.0, target.importance + 0.08 * (1.0 - target.importance))

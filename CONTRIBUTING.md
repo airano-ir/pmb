@@ -17,8 +17,8 @@ pip install pytest                   # for tests
 Verify:
 
 ```bash
-make test        # 88 passed in ~80s — the same set CI runs
-make test-smoke  # 9 passed in ~5s   — import-weight regression tests
+make test        # 88 passed in ~80s - the same set CI runs
+make test-smoke  # 9 passed in ~5s   - import-weight regression tests
 ```
 
 ## Running tests

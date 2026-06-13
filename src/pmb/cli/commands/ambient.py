@@ -14,7 +14,7 @@ import typer
 
 from pmb.cli._common import _humanize_time, app, console  # noqa: F401
 
-# prepare-context — the line that hooks call to inject memory at session
+# prepare-context - the line that hooks call to inject memory at session
 # start. Reads the user message from stdin or a positional arg, prints a
 # compact context block.
 # ═══════════════════════════════════════════════════════════════════════
@@ -25,7 +25,7 @@ def _read_stdin_utf8() -> str:
     Critical for the hook path: Claude Code pipes the user message as
     UTF-8, but on Windows `sys.stdin.read()` defaults to the locale
     codepage (cp1251 on a RU system), which mangles Cyrillic/non-ASCII
-    into mojibake — and then the intent regexes never match. Read the raw
+    into mojibake - and then the intent regexes never match. Read the raw
     bytes and decode UTF-8 explicitly (replace on error so we never crash
     the hook).
     """
@@ -48,7 +48,7 @@ def _extract_hook_prompt(raw: str) -> str:
     Claude Code (and other hosts) send a JSON hook payload, with the user's
     text under `prompt`. If we treat that whole JSON blob as the message, the
     intent classifier matches on `{"hook_event_name":...}` instead of the
-    user text — and worse, json.dumps escapes non-ASCII, so Cyrillic/Unicode
+    user text - and worse, json.dumps escapes non-ASCII, so Cyrillic/Unicode
     prompts arrive as `\\uXXXX` and NO intent ever fires. Manual callers and
     older wiring pipe raw text. Accept both: parse JSON and take the prompt
     field; otherwise use the raw string unchanged.
@@ -77,7 +77,7 @@ def _try_daemon_prepare(msg: str, max_chars: int,
                         timeout: float = 1.2) -> str | None:
     """One cheap localhost attempt against a live memory daemon. Returns the
     rendered context string (possibly "" when there's nothing to inject), or
-    None on ANY failure — the cold path below is the contract; the daemon is
+    None on ANY failure - the cold path below is the contract; the daemon is
     only an accelerator. A version mismatch is treated as 'absent'.
 
     S10: timeout raised 0.6 → 1.2 s. With S2's thin client the daemon is the
@@ -131,7 +131,7 @@ def _maybe_autostart_daemon(eng) -> None:
         now = _t.time()
         try:
             if stamp.exists() and (now - stamp.stat().st_mtime) < 600:
-                return  # attempted within the last 10 min — don't spam
+                return  # attempted within the last 10 min - don't spam
         except Exception:
             pass
         try:
@@ -193,14 +193,14 @@ def prepare_context_cmd(
     """Print a compact PMB context block for a user message.
 
     Designed to be wired into session-start hooks (`pmb hooks install`).
-    Output is plain text — the hook host appends it to the prompt as
+    Output is plain text - the hook host appends it to the prompt as
     an additional system note before the model thinks.
 
     The default behaviour goes through `pmb.hooks.auto_recall`:
 
       - skip silently on trivial input (greetings, acks, <5 chars)
       - PROJECT_PREP / PROJECT_OVERVIEW on known project names
-      - PAST_QUERY → recall()  (this is the big one — fixes the
+      - PAST_QUERY → recall()  (this is the big one - fixes the
         "agent forgot to call recall" hole)
       - RECENT_QUERY → what_just_happened()
       - GOALS_QUERY → list_goals(in_progress)
@@ -225,7 +225,7 @@ def prepare_context_cmd(
         _sys.stdout.write("[pmb hook] no user message; nothing to prepare\n")
         return
 
-    # B3: ask the warm daemon FIRST — it holds a hot Engine + model, so it does
+    # B3: ask the warm daemon FIRST - it holds a hot Engine + model, so it does
     # the REAL semantic recall the per-process cold path has to skip. Returns
     # "" when it ran but had nothing to inject; None when unreachable (then we
     # fall through to the cold in-process path, the unchanged contract).
@@ -382,7 +382,7 @@ def prepare_context_cmd(
     _sys.stdout.write(text + "\n")
 
 
-# ─── pmb auto-context — debug-friendly inspection of the hook output ──
+# ─── pmb auto-context - debug-friendly inspection of the hook output ──
 
 @app.command("auto-context")
 def auto_context_cmd(
@@ -442,7 +442,7 @@ def auto_context_cmd(
     console.print(text, markup=False, highlight=False)
 
 
-# ─── pmb session-restore — rebuild context after a compaction ─────────
+# ─── pmb session-restore - rebuild context after a compaction ─────────
 
 @app.command("session-restore")
 def session_restore_cmd(
@@ -502,7 +502,7 @@ def session_restore_cmd(
     _sys.stdout.write(text + "\n")
 
 
-# ─── pmb lesson-followcheck — infer follow-through, no model cooperation ──
+# ─── pmb lesson-followcheck - infer follow-through, no model cooperation ──
 
 @app.command("lesson-followcheck")
 def lesson_followcheck_cmd(
@@ -524,15 +524,15 @@ def lesson_followcheck_cmd(
     ),
     quiet: bool = typer.Option(
         False, "--quiet", "-q",
-        help="Print nothing (for the Stop hook — it runs silently).",
+        help="Print nothing (for the Stop hook - it runs silently).",
     ),
 ):
-    """Infer lesson follow-through from recorded activity — no model needed.
+    """Infer lesson follow-through from recorded activity - no model needed.
 
     For each lesson that surfaced recently but was never confirmed, check
     whether its distinctive tokens show up in what the agent actually did
     this turn (recorded activity). If so, mark it followed with an honest
-    'auto-detected' note. Lessons with no evidence stay unconfirmed — we
+    'auto-detected' note. Lessons with no evidence stay unconfirmed - we
     never fabricate a follow.
 
     Designed for a Stop hook (`pmb hooks install`) so the adherence
@@ -586,13 +586,13 @@ def lesson_followcheck_cmd(
         )
 
 
-# ─── pmb track-action — ambient: log one agent action (PostToolUse) ──────
+# ─── pmb track-action - ambient: log one agent action (PostToolUse) ──────
 
 @app.command("track-action")
 def track_action_cmd(
     quiet: bool = typer.Option(
         True, "--quiet/--verbose", "-q",
-        help="Silent by default — this runs on every tool call.",
+        help="Silent by default - this runs on every tool call.",
     ),
 ):
     """Log one observed agent action. Reads the PostToolUse hook JSON from
@@ -632,7 +632,7 @@ def track_action_cmd(
         return
     # Hot path: this runs on EVERY tool call, so do NOT load the engine
     # (numpy / lancedb). Resolve the workspace and INSERT directly via the
-    # dependency-light ambient_log module — ~1s vs ~2s, no heavy imports.
+    # dependency-light ambient_log module - ~1s vs ~2s, no heavy imports.
     try:
         from pmb.core.ambient_log import insert_agent_action, is_significant_action
         from pmb.core.workspace import detect_workspace
@@ -650,7 +650,7 @@ def track_action_cmd(
             _sys.stdout.write(f"[pmb hook] track-action failed: {e}\n")
 
 
-# ─── pmb autowrite — ambient: journal the turn if the agent didn't ───────
+# ─── pmb autowrite - ambient: journal the turn if the agent didn't ───────
 
 def _spawn_detached_autowrite(window: int) -> bool:
     """Spawn `pmb autowrite --worker` as a DETACHED process that outlives the
@@ -676,7 +676,7 @@ def _spawn_detached_autowrite(window: int) -> bool:
             close_fds=True,
         )
         if os.name == "nt":
-            # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP — fully cut from the
+            # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP - fully cut from the
             # parent so it survives the Stop hook returning.
             kwargs["creationflags"] = (
                 getattr(_sp, "DETACHED_PROCESS", 0x00000008)
@@ -712,7 +712,7 @@ def autowrite_cmd(
         False, "--quiet", "-q", help="Silent (for the Stop hook).",
     ),
 ):
-    """Journal what the agent did this turn — but ONLY if the agent didn't
+    """Journal what the agent did this turn - but ONLY if the agent didn't
     record anything itself. Synthesizes one activity entry from the observed
     action log (template by default; LLM if autowrite.synthesizer is set).
 
@@ -742,7 +742,7 @@ def autowrite_cmd(
     min_imp = float(eng.config.get("autowrite.min_importance") or 0.0)
     synth = str(eng.config.get("autowrite.synthesizer") or "template")
 
-    # Phase 2: if the synthesizer is an LLM, don't run it inline — it would
+    # Phase 2: if the synthesizer is an LLM, don't run it inline - it would
     # block the Stop hook for up to autowrite.llm_timeout_s. Instead: do a
     # cheap gate-check, and if the turn qualifies, spawn a DETACHED worker
     # that survives this process and does the LLM synthesis + record on its
@@ -753,7 +753,7 @@ def autowrite_cmd(
                               min_importance=min_imp)
         if skip:
             if not quiet:
-                console.print(f"[dim]nothing journaled — {skip}[/]")
+                console.print(f"[dim]nothing journaled - {skip}[/]")
             return
         ok = _spawn_detached_autowrite(window=int(win))
         if not quiet:
@@ -761,7 +761,7 @@ def autowrite_cmd(
                 console.print("[green]journaling in background[/] "
                               f"(synthesizer={synth})")
             else:
-                # Detach failed — fall back to inline template so we don't
+                # Detach failed - fall back to inline template so we don't
                 # silently lose the journal entry.
                 res = run_autowrite(
                     eng, window_minutes=win, min_actions=min_acts,
@@ -803,11 +803,11 @@ def autowrite_cmd(
         console.print(res.summary or "", markup=False, highlight=False)
     else:
         console.print(
-            f"[dim]nothing journaled — {res.skipped_reason or 'no actions'}[/]"
+            f"[dim]nothing journaled - {res.skipped_reason or 'no actions'}[/]"
         )
 
 
-# ─── pmb forget-auto — drop memory the ambient writer made (user control) ─
+# ─── pmb forget-auto - drop memory the ambient writer made (user control) ─
 
 @app.command("forget-auto")
 def forget_auto_cmd(
@@ -819,7 +819,7 @@ def forget_auto_cmd(
     """Archive everything ambient auto-write recorded (source=autowrite).
 
     Your memory, your call: this removes only what PMB journaled on its own
-    — never what you or the agent recorded explicitly. Archived, not
+    - never what you or the agent recorded explicitly. Archived, not
     hard-deleted.
     """
     from pmb.core.engine import Engine
@@ -829,7 +829,7 @@ def forget_auto_cmd(
                   f"{'y' if n == 1 else 'ies'}.")
 
 
-# ─── pmb ambient-watch — ambient for MCP-only agents (observe the project) ─
+# ─── pmb ambient-watch - ambient for MCP-only agents (observe the project) ─
 
 @app.command("ambient-watch")
 def ambient_watch_cmd(
@@ -857,11 +857,11 @@ def ambient_watch_cmd(
 
     Those hosts give no hooks, so we watch the PROJECT instead of the agent:
     poll git for changed files, record them as actions, and auto-write the
-    turn once the project goes idle. Coordination still holds — if the agent
+    turn once the project goes idle. Coordination still holds - if the agent
     journaled via PMB's MCP tools, auto-write stays silent.
 
     Run it next to your editor:  `pmb ambient-watch .`
-    (Claude Code / Codex don't need this — they have precise hooks.)
+    (Claude Code / Codex don't need this - they have precise hooks.)
     """
     import time as _t
     from pathlib import Path as _P
@@ -952,7 +952,7 @@ def ambient_watch_cmd(
             console.print("\n[dim]stopped watching.[/]")
 
 
-# ─── pmb codex-notify — ambient observer + auto-write for OpenAI Codex ────
+# ─── pmb codex-notify - ambient observer + auto-write for OpenAI Codex ────
 
 @app.command("codex-notify")
 def codex_notify_cmd(
@@ -1031,7 +1031,7 @@ def codex_notify_cmd(
     # The agent journaled itself this turn (record_* in the rollout) → silent.
     if scan.agent_recorded:
         if not quiet:
-            console.print(f"[dim]agent recorded itself — silent "
+            console.print(f"[dim]agent recorded itself - silent "
                           f"({len(scan.actions)} actions seen)[/]")
         return
 
@@ -1065,11 +1065,11 @@ def codex_notify_cmd(
                           f"{n_sig} significant): ", end="")
             console.print(res.summary or "", markup=False, highlight=False)
         else:
-            console.print(f"[dim]nothing journaled — {res.skipped_reason}[/]")
+            console.print(f"[dim]nothing journaled - {res.skipped_reason}[/]")
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# pmb hooks install / list / uninstall — force-feed prepare() into the
+# pmb hooks install / list / uninstall - force-feed prepare() into the
 # agent's session-start hook so the READ-FIRST workflow is not optional.
 # ═══════════════════════════════════════════════════════════════════════
 

@@ -21,7 +21,7 @@ from pathlib import Path
 
 def _pmb_command() -> str:
     """Resolve the pmb executable. Prefer the venv-internal one we're running
-    inside, since shutil.which("pmb") only succeeds when the venv is on PATH —
+    inside, since shutil.which("pmb") only succeeds when the venv is on PATH -
     and scheduled tasks don't have the user's interactive PATH."""
     py = Path(sys.executable)
     for candidate in (py.parent / "pmb.exe", py.parent / "pmb"):
@@ -30,7 +30,7 @@ def _pmb_command() -> str:
     found = shutil.which("pmb")
     if found:
         return found
-    # Fallback — `python -m pmb.cli` works because pmb/cli/__main__.py exists
+    # Fallback - `python -m pmb.cli` works because pmb/cli/__main__.py exists
     return f"{sys.executable} -m pmb.cli"
 
 
@@ -53,7 +53,7 @@ def generate_scheduler_config() -> dict:
 
 def _unix_config(pmb: str, system: str) -> dict:
     crontab = [
-        "# PMB maintenance — auto-generated",
+        "# PMB maintenance - auto-generated",
         f"0 4 * * *   {pmb} decay >> ~/.pmb/cron.log 2>&1     # daily decay 4 AM",
         f"0 5 * * 0   {pmb} health run >> ~/.pmb/cron.log 2>&1  # weekly self-test Sun 5 AM",
         f"0 6 * * 0   {pmb} compact >> ~/.pmb/cron.log 2>&1   # weekly compaction Sun 6 AM",
@@ -79,7 +79,7 @@ def _unix_config(pmb: str, system: str) -> dict:
 
 def _windows_config(pmb: str) -> dict:
     # schtasks /TR is itself wrapped in double quotes; inner double quotes
-    # inside the command must be escaped as \" — and a path with spaces still
+    # inside the command must be escaped as \" - and a path with spaces still
     # needs them. So we build the inner string with escaped quotes around the
     # executable path.
     pmb_quoted = f'\\"{pmb}\\"' if " " in pmb else pmb

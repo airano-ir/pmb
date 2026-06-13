@@ -20,7 +20,7 @@ Why it matters:
   ... and the answer is trivial.
 
   This is the structural difference between PMB v1 (raw text retrieval) and
-  mem0 (fact-tuple retrieval). We get both — facts as a layer, raw text
+  mem0 (fact-tuple retrieval). We get both - facts as a layer, raw text
   preserved.
 
 Storage:
@@ -39,7 +39,7 @@ Difference from Reflection:
   Reflection prompt asks "what does this MEAN" (interpretation).
   Fact prompt asks "what ATOMIC TRUE STATEMENTS does this entail"
   (literal extraction). Both feed the same retrieval index but help
-  different question types — facts help direct lookups, reflections
+  different question types - facts help direct lookups, reflections
   help inferential / themed questions.
 """
 
@@ -59,7 +59,7 @@ log = logging.getLogger(__name__)
 
 FACT_EXTRACTION_PROMPT = """\
 Extract ATOMIC, STAND-ALONE facts from the dialogue/event below. Each fact
-must be self-contained — readable without seeing the surrounding text.
+must be self-contained - readable without seeing the surrounding text.
 
 Rules:
 - One subject-verb-object statement per fact.

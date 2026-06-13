@@ -1,4 +1,4 @@
-"""Agent hooks — force-feed PMB into the agent at the protocol level.
+"""Agent hooks - force-feed PMB into the agent at the protocol level.
 
 Soft instructions in CLAUDE.md get skipped; hooks don't. The agent's host
 runs a shell command at well-defined lifecycle points and folds the output
@@ -68,8 +68,8 @@ def _claude_hook_specs() -> list[dict]:
     """The hooks we install for claude-code, as (event, command) specs.
     `event` is the Claude Code hook event name.
 
-    All five route through `pmb-hook` (S2) — the stdlib-only fast lane that
-    talks to the warm daemon (≈10–50 ms) and falls back to the full CLI cold
+    All five route through `pmb-hook` (S2) - the stdlib-only fast lane that
+    talks to the warm daemon (≈10-50 ms) and falls back to the full CLI cold
     path only when the daemon is absent. The old `pmb <sub>` lines keep working
     and are upgraded in place on the next `pmb hooks install` (markers match
     both)."""
@@ -83,7 +83,7 @@ def _claude_hook_specs() -> list[dict]:
             "event": "SessionStart",
             "command": f'"{h}" session-restore --max-chars 3000 --quiet',
         },
-        # PreToolUse: R11 lesson guard — fire a matching rule ("use pnpm, never
+        # PreToolUse: R11 lesson guard - fire a matching rule ("use pnpm, never
         # npm") at tool-call time, even if the agent never called memory.
         # Daemon-served + advisory (never blocks); no-op without a daemon.
         {
@@ -91,7 +91,7 @@ def _claude_hook_specs() -> list[dict]:
             "matcher": "Bash|Edit|Write|NotebookEdit",
             "command": f'"{h}" pretool --quiet',
         },
-        # PostToolUse: ambient observer — log the agent's action (instant).
+        # PostToolUse: ambient observer - log the agent's action (instant).
         {
             "event": "PostToolUse",
             "command": f'"{h}" track-action --quiet',
@@ -100,7 +100,7 @@ def _claude_hook_specs() -> list[dict]:
             "event": "Stop",
             "command": f'"{h}" lesson-followcheck --window 30 --quiet',
         },
-        # Stop: ambient auto-write — journal the turn if the agent didn't.
+        # Stop: ambient auto-write - journal the turn if the agent didn't.
         # No-op unless `autowrite.enabled` is true in config, so installing
         # the hook is safe; it stays silent until the user opts in.
         {
@@ -115,7 +115,7 @@ def hook_command_for(agent: str) -> str:
 
     Older callers / tests use this to get "the hook line". It now returns
     specifically the prepare-context (auto-recall) command, which is the
-    per-turn context injector — via the `pmb-hook` fast lane (S2).
+    per-turn context injector - via the `pmb-hook` fast lane (S2).
     """
     h = _pmb_hook_entry()
     if agent in ("claude-code", "codex"):
@@ -315,13 +315,13 @@ def _uninstall_codex_hook() -> dict:
 # Ambient memory needs to OBSERVE the agent's actions. How (or whether) we
 # can depends entirely on what the host exposes:
 #
-#   "hooks"    — rich lifecycle hooks (PostToolUse + Stop + SessionStart).
+#   "hooks"    - rich lifecycle hooks (PostToolUse + Stop + SessionStart).
 #                Full ambient: auto-recall, session-restore, follow-through,
 #                ambient auto-write. (Claude Code.)
-#   "rollout"  — no per-tool hook, but the host writes an action log we can
+#   "rollout"  - no per-tool hook, but the host writes an action log we can
 #                parse + a turn-complete notify. Auto-recall + ambient
 #                auto-write. (Codex.)
-#   "mcp-only" — MCP works (recall/record via tools + CLAUDE.md/AGENTS.md
+#   "mcp-only" - MCP works (recall/record via tools + CLAUDE.md/AGENTS.md
 #                rules), but there's no way to observe file edits / shell
 #                commands. Auto-recall works; ambient auto-write does NOT
 #                (nothing to observe). (Cursor, Windsurf, VS Code, Zed,
@@ -353,7 +353,7 @@ def capability_report() -> list[dict]:
                   "ambient auto-write"),
         "rollout": "auto-recall + ambient auto-write (via rollout log + notify)",
         "mcp-only": ("auto-recall via rules + ambient via the project "
-                     "observer (`pmb ambient-watch .`) — watches git for "
+                     "observer (`pmb ambient-watch .`) - watches git for "
                      "file changes since the host gives no hooks"),
         "unknown": "unknown agent",
     }
@@ -381,7 +381,7 @@ def install_hook(agent: str) -> dict:
     """Install the best available ambient mechanism for `agent`.
 
     Dispatches on capability: rich hooks (Claude Code), rollout+notify
-    (Codex), or — for MCP-only hosts — reports that ambient observation
+    (Codex), or - for MCP-only hosts - reports that ambient observation
     isn't available there (auto-recall still works via `pmb connect`).
     """
     cap = ambient_capability(agent)
@@ -397,8 +397,8 @@ def install_hook(agent: str) -> dict:
             "reason": (
                 f"{agent} exposes MCP but no hooks / action log, so we can't "
                 f"observe the agent directly. Two steps for full PMB:\n"
-                f"  1. `pmb connect {agent}`   — MCP + auto-recall rules\n"
-                f"  2. `pmb ambient-watch .`   — ambient auto-write by "
+                f"  1. `pmb connect {agent}`   - MCP + auto-recall rules\n"
+                f"  2. `pmb ambient-watch .`   - ambient auto-write by "
                 f"watching the project's git changes (run it next to your "
                 f"editor). Coordination still holds: silent if the agent "
                 f"journaled via MCP."
@@ -414,7 +414,7 @@ def uninstall_hook(agent: str) -> dict:
         return _uninstall_codex_hook()
     if ambient_capability(agent) == "mcp-only":
         return {"agent": agent, "action": "not_installed",
-                "reason": "mcp-only agent — nothing was hook-installed"}
+                "reason": "mcp-only agent - nothing was hook-installed"}
     raise ValueError(f"unknown agent {agent!r}")
 
 

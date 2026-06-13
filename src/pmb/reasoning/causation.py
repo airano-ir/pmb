@@ -1,18 +1,18 @@
 """
-Causation graph — typed edges between events.
+Causation graph - typed edges between events.
 
 Where this fits in PMB v2:
   Reflective Memory (phase 1) makes individual events richer.
   Causation makes the *connections between* events explicit.
 
 What edges we extract:
-  causes          — event A directly led to event B (decision → outcome)
-  influenced      — event A shaped event B (preference → behaviour)
-  enabled         — event A made event B possible (capability → action)
-  blocked         — event A prevented something
-  references      — event B explicitly mentions event A's subject
-  temporal-next   — event B happened shortly after A in same context (free, no LLM)
-  contradicts     — event B states something inconsistent with A
+  causes          - event A directly led to event B (decision → outcome)
+  influenced      - event A shaped event B (preference → behaviour)
+  enabled         - event A made event B possible (capability → action)
+  blocked         - event A prevented something
+  references      - event B explicitly mentions event A's subject
+  temporal-next   - event B happened shortly after A in same context (free, no LLM)
+  contradicts     - event B states something inconsistent with A
 
 How extraction works:
   Two strategies, complementary:

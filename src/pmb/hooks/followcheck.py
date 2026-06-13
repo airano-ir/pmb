@@ -1,4 +1,4 @@
-"""Follow-through inference — close the lesson loop WITHOUT model cooperation.
+"""Follow-through inference - close the lesson loop WITHOUT model cooperation.
 
 The adherence dashboard shows follow-rate near 0% because models almost
 never call `mark_lesson_followed`. That's the same class of problem
@@ -12,7 +12,7 @@ the lesson surfaces that were active when they happened, and timestamp
 filtering prevents work done before a lesson surfaced from "proving" it was
 followed. If a surfaced lesson's distinctive tokens show up in what the
 agent did, that's honest (if weak) evidence the lesson influenced the work
-— we mark it followed with an explicit auto-detected note. No fabrication:
+- we mark it followed with an explicit auto-detected note. No fabrication:
 absence of evidence → no mark → the surface stays unconfirmed.
 
 Wired via `pmb hooks install` → Stop hook → `pmb lesson-followcheck`.
@@ -25,9 +25,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # Tokenizer, stopword set, and the "strong token" test live in
-# pmb.core.text_match so the SURFACE side (find_lessons — should this lesson
+# pmb.core.text_match so the SURFACE side (find_lessons - should this lesson
 # show at all?) and this CONFIRM side (did the work follow it?) judge by ONE
-# yardstick — otherwise a lesson surfaces on a loose match it can never be
+# yardstick - otherwise a lesson surfaces on a loose match it can never be
 # confirmed against, and just drags the adherence denominator down. Re-exported
 # under the historical underscore names this module and its tests reference.
 from pmb.core.text_match import (
@@ -156,7 +156,7 @@ def run_followcheck(
     Conservative by design. The strong-token gate is what stops topical
     coincidence ("dashboard", "before", "first") from registering as a
     follow. Lessons with no qualifying overlap are left untouched (stay
-    '?'), never marked ignored — absence of evidence is not evidence of
+    '?'), never marked ignored - absence of evidence is not evidence of
     ignoring.
     """
     res = FollowCheckResult()
@@ -173,10 +173,10 @@ def run_followcheck(
         res.skipped_reason = "no unconfirmed surfaces in window"
         return res
 
-    # 2. What the agent actually DID — activity summaries + observed actions.
+    # 2. What the agent actually DID - activity summaries + observed actions.
     #    Crucial: match against behaviour, not recorded facts/lessons.
     #    If we folded in what_just_happened() (which returns every event type)
-    #    the surfaced lesson itself would be in the bag and "prove itself" —
+    #    the surfaced lesson itself would be in the bag and "prove itself" -
     #    its own tokens would always overlap. recent_activity is scoped to
     #    event_type='activity' (edits / completed work / tool calls /
     #    decisions logged via record_activity), which is exactly the agent's
@@ -234,7 +234,7 @@ def run_followcheck(
         # The second clause catches the common real case of ONE killer
         # identifier (e.g. `is_warm`) backed by many regular matches
         # (recall, hook, cold, load …) that the rigid 2-strong gate wrongly
-        # rejected — while a single strong token alone (no corroboration)
+        # rejected - while a single strong token alone (no corroboration)
         # still doesn't qualify, so topical coincidence stays out.
         enough_strong = len(strong) >= min_strong
         broad = len(strong) >= 1 and len(overlap) >= (min_overlap + 2)
@@ -271,14 +271,14 @@ def run_followcheck(
                 res.marked_followed += 1  # would-mark count in dry-run
         elif not overlap and mark_not_applicable:
             # Zero topical overlap between the lesson and everything the agent
-            # did this turn (evidence DID exist — we `continue`d above if it
+            # did this turn (evidence DID exist - we `continue`d above if it
             # didn't). The work simply wasn't about this lesson, so record it
             # as not_applicable instead of letting it silently count as 'not
             # followed' and drag down the adherence denominator. A surface with
             # SOME overlap but below the follow bar stays untouched ('?').
             na_note = (
                 "auto-detected not-applicable: zero token overlap with this "
-                "turn's work — lesson did not pertain to what was done"
+                "turn's work - lesson did not pertain to what was done"
             )
             res.not_applicable += 1
             res.verdicts.append(FollowVerdict(

@@ -9,7 +9,7 @@ Fusion (RRF). This is the proven multi-hop unlock in the literature.
 Where this fits in PMB:
   read-time only (NOT at write). Triggered selectively by `_looks_multihop()`
   in recall(). For simple lookups the original fast path runs unchanged
-  (no LLM at query) — only multi-hop queries pay the decomposition cost.
+  (no LLM at query) - only multi-hop queries pay the decomposition cost.
 
 Cost model:
   +1 LLM call per multi-hop query (~500ms - 3s depending on backend) +
@@ -18,7 +18,7 @@ Cost model:
   local Ollama model.
 
 Caching:
-  Decompositions are cached on disk (queries are deterministic — same
+  Decompositions are cached on disk (queries are deterministic - same
   query → same decomposition). Makes repeat queries free.
 
 Failure mode:
@@ -49,7 +49,7 @@ that, when answered, together reveal the original answer.
 
 Rules:
 - Each sub-question should be lookup-style (single fact, no chaining).
-- Sub-questions should cover DIFFERENT facets — not paraphrases of each other.
+- Sub-questions should cover DIFFERENT facets - not paraphrases of each other.
 - Output VALID JSON: a list of 2-3 short strings. Nothing else.
 - If the question is actually single-hop and doesn't need decomposition,
   output a list with just one item: the original question.

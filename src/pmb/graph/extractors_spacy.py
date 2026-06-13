@@ -1,10 +1,10 @@
-"""spaCy-backed entity extractor — POS filter + NER, no LLM, fully offline.
+"""spaCy-backed entity extractor - POS filter + NER, no LLM, fully offline.
 
 Replaces the regex 'concepts' layer (which keeps every 4-letter token) with:
   - POS filter: only NOUN / PROPN tokens
   - NER: PERSON, ORG, GPE/LOC, PRODUCT, WORK_OF_ART, EVENT
 
-Files + tech keep their fast regex paths — spaCy can't beat known-set lookup
+Files + tech keep their fast regex paths - spaCy can't beat known-set lookup
 on a 50-entry tech list, and posix-style paths are proper-noun-shaped anyway.
 
 Optional dep. Activate with:
@@ -115,13 +115,13 @@ class SpacyExtractor(EntityExtractor):
         ))
         techs = extract_techs(text)
 
-        # Strip absolute paths before spaCy sees them — same rationale as the
+        # Strip absolute paths before spaCy sees them - same rationale as the
         # regex backend: localized folder names (AppData / Desktop /
         # home/user) shouldn't end up as PROPN entities.
         scrubbed = _WINPATH_RE.sub(" ", text)
         scrubbed = _POSIXPATH_RE.sub(" ", scrubbed)
         # Cap input to spaCy's default 1M-char limit even though we'll never
-        # see anywhere near that — defensive.
+        # see anywhere near that - defensive.
         if len(scrubbed) > 200_000:
             scrubbed = scrubbed[:200_000]
 

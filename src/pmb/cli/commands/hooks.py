@@ -1,4 +1,4 @@
-"""`pmb hooks ...` and `pmb mcp ...` — lifecycle-hook install + MCP server.
+"""`pmb hooks ...` and `pmb mcp ...` - lifecycle-hook install + MCP server.
 
 Extracted from cli/main.py (no behavior change)."""
 
@@ -17,7 +17,7 @@ hooks_app = typer.Typer(
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# pmb mcp serve — expose the MCP server over HTTP for team-shared mode.
+# pmb mcp serve - expose the MCP server over HTTP for team-shared mode.
 # One persistent process on a homelab box / Tailscale node serves every
 # developer's agent. Same workspace, same memory, no per-machine state.
 # ═══════════════════════════════════════════════════════════════════════
@@ -63,7 +63,7 @@ def mcp_serve_cmd(
 
     Examples:
 
-      # Local stdio (what `pmb connect` wires by default — usually no
+      # Local stdio (what `pmb connect` wires by default - usually no
       # need to run this manually)
       pmb mcp serve --transport stdio
 
@@ -109,14 +109,14 @@ def mcp_serve_cmd(
                 f"Not starting a second (saves a model + LanceDB load).\n"
                 f"Point clients at the URL above, or stop it first.\n"
                 f"See: [cyan]pmb mcp status[/]",
-                title="PMB · mcp serve — already running",
+                title="PMB · mcp serve - already running",
             ))
             return
         url = f"http://{host}:{port}{path}"
         auth = (
             "[green]bearer-token enabled[/]"
             if bearer_token
-            else "[yellow]UNAUTHENTICATED — bind to 127.0.0.1 or set --bearer-token[/]"
+            else "[yellow]UNAUTHENTICATED - bind to 127.0.0.1 or set --bearer-token[/]"
         )
         console.print(Panel.fit(
             f"PMB MCP server starting\n"
@@ -166,11 +166,11 @@ def mcp_status_cmd():
             f"http://{s.get('host')}:{s.get('port')}{s.get('path') or ''}"
             if s.get("transport") == "streamable-http" else "stdio"
         )
-        rss = f"{s['rss_mb']:.0f} MB" if s.get("rss_mb") is not None else "—"
+        rss = f"{s['rss_mb']:.0f} MB" if s.get("rss_mb") is not None else "-"
         alive = "[green]✓[/]" if s.get("alive") else "[red]✗[/]"
         table.add_row(
             str(s.get("pid")), s.get("transport") or "?", endpoint,
-            str(s.get("workspace") or "—"), rss, alive,
+            str(s.get("workspace") or "-"), rss, alive,
         )
     console.print(table)
     http_n = sum(1 for s in servers if s.get("transport") == "streamable-http")
@@ -245,7 +245,7 @@ def mcp_perf_cmd(
             name, str(a["n"]),
             f"{_pct(a['durs'], 50):.0f}", f"{_pct(a['durs'], 95):.0f}",
             (f"[red]{err_pct:.0f}[/]" if err_pct >= 5 else f"{err_pct:.0f}"),
-            str(a["to"]) if a["to"] else "—",
+            str(a["to"]) if a["to"] else "-",
         )
     console.print(table)
     total = sum(a["n"] for a in agg.values())
@@ -267,7 +267,7 @@ def hooks_install_cmd(
       • SessionStart     → pmb session-restore  (rebuild context after a
         compaction / resume)
       • Stop             → pmb lesson-followcheck (infer which lessons
-        were actually followed — feeds the adherence dashboard)
+        were actually followed - feeds the adherence dashboard)
 
     For codex it wires the per-turn context injector only.
 
@@ -314,7 +314,7 @@ def hooks_install_cmd(
             "  · each action is observed, and the turn is journaled if the\n"
             "    agent didn't record it itself (ambient memory, on by default)\n"
             "  · at turn end it scores lesson follow-through\n"
-            "— the adherence problem, handled at the protocol level.\n"
+            "- the adherence problem, handled at the protocol level.\n"
             "  [dim](ambient off: pmb config set autowrite.enabled false ·\n"
             "   undo its writes: pmb forget-auto)[/]",
             title="PMB · hooks installed",
@@ -326,7 +326,7 @@ def hooks_install_cmd(
             f"  config:  {result.get('path','?')}\n"
             f"  command: {result.get('command','?')}\n\n"
             "Restart the agent. Every new session now reads PMB BEFORE it\n"
-            "starts thinking — adherence problem solved at the protocol level.",
+            "starts thinking - adherence problem solved at the protocol level.",
             title="PMB · hook installed",
         ))
 
@@ -340,7 +340,7 @@ def hooks_list_cmd():
     t.add_column("Agent"); t.add_column("Event"); t.add_column("Installed")
     t.add_column("Path")
     for r in rows:
-        mark = "[green]✓[/]" if r["installed"] else "[dim]–[/]"
+        mark = "[green]✓[/]" if r["installed"] else "[dim]-[/]"
         t.add_row(r["agent"], r.get("event", "?"), mark, r["path"])
     console.print(t)
 
@@ -352,7 +352,7 @@ def hooks_capabilities_cmd():
     Ambient memory needs to OBSERVE the agent's actions. Hosts differ:
     Claude Code has rich hooks, Codex has a parseable action log, and most
     others expose only MCP (so auto-recall works but ambient auto-write
-    can't — nothing to observe).
+    can't - nothing to observe).
     """
     from pmb.cli.hooks import capability_report
     t = Table(show_header=True, header_style="bold magenta",

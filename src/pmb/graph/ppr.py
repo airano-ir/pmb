@@ -14,10 +14,10 @@ What PPR does:
   each candidate event by summing the PPR mass of the entities it mentions.
 
 This is the HippoRAG (Gutiérrez et al., NeurIPS 2024) trick adapted to
-PMB's existing entity graph — no new ingest pipeline, no LLM at read time.
+PMB's existing entity graph - no new ingest pipeline, no LLM at read time.
 
 Cost:
-  Build: one-time O(E) — typically <100ms for graphs under 50k edges.
+  Build: one-time O(E) - typically <100ms for graphs under 50k edges.
   Query: 1 sparse matvec per iteration, ~20 iterations to converge → 5-20ms
   on typical PMB graphs. Pure CPU, no GPU needed.
 
@@ -59,7 +59,7 @@ def build_ppr_graph(db_path: Path, workspace_id: str) -> PPRGraph | None:
     row-stochastic adjacency matrix. Returns None if the graph is empty.
 
     We also pull event_event edges (causation table) and merge them in as
-    additional connections between the entities those events touch — this
+    additional connections between the entities those events touch - this
     is the path that lets reflections-as-edges (phase B) participate in PPR.
     """
     t0 = time.perf_counter()
@@ -158,7 +158,7 @@ def personalized_pagerank(
       epsilon:         early-stop tolerance
 
     Returns:
-      ndarray of shape (N,) — PPR mass per entity. Sums to ~1.
+      ndarray of shape (N,) - PPR mass per entity. Sums to ~1.
     """
     N = graph.n_entities
     p = np.zeros(N, dtype=np.float32)

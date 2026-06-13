@@ -1,20 +1,20 @@
-"""`pmb-hook` — the stdlib-only fast lane for agent lifecycle hooks (S2).
+"""`pmb-hook` - the stdlib-only fast lane for agent lifecycle hooks (S2).
 
 Dispatches the five hook subcommands. For each it tries the warm daemon over
-localhost HTTP first (≈10–50 ms, real semantic recall), and falls back to the
+localhost HTTP first (≈10-50 ms, real semantic recall), and falls back to the
 existing behaviour only when the daemon is absent:
 
     prepare-context  daemon → else exec the full `pmb prepare-context` (cold
                      path + autostart, the unchanged contract)
     session-restore  daemon → else exec the full `pmb session-restore`
     track-action     daemon → else INLINE light ambient_log insert (no CLI,
-                     no numpy — the PostToolUse hot path runs on every tool call)
+                     no numpy - the PostToolUse hot path runs on every tool call)
     followcheck      daemon → else exec the full `pmb lesson-followcheck`
     autowrite        daemon → else exec the full `pmb autowrite`
 
 Imports are stdlib + the deliberately-light `pmb.mcp.registry` /
 `pmb.mcp.daemon` (no engine, no fastmcp). Importing this module must never pull
-numpy / typer / lancedb — `tests/test_lazy_mcp_import.py`-style budget applies.
+numpy / typer / lancedb - `tests/test_lazy_mcp_import.py`-style budget applies.
 """
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def _read_stdin_utf8() -> str:
 
 def _extract_prompt(raw: str) -> str:
     """Pull the user message out of the host's JSON hook payload (or accept raw
-    text). Mirrors cli/commands/ambient._extract_hook_prompt — kept duplicated
+    text). Mirrors cli/commands/ambient._extract_hook_prompt - kept duplicated
     here so the fast lane stays stdlib-only."""
     if not raw:
         return ""
@@ -76,7 +76,7 @@ def _extract_prompt(raw: str) -> str:
     return raw
 
 
-# ── tiny flag parsing (no argparse — keep it instant) ───────────────
+# ── tiny flag parsing (no argparse - keep it instant) ───────────────
 
 def _opt(args: list[str], name: str, default: str | None = None) -> str | None:
     if name in args:
@@ -101,8 +101,8 @@ def _workspace_hint() -> str | None:
 
 def _retire_stale_daemon(host: str, port: int, tok: str) -> None:
     """S3: a live daemon answered with a DIFFERENT version (the user upgraded
-    pmb but the old daemon still holds the slot). Retire it — rate-limited by a
-    stamp — so the cold-path fallback below can autostart the new build. Without
+    pmb but the old daemon still holds the slot). Retire it - rate-limited by a
+    stamp - so the cold-path fallback below can autostart the new build. Without
     this, every hook stays cold for up to idle_exit_min after an upgrade."""
     try:
         home = Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb"))
@@ -179,7 +179,7 @@ def _full_cli_path() -> str:
 def _exec_full_cli(cli_args: list[str], detached: bool = False,
                    trace_source: str | None = None) -> int:
     """Run the full `pmb <cli_args>` and forward its stdout. The slow cold path
-    — reached only when the daemon is absent. When `trace_source` is set, stamp
+    - reached only when the daemon is absent. When `trace_source` is set, stamp
     the honest end-to-end total + source into the trace header (S10)."""
     import subprocess
     cmd = [_full_cli_path(), *cli_args]
@@ -256,7 +256,7 @@ def cmd_track_action(args: list[str]) -> int:
         return 0
     # No daemon round-trip here: track-action is a pure same-DB SQLite insert on
     # the PostToolUse hot path (every tool call). The dependency-light
-    # ambient_log path (no engine, no numpy, no CLI) is already the fast lane —
+    # ambient_log path (no engine, no numpy, no CLI) is already the fast lane -
     # a localhost POST would only add latency for zero benefit.
     try:
         payload = json.loads(raw)
@@ -295,7 +295,7 @@ def cmd_track_action(args: list[str]) -> int:
 def cmd_pretool(args: list[str]) -> int:
     """R11: PreToolUse lesson guard. Reads the PostToolUse-shaped payload, asks
     the warm daemon whether a lesson should fire for this tool call, and prints
-    it as additionalContext. Daemon-served ONLY — no cold fallback (the guard is
+    it as additionalContext. Daemon-served ONLY - no cold fallback (the guard is
     an accelerator, not a contract); silent no-op if no daemon."""
     raw = _read_stdin_utf8()
     if not raw.strip():

@@ -1,8 +1,8 @@
 """
-Auto-trigger for consolidation — sleep on a schedule, not by hand.
+Auto-trigger for consolidation - sleep on a schedule, not by hand.
 
 Cognitive analogy: the brain consolidates during sleep without you asking.
-PMB should be similar — `pmb consolidate` shouldn't have to be a manual
+PMB should be similar - `pmb consolidate` shouldn't have to be a manual
 ritual. This module tracks how many events have arrived since the last
 consolidation and how much wall-clock time has passed; if either
 threshold is crossed, the next idle moment triggers a sleep pass.
@@ -17,7 +17,7 @@ Trigger logic (OR):
   - now - last_consolidation_at >= auto_min_days * 86400
 
 Off by default. Even when on, can be disabled per call (`force=False`).
-The trigger does NOT consolidate inline — callers pass in their LLM
+The trigger does NOT consolidate inline - callers pass in their LLM
 client and decide whether to run synchronously. We just decide *when*.
 """
 
@@ -118,7 +118,7 @@ def should_trigger(engine: Engine) -> dict:
 
 
 def mark_consolidation_done(engine: Engine) -> None:
-    """Reset the trigger state — call after a consolidation run completes."""
+    """Reset the trigger state - call after a consolidation run completes."""
     state = load_state(engine)
     state.last_consolidation_at = time.time()
     state.n_events_at_last = engine.events.count(

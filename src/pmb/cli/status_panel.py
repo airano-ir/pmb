@@ -2,7 +2,7 @@
 
 Read-only and fast: opens the engine WITHOUT loading the embedding model, so
 running `pmb` never pays the ~15-20s cold model load. Every section is
-defensive — a missing or unreadable piece renders as "-" rather than raising.
+defensive - a missing or unreadable piece renders as "-" rather than raising.
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def render_status(console) -> None:
     header.add_column()
     header.add_row("workspace", f"[bold cyan]{ws.get('name', '?')}[/] "
                                 f"[dim]({str(ws.get('id', ''))[:12]})[/]")
-    header.add_row("resolved via", f"{src} [dim]— {src_desc}[/]")
+    header.add_row("resolved via", f"{src} [dim]- {src_desc}[/]")
     header.add_row("storage", str(getattr(eng.workspace, "storage_dir", "-")))
     db_sz = _path_size(eng.workspace.db_path)
     vec_sz = _path_size(eng.workspace.vector_path)

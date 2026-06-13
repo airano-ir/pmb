@@ -12,7 +12,7 @@ pmb warmup           # load the model once so the first recall is fast
 # restart your agent
 ```
 
-`pmb setup` is interactive and idempotent — run it again any time; it only edits
+`pmb setup` is interactive and idempotent - run it again any time; it only edits
 PMB's own entry and never touches your other MCP servers.
 
 ## Manual, per agent
@@ -43,14 +43,14 @@ pmb doctor           # checks the install + MCP wiring; exits non-zero only with
 pmb stats            # workspace counts and storage location
 ```
 
-Then ask your agent something that needs memory — e.g. *"what did we decide about
+Then ask your agent something that needs memory - e.g. *"what did we decide about
 auth last week?"* On a hook-enabled agent (Claude Code, Codex) the answer is
 fetched and injected automatically; on the others the agent calls `recall` itself.
 
 ## Use it from any directory
 
 A **workspace** is keyed to the directory you run the agent in, so each project
-gets its own memory with zero configuration — just `cd` into the project and go.
+gets its own memory with zero configuration - just `cd` into the project and go.
 
 To point several agents (or several projects) at **one shared** memory, name a
 workspace:
@@ -84,9 +84,9 @@ Nothing was pasted; the agent showed up already informed.
 ```bash
 pmb dashboard        # local web UI on http://127.0.0.1:8765 (nothing leaves the box)
 pmb tui              # terminal UI
-pmb audit            # "what does PMB know about me?" — grouped, read-only
+pmb audit            # "what does PMB know about me?" - grouped, read-only
 pmb recall "query"   # search with the full ranking trace
-pmb export           # dump everything to Markdown/JSON — your data, in the open
+pmb export           # dump everything to Markdown/JSON - your data, in the open
 ```
 
 ## Bring existing history (skip the cold start)

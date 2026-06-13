@@ -1,4 +1,4 @@
-"""`pmb workspace ...` — extracted from cli/main.py (no behavior change)."""
+"""`pmb workspace ...` - extracted from cli/main.py (no behavior change)."""
 
 from __future__ import annotations
 
@@ -284,7 +284,7 @@ def workspace_current():
     saved = read_default_workspace(pmb_home)
     console.print(Panel.fit(
         f"active:        [bold cyan]{ws.name}[/] ({ws.id[:12]})\n"
-        f"resolved via:  {ws.source} — {_SOURCE_HELP.get(ws.source, ws.source)}\n"
+        f"resolved via:  {ws.source} - {_SOURCE_HELP.get(ws.source, ws.source)}\n"
         f"storage:       {ws.storage_dir}\n"
         f"saved default: {saved or '- (none)'}",
         title="workspace current",

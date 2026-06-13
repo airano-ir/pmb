@@ -8,7 +8,7 @@ from pmb.core.events import (
 )
 from pmb.core.sqlite_helper import patch_global_sqlite3
 
-# Patch sqlite3.connect once at engine import — every subsequent
+# Patch sqlite3.connect once at engine import - every subsequent
 # sqlite3.connect() in PMB code automatically gets busy_timeout +
 # WAL pragmas. Without this, concurrent writes from MCP + dashboard +
 # seed scripts on the same DB fail with 'database is locked'.
@@ -125,7 +125,7 @@ class Engine(
         self.session_tracker = SessionTracker(self.workspace)
         # Graph layer: same DB file, extra tables (migration v2)
         self.graph = GraphStore(self.workspace.db_path)
-        # Pluggable extractor — `graph.extractor` config picks the backend.
+        # Pluggable extractor - `graph.extractor` config picks the backend.
         # Defaults to fast regex; users can switch to "spacy" or "llm:claude"
         # / "llm:ollama" / "llm:codex" without recall code changes.
         self.entity_extractor = make_extractor(self.config)
@@ -135,7 +135,7 @@ class Engine(
         # N events pays one CLI call total instead of N. Cleared after each
         # record_batch. Empty (and ignored) for non-batch writes.
         self._extract_cache: dict = {}
-        # Recall LRU cache — "working memory" buffer in front of the hybrid
+        # Recall LRU cache - "working memory" buffer in front of the hybrid
         # pipeline. Invalidated on every event write.
         self.recall_cache = RecallCache(
             max_size=self.config.get("recall.cache_size"),
@@ -166,7 +166,7 @@ class Engine(
         # so the read-only CLI commands don't pay the cost.
         self._durable_embed_queue = None  # set by _ensure_durable_queue()
 
-        # Improvement CC: serialize record_batch entries — when multiple
+        # Improvement CC: serialize record_batch entries - when multiple
         # async batches run concurrently, they race on self._batch_defer
         # and self._batch_pending. A Lock makes batches process one at a
         # time inside the engine; the MCP caller still returns instantly
@@ -175,21 +175,21 @@ class Engine(
 
         self._batch_lock = _threading.Lock()
 
-        # In-flight async write counter — lets callers (CLI scripts,
+        # In-flight async write counter - lets callers (CLI scripts,
         # tests, fixtures) block until daemon threads actually finish.
         # Without this, `record_batch_async` spawns a daemon thread that
         # gets killed on process exit, silently dropping writes.
         self._async_writes_in_flight = 0
         self._async_writes_cv = _threading.Condition(_threading.Lock())
 
-        # D4: recall singleflight — collapse concurrent identical top-level
+        # D4: recall singleflight - collapse concurrent identical top-level
         # recalls (one Event per in-flight key; result carried on the Event).
         self._sf_lock = _threading.Lock()
         self._sf_inflight: dict = {}
 
         # B4: durable write outbox. record_batch_async enqueues a row into the
         # write_outbox SQLite table synchronously, then a single lazy drainer
-        # thread replays pendings — so a crash between accept and write loses
+        # thread replays pendings - so a crash between accept and write loses
         # nothing. State here; logic in BatchMixin. Lazy: a read-only CLI that
         # never calls record_batch_async starts no thread.
         self._outbox_lock = _threading.Lock()
@@ -207,7 +207,7 @@ class Engine(
 
         # Improvement #6: deferred touch buffer. Under concurrent recalls
         # each call writes access_count+1 / last_accessed / importance via
-        # `apply_recall_updates` — a SQLite write transaction. With 8+
+        # `apply_recall_updates` - a SQLite write transaction. With 8+
         # parallel recalls these all queue on the write lock, exploding p95.
         # Solution: enqueue touches in memory, flush every ~250ms in a
         # daemon thread. Single flush coalesces touches from many recalls,
@@ -219,7 +219,7 @@ class Engine(
         self._touch_lock = _threading.Lock()
         self._touch_flusher_started = False
 
-        # PAMVR — Predicate-Aware Multi-View Reranking. Cache the flag
+        # PAMVR - Predicate-Aware Multi-View Reranking. Cache the flag
         # at init time so the recall hot-path doesn't pay for a config
         # lookup per candidate.
         self._pamvr_enabled = bool(self.config.get("recall.pamvr_enabled"))
@@ -245,7 +245,7 @@ class Engine(
         # Auto VOCAB_BRIDGES (Improvement TT). Mine the user's own lexicon
         # from workspace events via PMI co-occurrence so PAMVR adapts to
         # any domain (not just coding). Hand-curated VOCAB_BRIDGES stay as
-        # fallback; mined bridges extend them. Refreshed lazily — see
+        # fallback; mined bridges extend them. Refreshed lazily - see
         # `_maybe_refresh_vocab_bridges()`.
         self._auto_bridges_enabled = bool(self.config.get("recall.auto_vocab_bridges"))
         # Improvement WW: write-time atomic fact extraction.
@@ -291,7 +291,7 @@ class Engine(
             pass
 
     def _maybe_refresh_vocab_bridges(self) -> None:
-        """Called from recall() — cheap if cache is fresh, mines if stale."""
+        """Called from recall() - cheap if cache is fresh, mines if stale."""
         if not self._auto_bridges_enabled:
             return
         try:
@@ -356,10 +356,10 @@ class Engine(
         process that exits right after close() doesn't silently drop in-flight
         work. Each wait is bounded, so close() can't hang on a stuck worker:
 
-          1. async batch writes  — record_batch_async daemon threads; these
+          1. async batch writes  - record_batch_async daemon threads; these
              may themselves enqueue graph + touch work, so drain them first.
-          2. deferred graph index — the graph.async_llm background worker.
-          3. touch buffer         — access_count / importance reinforcement.
+          2. deferred graph index - the graph.async_llm background worker.
+          3. touch buffer         - access_count / importance reinforcement.
 
         Each drain returns immediately when nothing is pending, so the common
         close() stays ~instant.

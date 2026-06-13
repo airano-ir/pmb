@@ -1,5 +1,5 @@
 """
-Image attachment + optional CLIP embedding (Improvement J — image half).
+Image attachment + optional CLIP embedding (Improvement J - image half).
 
 Two modes:
   1. METADATA-ONLY (default, zero deps):
@@ -18,7 +18,7 @@ Image search at query time:
   - Optional cross-modal: encode query with CLIP text encoder, cosine
     against stored image embeddings
 
-CLIP model loading is LAZY — only happens on first encode call. If CLIP
+CLIP model loading is LAZY - only happens on first encode call. If CLIP
 not installed, we silently degrade to metadata-only.
 
 For developers who keep screenshots / diagrams of work, this enables
@@ -119,7 +119,7 @@ def _clip_encode_image(path: Path):
         import open_clip
         import torch
         from PIL import Image
-        # Use small ViT-B-32 — ~150MB, balances speed/quality
+        # Use small ViT-B-32 - ~150MB, balances speed/quality
         model, _, preprocess = open_clip.create_model_and_transforms(
             "ViT-B-32", pretrained="openai",
         )

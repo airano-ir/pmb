@@ -11,7 +11,7 @@ from pmb.reference_data import override_dict as _override_dict
 
 @dataclass
 class RecallResult:
-    """A recall result — an event plus ranking signals."""
+    """A recall result - an event plus ranking signals."""
 
     ulid: str
     event_type: str
@@ -23,7 +23,7 @@ class RecallResult:
     vec_score: float
     importance: float
     recency_score: float
-    # R3: absolute vector similarity 1/(1+dist) in [0,1] — un-normalized, so it
+    # R3: absolute vector similarity 1/(1+dist) in [0,1] - un-normalized, so it
     # carries real meaning across queries (unlike the min-maxed score/vector).
     raw_vec: float = 0.0
 
@@ -73,7 +73,7 @@ class RecallResult:
 
 @dataclass
 class RecallPack:
-    """Structured response from recall — formatted for an LLM."""
+    """Structured response from recall - formatted for an LLM."""
 
     query: str
     workspace_name: str
@@ -128,7 +128,7 @@ class RecallPack:
         for r in self.results[:max_results]:
             ts = r.resolved_date or time.strftime("%Y-%m-%d", time.gmtime(r.timestamp))
             content_preview = r.content[:300] + "..." if len(r.content) > 300 else r.content
-            lines.append(f"\n— [{ts}] [{r.event_type}] (score {r.score:.2f}):")
+            lines.append(f"\n- [{ts}] [{r.event_type}] (score {r.score:.2f}):")
             lines.append(content_preview)
         return "\n".join(lines)
 
@@ -189,11 +189,11 @@ def _collapse_reflections(
         if not src_ulid:
             continue
         if src_ulid in by_ulid:
-            # Source already a candidate — transfer score
+            # Source already a candidate - transfer score
             score_boost[src_ulid] = score_boost.get(src_ulid, 0.0) + score * 0.5
             drop_indices.add(i)
         else:
-            # Source not yet a candidate — fetch it, replace reflection
+            # Source not yet a candidate - fetch it, replace reflection
             src_ev = event_store.get_by_ulid(src_ulid)
             if src_ev is None or src_ev.archived_at is not None:
                 continue  # keep reflection as fallback
@@ -245,7 +245,7 @@ _DUMMY_LOCK = _DummyLock()
 #   tech > file > class > function > import > person > theme > concept
 #
 # Code-AST kinds (class/function/import) outrank `person` because the regex
-# person extractor will happily flag "AuthManager" as a capitalized name —
+# person extractor will happily flag "AuthManager" as a capitalized name -
 # but AST proves it's a code symbol. `person` still beats `concept` so
 # "Alice" → person, not concept.
 _KIND_PRIORITY: dict[str, int] = {

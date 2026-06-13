@@ -1,4 +1,4 @@
-"""Ambient auto-write — the memory journals the agent's work if it didn't.
+"""Ambient auto-write - the memory journals the agent's work if it didn't.
 
 Runs from the Stop hook. Policy:
 
@@ -9,12 +9,12 @@ Runs from the Stop hook. Policy:
 
 Synthesis is template-based by default (instant, deterministic, no model).
 A local/CLI LLM can be opted in (`autowrite.synthesizer = llm:ollama` etc.)
-for a nicer human summary — with a timeout and an automatic fall back to
+for a nicer human summary - with a timeout and an automatic fall back to
 the template, so it never blocks or fails the turn.
 
 Honesty + control: every ambient entry is tagged `source=autowrite`, shown
 as auto, and removable via `engine.forget_auto_written()`. ON by default
-(`autowrite.enabled`) — capturing work the agent forgot to record is PMB's
+(`autowrite.enabled`) - capturing work the agent forgot to record is PMB's
 signature; flip it off with `pmb config set autowrite.enabled false`.
 """
 
@@ -28,7 +28,7 @@ _EDIT_TOOLS = {
     "str_replace_editor", "create_file", "edit_file", "apply_patch",
 }
 
-# Outcome detectors (git-free on purpose — see score_turn_importance). These
+# Outcome detectors (git-free on purpose - see score_turn_importance). These
 # decide whether a turn produced a *result* worth remembering, not just churn.
 _TEST_RE = re.compile(
     r"\b(pytest|tox|nox|unittest|jest|vitest|mocha|"
@@ -75,7 +75,7 @@ def _status_failed(status: str) -> bool:
 def classify_actions(actions: list[dict]) -> dict:
     """Bucket a turn's SIGNIFICANT actions into outcome signals.
 
-    Deliberately git-agnostic: commits/pushes are not inspected here — a
+    Deliberately git-agnostic: commits/pushes are not inspected here - a
     turn earns importance by producing a *verifiable result* (tests pass, a
     failure gets resolved, a deploy runs), not by how it's version-controlled.
     Actions are expected newest-first (as `recent_agent_actions` returns).
@@ -108,7 +108,7 @@ def classify_actions(actions: list[dict]) -> dict:
         if _DEPLOY_RE.search(target):
             deploy = True
 
-    # tests/build reflect the LAST run, not "ever" — a turn that ends green is
+    # tests/build reflect the LAST run, not "ever" - a turn that ends green is
     # passing even if it was red mid-way.
     tests_passed = bool(test_runs) and test_runs[-1] is True
     tests_failed = bool(test_runs) and test_runs[-1] is False
@@ -116,7 +116,7 @@ def classify_actions(actions: list[dict]) -> dict:
 
     # error → resolution: a real red→green transition (a run failed, then a
     # later run of the same kind succeeded). NOT just "an edit succeeded after
-    # a failure" — that doesn't re-verify anything.
+    # a failure" - that doesn't re-verify anything.
     def _resolved(runs: list[bool]) -> bool:
         seen_fail = False
         for ok in runs:
@@ -144,7 +144,7 @@ def score_turn_importance(actions: list[dict]) -> tuple[float, dict]:
     """Estimate how *important* this turn is, in [0, 1], git-free.
 
     The point of ambient memory is to capture important work the agent forgot
-    to record — not to log every file touch. So outcome signals dominate and
+    to record - not to log every file touch. So outcome signals dominate and
     raw edits barely move the needle:
 
         base                         0.30
@@ -156,7 +156,7 @@ def score_turn_importance(actions: list[dict]) -> tuple[float, dict]:
         + breadth: >=5 files         0.12   / >=3 files  0.06
 
     A turn of two small edits and nothing else scores ~0.30 and falls below
-    the default 0.45 bar — exactly the 'just info' we want to drop. Returns
+    the default 0.45 bar - exactly the 'just info' we want to drop. Returns
     (score, signals) so the caller can both gate and record the real number.
     """
     sig = [a for a in actions if a.get("significant")]
@@ -188,7 +188,7 @@ def score_turn_importance(actions: list[dict]) -> tuple[float, dict]:
 
 def synthesize_template(actions: list[dict]) -> str | None:
     """Build a one-line summary, leading with the OUTCOME (a failure fixed,
-    tests passed, a deploy) and only then the files touched — so the entry
+    tests passed, a deploy) and only then the files touched - so the entry
     reads as 'what was accomplished', not 'what was mechanically edited'.
     Returns None if there's nothing worth recording.
     """
@@ -199,7 +199,7 @@ def synthesize_template(actions: list[dict]) -> str | None:
 
     # Commits / uncategorised actions detected separately so existing wording
     # is preserved (git is mentioned if it happened, but never drives
-    # importance — see score_turn_importance).
+    # importance - see score_turn_importance).
     commits, other = [], []
     for a in sig:
         if a.get("tool", "") in _EDIT_TOOLS:
@@ -325,7 +325,7 @@ def autowrite_gate(
 
     Returns a skip-reason string if we should stay silent, or None if the
     turn qualifies. Lets the Stop hook decide whether it's even worth
-    spawning a background LLM worker — without doing any model work itself.
+    spawning a background LLM worker - without doing any model work itself.
     `min_importance <= 0` disables the quality bar (count gate only).
     """
     try:
@@ -409,7 +409,7 @@ def run_autowrite(
     except Exception:
         pass
 
-    # 4. Record (unless dry-run) with the REAL importance — not a flat 0.4 —
+    # 4. Record (unless dry-run) with the REAL importance - not a flat 0.4 -
     # so recall ranks a verified fix above a mechanical edit. Floor at 0.35 so
     # an ambient entry is still findable even at the low end.
     res.importance = max(0.35, round(importance, 2))

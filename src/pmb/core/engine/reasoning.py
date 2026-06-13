@@ -27,7 +27,7 @@ class ReasoningMixin:
         min_idle_days: float = 7.0,
         max_rehearse: int = 20,
     ) -> dict:
-        """Spaced-repetition rehearsal — keep important-but-idle memories alive."""
+        """Spaced-repetition rehearsal - keep important-but-idle memories alive."""
         from pmb.health.rehearse import rehearse as _rehearse
 
         return _rehearse(
@@ -100,7 +100,7 @@ class ReasoningMixin:
         multi-hop questions get bridged at recall time without any read-
         time LLM call.
 
-        Safe to call repeatedly — duplicate reflections for the same source
+        Safe to call repeatedly - duplicate reflections for the same source
         are prevented by checking metadata.source_ulid.
         """
         ev = self.events.get_by_ulid(ulid)
@@ -146,7 +146,7 @@ class ReasoningMixin:
             tier=TIER_SEMANTIC,  # they capture stable understanding
         )
         appended = self.events.append(new_ev)
-        # Index in graph too — reflections contain rich entity signal
+        # Index in graph too - reflections contain rich entity signal
         try:
             self._index_event_in_graph(appended, full_text=appended.content)
         except Exception:
@@ -160,7 +160,7 @@ class ReasoningMixin:
         # back to the SOURCE event. This makes the source findable via
         # entity matches against terms the LLM surfaced (people names,
         # themes, implications). PPR naturally walks these enriched links.
-        # No new searchable chunk needed — pure graph signal.
+        # No new searchable chunk needed - pure graph signal.
         n_bridge_entities = 0
         if self.config.get("recall.reflection_to_edges"):
             try:
@@ -177,7 +177,7 @@ class ReasoningMixin:
                 )
                 refl_ext = self.entity_extractor.extract(refl_full_text)
                 refl_named = refl_ext.all_named()
-                # Add LLM-extracted people as 'person' entities too — our
+                # Add LLM-extracted people as 'person' entities too - our
                 # rule-based extractor doesn't catch capitalized names.
                 for p in reflection.people:
                     if p and len(p) >= 2:
@@ -612,7 +612,7 @@ class ReasoningMixin:
                 except Exception:
                     pass
 
-        # Cache invalidation — new arcs / summaries affect recall
+        # Cache invalidation - new arcs / summaries affect recall
         self.recall_cache.bump_generation()
 
         return {

@@ -5,7 +5,7 @@ Why this exists:
   Every published LoCoMo number (mem0 67.13 J, Letta-style baselines, etc.)
   uses an LLM to GENERATE the answer from retrieved context and a SECOND LLM
   to JUDGE correctness vs gold. Without this harness, we can only report
-  evidence_recall@k — useful but not directly comparable to their headline
+  evidence_recall@k - useful but not directly comparable to their headline
   numbers.
 
 What this does:
@@ -16,7 +16,7 @@ What this does:
        answer matches the gold. Returns 1 (correct) / 0 (incorrect).
 
   Reports:
-    - J-score (mean of judge verdicts) — apples-to-apples with mem0
+    - J-score (mean of judge verdicts) - apples-to-apples with mem0
     - F1 / BLEU-1 (lexical) as a cheap secondary signal
     - Per-category breakdown
     - Pipeline latency budgets
@@ -109,7 +109,7 @@ Question: {question}
 Gold answer: {gold}
 Predicted answer: {prediction}
 
-Decision rule (be GENEROUS — semantic match, not exact wording):
+Decision rule (be GENEROUS - semantic match, not exact wording):
 - If the predicted answer CONTAINS or PARAPHRASES the key fact from the
   gold, mark 1.
 - More SPECIFIC than gold (gold "December" → pred "December 5") → 1.
@@ -197,7 +197,7 @@ class LocomoJudge:
         # ~8000 chars, so the old 1500-per-chunk + 6000-total caps truncated
         # the actual answer turn out of the reader's view, capping J-score far
         # below retrieval recall. The reader (and modern LLMs generally)
-        # handle 20k chars trivially. Eval-only — does not touch recall.
+        # handle 20k chars trivially. Eval-only - does not touch recall.
         self.context_char_cap = context_char_cap
         self.per_chunk_cap = per_chunk_cap
 
@@ -269,7 +269,7 @@ class LocomoJudge:
         start = text.find("{")
         end = text.rfind("}")
         if start == -1 or end == -1:
-            # Heuristic fallback — look for digit
+            # Heuristic fallback - look for digit
             m = re.search(r'"?correct"?\s*[:=]\s*([01])', text)
             if m:
                 return {"correct": int(m.group(1))}

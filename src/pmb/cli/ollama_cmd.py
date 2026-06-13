@@ -1,4 +1,4 @@
-"""`pmb ollama` subcommand — status / configure / recommend models.
+"""`pmb ollama` subcommand - status / configure / recommend models.
 
 For users who want a fully-local setup (no Anthropic / OpenAI API key).
 """
@@ -17,13 +17,13 @@ from pmb.config import Config
 from pmb.core.workspace import detect_workspace
 
 console = Console()
-app = typer.Typer(no_args_is_help=True, help="Ollama integration — fully local LLM ops")
+app = typer.Typer(no_args_is_help=True, help="Ollama integration - fully local LLM ops")
 
 
 # Recommended models for different PMB ops
 _RECOMMENDED = {
     "small": ("llama3.2:3b", "fastest, good enough for dedup verify"),
-    "balanced": ("llama3.1:8b", "default — quality vs speed balance"),
+    "balanced": ("llama3.1:8b", "default - quality vs speed balance"),
     "quality": ("qwen2.5:14b", "best dedup/consolidation accuracy, slower"),
     "tiny": ("gemma3:1b", "1B params, runs on potato hardware"),
 }
@@ -92,7 +92,7 @@ def status():
     else:
         console.print("[yellow]No models installed.[/] Pull one:")
         for level, (name, desc) in _RECOMMENDED.items():
-            console.print(f"  [cyan]ollama pull {name}[/]  — {desc}")
+            console.print(f"  [cyan]ollama pull {name}[/]  - {desc}")
 
     # Show which PMB ops would use Ollama
     cfg = Config(

@@ -2,9 +2,24 @@
 
 All notable changes to PMB are documented here.
 
-## [0.9.0] — 2026-06-12 — Anchor Engine
+## [0.9.1] - 2026-06-13
 
-**Memory now understands any language the embedder does — no language packs
+Repository hardening + open-source polish. No engine behavior change.
+
+- **CI:** prewarm the HF models before pytest so the offline suite survives a
+  cache miss (a Dependabot PR can't restore the model cache). Fixes the gha-all run.
+- **Tests:** the 146-file suite is reorganized into 12 subsystem folders (lang,
+  recall, engine, hooks, mcp, ingest, maintenance, security, cli, integration,
+  eval, meta) with frozen baselines under `tests/fixtures/`. 1308 passed / 0
+  failed - unchanged behavior; repo-root paths are now depth-independent.
+- **Docs:** new `docs/usage.md` (per-agent walkthrough); the shipped v0.9 PLAN is
+  archived to `docs/plans/`; fixed the `pmb connect claude` -> `claude-code` id.
+- **CLI:** `pmb setup` warms the embedding model inline and points at `pmb doctor`.
+- **Style:** em/en-dashes replaced with hyphens across the docs and CLI strings.
+
+## [0.9.0] - 2026-06-12 - Anchor Engine
+
+**Memory now understands any language the embedder does - no language packs
 required.** A German/Spanish/French/Italian/Polish query routes to the right
 intent and the right fact with NO pack for that language (measured: de/es/fr/pl
 top-1 recall 1.00 pack-free; intents 12/12 across 6 languages).
@@ -17,7 +32,7 @@ top-1 recall 1.00 pack-free; intents 12/12 across 6 languages).
   YAML in `$PMB_HOME/lang/` to override) and the opt-in de/es templates.
   **Honest regression:** on a COLD stdio path (no warm daemon, no distilled
   traffic yet) RU/UK general atomic-fact extraction, first-person / self-intent /
-  relation / negation / future-intent lexical matchers no longer fire — those
+  relation / negation / future-intent lexical matchers no longer fire - those
   had no cheap per-candidate warm replacement. The warm-daemon path (the default
   after S6) is unaffected. The packs-off CI gate is now BLOCKING.
 
@@ -25,10 +40,10 @@ Landed against the track (all additive / default-safe; recall behaviour proven
 byte-identical via the V1 eval; new multilingual gate in
 `test_memory_eval_multilingual.py`):
 
-- **Pack-free extraction + data accuracy (C1–C3, F1–F4).** C1 universal value-
+- **Pack-free extraction + data accuracy (C1-C3, F1-F4).** C1 universal value-
   span detector (`reasoning/spans.py`); C2 keyed-fact extraction by hypothesis
   margin (`reasoning/extract_anchor.py`, warm-only, gated `extract.anchor_keyed`)
-  — "Я живу в Киеве" → city=Киеве with zero Russian data; C3 canonical
+  - "Я живу в Киеве" → city=Киеве with zero Russian data; C3 canonical
   `attr: value` atoms; F1 extraction-confidence metadata scaling the recall
   boost; F2 write-time contradiction via the anti-hypothesis; F3 the X2 channel-
   weights learning loop closed (propose in the tick, surface in `pmb doctor`,
@@ -42,7 +57,7 @@ byte-identical via the V1 eval; new multilingual gate in
   the lexical verb-synonym boost in `lang.mode=anchors` (the vector channel
   covers it).
 
-- **Anchor Engine — language-free intent classification (A1/A2/B1/B2 + D1/D2).**
+- **Anchor Engine - language-free intent classification (A1/A2/B1/B2 + D1/D2).**
   A new tier that replaces hand-written per-language packs with English-only
   semantic ANCHORS: every role the packs enumerate (goals/past/recent/lessons
   question, work request, self-query, trivial ack) is a set of English
@@ -51,16 +66,16 @@ byte-identical via the V1 eval; new multilingual gate in
   → `src/pmb/lang/anchor_calibration.json`, frozen by a test). The shipped
   multilingual embedder does the cross-lingual transfer, so a German/Spanish/
   French/Italian/Polish query lands on the English anchors with ZERO per-language
-  data — measured 12/12 across 6 languages × 6 intents. Runs WARM-ONLY (the cold
+  data - measured 12/12 across 6 languages × 6 intents. Runs WARM-ONLY (the cold
   hook never loads the model); `lang.anchors` (on) is the kill-switch. B2 extends
   the same tier to two STATEMENT detectors (guidance-seeking query → lesson
   boost; future-plan → suggest-goal flag) in their own scoring/calibration
-  GROUPS, so they add multilingual coverage without competing with — or
-  regressing — the intent tier (proven: B1 τ/recall byte-identical after B2).
+  GROUPS, so they add multilingual coverage without competing with - or
+  regressing - the intent tier (proven: B1 τ/recall byte-identical after B2).
   **ALD (Anchor→Lexicon Distillation):** the maintenance tick mines n-grams that
   reliably predict an anchor in THIS machine's traffic (precision ≥ 0.95,
   support ≥ 6, across-anchor) and compiles them into `$PMB_HOME/lang/auto.yaml`,
-  so the COLD lexical path learns the user's languages from their own messages —
+  so the COLD lexical path learns the user's languages from their own messages -
   no model, microseconds, fully local. `lang.anchor_log` (on) gates the fire log.
 - **Fixed: Codex `record_batch` "timed out awaiting tools/call after 120s".**
   Root cause: the background embed-queue worker EAGERLY triggered the full
@@ -68,7 +83,7 @@ byte-identical via the V1 eval; new multilingual gate in
   second ~400MB model next to the warm daemon → paging) the load's GIL bursts
   starved the server's asyncio loop, so the client's NEXT call hit its 120s
   deadline. The worker is now PASSIVE (waits briefly for `is_ready()`, never
-  loads — `embed.queue_autoload=true` restores the old behavior), writes stay
+  loads - `embed.queue_autoload=true` restores the old behavior), writes stay
   durable model-free (`embed_queue_pending`), `warmup()` kicks the leftover
   drain, and `pmb connect codex` adds `tool_timeout_sec=300` headroom
   (re-run it once to pick that up). tests/test_record_batch_cold.py.
@@ -87,12 +102,12 @@ byte-identical via the V1 eval; new multilingual gate in
   `recall.channel_weights` JSON vector (default identity = no change) scales the
   hit/importance/recency channels, with a `propose_channel_weights` learning
   hook that is never auto-applied.
-- **Calibrated confidence (X3).** `calibrated_confidence` — RecallPack.confidence
+- **Calibrated confidence (X3).** `calibrated_confidence` - RecallPack.confidence
   as one named, tested, monotonic, bounded function.
 - **SLOs-as-code (X4).** `pmb/health/slo.py` ties each quality/latency/durability
   objective to the test that enforces it.
 - **Fault-injection + concurrency (X5), security (X7), API contract (X10),
-  backup/restore + migration self-heal (X6), docs-can't-lie (X8)** — new gates.
+  backup/restore + migration self-heal (X6), docs-can't-lie (X8)** - new gates.
 - **`pmb connect` defaults to the shared HTTP daemon (S6).** JSON hosts
   (claude-code/cursor) point at the one warm daemon by default
   (`connect.default_daemon`); `--stdio` opts out. Pins `daemon.idle_exit_min=0`
@@ -103,7 +118,7 @@ byte-identical via the V1 eval; new multilingual gate in
 
 Still roadmap: X2's online weight-learning loop, X9 distribution polish.
 
-## [0.8.0] — 2026-06-11
+## [0.8.0] - 2026-06-11
 
 PLAN.md v0.8.0 "invisible memory": make memory speed invisible and memory
 quality measurable, and finish the language-pack vision so the core carries
@@ -111,13 +126,13 @@ ZERO Cyrillic. Phases 0, T, S, R, L, V, M.
 
 ### Added
 - **Thin `pmb-hook` fast lane (S2).** Stdlib-only console script all five
-  lifecycle hooks call: warm-daemon localhost path (~10–50 ms) with a full-CLI
+  lifecycle hooks call: warm-daemon localhost path (~10-50 ms) with a full-CLI
   cold fallback; `track-action` runs a dependency-light inline path.
 - **Daemon self-heal + workspace guard (S3/S4)** and **`/internal/hook/
   session-restore`** (warm semantic restore).
 - **`pmb connect --daemon` (S6).** Point JSON hosts (claude-code / cursor) at the
   ONE shared warm daemon over streamable-HTTP instead of a stdio Engine + ~400 MB
-  model per client — N clients cost ~400 MB total, not ×N. The daemon token is
+  model per client - N clients cost ~400 MB total, not ×N. The daemon token is
   now PERSISTENT so the baked auth header survives restarts. Opt-in (`--stdio`
   stays the default); codex / editor extensions keep stdio.
 - **Memory-quality CI gate (V1).** `tests/test_memory_eval.py` runs a frozen
@@ -131,13 +146,13 @@ ZERO Cyrillic. Phases 0, T, S, R, L, V, M.
   perf-marked p95 latency smoke (V2).
 - **Daemon self-maintenance (M1).** Once per `daemon.maintenance_interval_h` of
   uptime and only while idle, the daemon archives cold rows (archive-only),
-  scans conflicts (report-only) and runs a declutter DRY-RUN — surfaced in
+  scans conflicts (report-only) and runs a declutter DRY-RUN - surfaced in
   `/internal/health`. Decisions survive (R7). Config `daemon.maintenance`
   (default on) + `daemon.maintenance_archive`.
 - **Property-based tests (T6, hypothesis)** for the hot-path invariants
   (tokenizers / intent classifiers / atomic-fact extraction never raise on
   arbitrary unicode).
-- **Activity exact-dedup (0.2)**, **truthful CI (T1–T4)** + a **zero-Cyrillic
+- **Activity exact-dedup (0.2)**, **truthful CI (T1-T4)** + a **zero-Cyrillic
   ratchet** test.
 
 ### Changed
@@ -156,7 +171,7 @@ ZERO Cyrillic. Phases 0, T, S, R, L, V, M.
   full-scan. Workspace-meta rewrite skipped when unchanged; psutil resolved once
   and RSS skipped on the hot discovery path. `RecallCache` made thread-safe
   (daemon worker threads); `_adherence_nudge` cached 60 s off the write path.
-- **Lazy `pmb.mcp` package (S1)** (−3–6 s/hook) and **durable decisions (R7)**.
+- **Lazy `pmb.mcp` package (S1)** (−3-6 s/hook) and **durable decisions (R7)**.
 - **Test harness consolidated (T5).** Removed 80 redundant `sys.path.insert`
   lines + 46 duplicated `tmp_pmb_home`/`tmp_workspace_dir` fixture copies in
   favour of the shared `conftest.py`.
@@ -166,16 +181,16 @@ ZERO Cyrillic. Phases 0, T, S, R, L, V, M.
 - `test_mcp_recall_answer_quality_and_lessons` quarantined with a documented
   root cause (harness prewarm-thread flake, not a product bug).
 
-## [0.7.0] — 2026-06-10
+## [0.7.0] - 2026-06-10
 
 This release lands the daemon + language packs + MCP token diet + write-quality
-work (PLAN.md phases B–E, on top of the 0.6.0 keyed-memory correctness fixes)
+work (PLAN.md phases B-E, on top of the 0.6.0 keyed-memory correctness fixes)
 plus the recall-singleflight and semantic-intent follow-ups.
 
 ### Added (recall + hook follow-ups)
 
 - **Recall singleflight (D4).** Concurrent IDENTICAL top-level recalls (same
-  workspace, query and top_k) now collapse to one computation — useful under
+  workspace, query and top_k) now collapse to one computation - useful under
   the daemon / multi-agent fan-out; followers reuse the leader's result and
   fall back to an independent recall on timeout, so it can never deadlock.
   Config `recall.singleflight` (default on); a no-op for single-client stdio.
@@ -183,13 +198,13 @@ plus the recall-singleflight and semantic-intent follow-ups.
   detection finds nothing AND the engine is warm (daemon-served), the hook can
   classify the message by embedding cosine against per-intent exemplars, so a
   query in a language the lexical patterns don't cover still fires. Default OFF
-  and eval-gated by design — the measured finding is the semantic tier doesn't
+  and eval-gated by design - the measured finding is the semantic tier doesn't
   beat lexical with the default embedder. Config `hooks.semantic_intents`.
 
-### Fixed (write quality — Phase E)
+### Fixed (write quality - Phase E)
 
 - **A user negation now CLOSES the keyed value it contradicts.** Task-5 retired
-  stale negations when a positive value arrived; the reverse was unhandled — with
+  stale negations when a positive value arrived; the reverse was unhandled - with
   `user::city = Tampa`, "I no longer live in Tampa" left Tampa asserted as current
   forever. The negation now closes the keyed value (the active keyed fact is
   archived and stamped `valid_to` / `closed_by` / `closed_reason`), so recall
@@ -197,7 +212,7 @@ plus the recall-singleflight and semantic-intent follow-ups.
   user's own negation (post-0.6.0 subject-adjacent detector) triggers it; gated
   by `keyed.close_on_negation` (default on).
 
-### Changed (write quality — Phase E)
+### Changed (write quality - Phase E)
 
 - **The write-time quality gate now defaults ON.** Safe since the junk detector
   became length-aware in 0.6.0 (it flags only empty / placeholder / test-pattern
@@ -208,14 +223,14 @@ plus the recall-singleflight and semantic-intent follow-ups.
   unweighted.
 - **Routine activities can't crowd out real facts.** Activity importance is
   capped at `write.max_activity_importance` (default 0.8) unless pinned, with an
-  `importance_clamped` breadcrumb — agents habitually pass ≈0.9 for routine
+  `importance_clamped` breadcrumb - agents habitually pass ≈0.9 for routine
   actions. Facts, lessons and goals are never clamped.
 - **Agent guidance gained a "DON'T record" section** (in the MCP server
   instructions): skip secrets, transient tool output / stack traces / file
   listings, and anything trivially re-derivable from the repo; future intent
   goes to a goal, not a fact.
 
-### Changed (MCP token diet — Phase D)
+### Changed (MCP token diet - Phase D)
 
 - **Tool descriptions shrank ~71%.** The full multi-paragraph tool docstrings
   duplicated the read-before-write workflow and write-triggers table that are
@@ -227,20 +242,20 @@ plus the recall-singleflight and semantic-intent follow-ups.
   silently re-bloat every session.
 - **Recall responses are trimmed before they go over the wire.** `recall` /
   `recall_smart` / `recall_deep` drop genuinely-null (`None`) top-level fields
-  and cap each result's content at `mcp.max_item_chars` (default 600 —
+  and cap each result's content at `mcp.max_item_chars` (default 600 -
   generous, so normal facts are untouched; only pathologically long items
   shrink). Gated by `mcp.compact_responses` (default on). Structural fields
   (`results`, `lessons`) and 0/False values are always kept.
 
-### Added (MCP token diet — Phase D)
+### Added (MCP token diet - Phase D)
 
-- **`pmb mcp perf`** — per-tool latency (p50/p95), error rate and client-timeout
+- **`pmb mcp perf`** - per-tool latency (p50/p95), error rate and client-timeout
   count from the `mcp_calls` table, so "did the token diet / daemon make tools
   faster" is a number, not a feeling. `pmb connect` already selects the `lean`
   tool profile when it installs hooks (the read-status tools the hooks cover are
   dropped), which now also benefits from the smaller descriptions.
 
-### Added (language packs — Phase C2/C3)
+### Added (language packs - Phase C2/C3)
 
 - **Adding a language is now one YAML file.** PMB's lexical fast-paths
   (stopwords, function-words, verb synonyms, attribute aliases, first-person
@@ -250,40 +265,40 @@ plus the recall-singleflight and semantic-intent follow-ups.
   extend-only, so a workspace with no pack files behaves byte-for-byte as
   before (pinned by a parity test). Built-in German and Spanish templates ship;
   `pmb lang list / enable / disable / detect` manage them. `detect` samples the
-  corpus and SUGGESTS packs but never enables one silently — auto-activation by
+  corpus and SUGGESTS packs but never enables one silently - auto-activation by
   script would pollute (German and English share the Latin alphabet), so
   enabling is an explicit opt-in. See `docs/adding-a-language.md`.
 - **Offline keyed-fact extraction is now pack-aware (C4).** The first-person
   prefilter that gates the offline LLM keyed-suggestion pass recognises the
   user in an enabled language (German "ich"/"mein" passes once `de` is on),
-  so keyed extraction works for packed languages too — third-party facts are
+  so keyed extraction works for packed languages too - third-party facts are
   still rejected.
 
-### Changed (faster cold start — Phase D follow-up)
+### Changed (faster cold start - Phase D follow-up)
 
 - **`pmb warmup` suggests `fastembed` when the model cold-load is slow (>10s),**
   a lower-RAM, faster-starting backend for the same multilingual model family
   (with the required `pmb reindex` caveat). The warmup message also now points
   at `pmb daemon start` for warm hook recall (the daemon shipped in 0.6.0).
 
-### Fixed (Unicode-correct tokenization — Phase C1)
+### Fixed (Unicode-correct tokenization - Phase C1)
 
 - **Tokenizers no longer silently drop non-EN/RU letters.** The keyed-fact label
   normalizer, the PAMVR token/proper-noun extractors, the vocabulary miner, and
   the sentence splitter used Latin+Cyrillic-only character classes
   (`[^0-9a-zа-яё]`, `[a-zA-Zа-яА-Я]`, `[A-ZА-ЯІЇЄҐ]…`) that deleted German
-  umlauts, Spanish ñ, Turkish letters, Greek, CJK — and even **Ukrainian
+  umlauts, Spanish ñ, Turkish letters, Greek, CJK - and even **Ukrainian
   і/ї/є/ґ** (so "Львові" tokenized as "львов"). They are now Unicode-aware
   (`\w`/`str.isupper`/casefold), **provably byte-identical on EN/RU** (a parity
   test pins this against the old regexes) and additive for every other script;
   proper-noun detection keeps its capital-word shape so acronyms still don't
   match. NOTE: this changes tokenization of Ukrainian and other non-EN/RU
-  content already in a workspace — run `pmb reindex` to align the BM25 index
+  content already in a workspace - run `pmb reindex` to align the BM25 index
   with the corrected tokenizer.
 
-### Added (persistent memory daemon — Phase B)
+### Added (persistent memory daemon - Phase B)
 
-- **`pmb daemon` — a persistent warm memory process.** It holds ONE warm Engine
+- **`pmb daemon` - a persistent warm memory process.** It holds ONE warm Engine
   + embedding model + LanceDB so hook-based auto-recall finally gets REAL
   semantic recall instead of the per-process cold skip (`RECALL_COLD_SKIP`).
   `pmb daemon start` spawns it detached, `status`/`stop`/`restart` manage it.
@@ -293,20 +308,20 @@ plus the recall-singleflight and semantic-intent follow-ups.
 - **Hooks are now daemon clients with a hard cold fallback.** `pmb
   prepare-context` asks the warm daemon first (localhost, ~0.6s timeout) and
   falls back to the existing in-process cold path the instant the daemon is
-  absent or a version mismatch is detected — behaviour is unchanged when no
+  absent or a version mismatch is detected - behaviour is unchanged when no
   daemon runs. When the cold path runs and `daemon.autostart` is on (default),
   a daemon is spawned detached (rate-limited) so the NEXT message is warm.
 - **Idle exit.** The daemon exits after `daemon.idle_exit_min` (default 120)
   minutes with no request so it doesn't hold ~400MB forever; the next message
   autostarts a fresh one.
 
-### Fixed (durability + observability — Phase B)
+### Fixed (durability + observability - Phase B)
 
 - **`record_batch_async` is crash-safe via a durable outbox.** The batch is
   persisted to a `write_outbox` SQLite table SYNCHRONOUSLY before returning,
   then replayed by a background drainer; a crash between accept and write loses
   nothing (`recover_outbox()` replays leftovers on the next start). The old
-  fire-and-forget daemon-thread path — which dropped items on process death —
+  fire-and-forget daemon-thread path - which dropped items on process death -
   is kept only behind `write.outbox=False`. Gated ON by default.
 - **Swallowed exceptions leave a breadcrumb.** A new `error_log` table + the
   `pmb.core.errlog` helper replace several bare `except: pass` sites (negation
@@ -314,14 +329,14 @@ plus the recall-singleflight and semantic-intent follow-ups.
   silently-degrading path shows up in `pmb doctor` ("Recent errors (24h)")
   instead of being invisible.
 
-## [0.6.0] — 2026-06-09
+## [0.6.0] - 2026-06-09
 
-### Fixed (keyed-memory correctness — Phase A)
+### Fixed (keyed-memory correctness - Phase A)
 
 - **Negation detection no longer archives facts about OTHER people.** The
   detector previously checked a user cue and a negation INDEPENDENTLY anywhere
   in the text, so "I learned that Alice no longer lives in Paris" was read as
-  the USER negating their own city — and recording the user's real city then
+  the USER negating their own city - and recording the user's real city then
   auto-archived Alice's fact. The user subject must now sit immediately before
   the negated verb, evaluated per sentence. Third-party and possessive-chain
   forms ("my sister doesn't work at Google", "my sister's employer is unknown")
@@ -333,10 +348,10 @@ plus the recall-singleflight and semantic-intent follow-ups.
   Berlin" can never become `user::city`.
 - **Offline LLM passes are now wall-clock bounded.** A shared `LLMBudget`
   (config `llm.offline_max_calls`=40, `llm.offline_budget_s`=120) caps the WHOLE
-  pass, not just a single call — keyed suggestions and the declutter judge can
+  pass, not just a single call - keyed suggestions and the declutter judge can
   no longer run for many minutes on a slow local model.
 - **`hometown` is a separate key from current `city`.** "I'm from Kyiv" no
-  longer overwrites "I live in Tampa" — origin and current residence are
+  longer overwrites "I live in Tampa" - origin and current residence are
   distinct keyed attributes.
 - **`pmb declutter` stops treating short facts as junk.** The `<8 chars → junk`
   rule archived real memories like `O+`, `HIV+`, `ADHD`, `Tampa`. Short
@@ -353,15 +368,15 @@ plus the recall-singleflight and semantic-intent follow-ups.
 - **A freshly recorded name takes effect on the next recall.** The user-name
   cache is marked dirty on a "My name is X" write instead of refreshing only
   every 25 events, and the per-recall `SELECT COUNT(*)` is gone (a flag check
-  on the common path) — important for a long-lived process.
+  on the common path) - important for a long-lived process.
 - **`pmb warmup` no longer over-promises.** Its message now states that warmup
   only warms the current process; hook-based auto-recall stays SQL-only until
   the persistent daemon ships.
 
-### Fixed (Phase 0.6.0 baseline — previously merged)
+### Fixed (Phase 0.6.0 baseline - previously merged)
 
 - **No personal-name or test-name literals leak into ranking.** The recall
-  identity-marker boost no longer hardcodes a name — it is driven by the mined
+  identity-marker boost no longer hardcodes a name - it is driven by the mined
   user-name cache, and the router's identity-intent detection matches the
   user's OWN learned names dynamically instead of a baked-in literal.
   `DEFAULT_NAMED_ENTITIES` (which leaked benchmark names like alice/stripe/adyen
@@ -387,14 +402,14 @@ plus the recall-singleflight and semantic-intent follow-ups.
 ### Added
 
 - **Status dashboard.** Bare `pmb` (no subcommand) prints a workspace status
-  panel — active workspace + how it resolved, storage sizes, event counts,
+  panel - active workspace + how it resolved, storage sizes, event counts,
   running MCP servers, embedding warm/cold. `pmb --help` is unchanged. Slow
   paths (`recall`/`remember` first run, `index`, `migrate-workspaces`,
   `compact`, `declutter`) show a loading spinner.
 - **Workspace switching.** `pmb workspace use <name>` persists a default
   workspace (resolution: env → project `.pmb/workspace.yaml` → saved default →
   git/cwd), `pmb workspace current` shows the active one + which rule won, and
-  `pmb workspaces` marks the active one. Fully additive — setups that never run
+  `pmb workspaces` marks the active one. Fully additive - setups that never run
   `use` resolve exactly as before.
 - **Time-based forgetting.** `pmb decay --archive-cold` archives facts/activities
   that are old AND never recalled AND low-value (never pinned/keyed/lessons/
@@ -408,7 +423,7 @@ plus the recall-singleflight and semantic-intent follow-ups.
   routed to a goal: MCP docstrings + the `pmb connect` template carry the rule,
   `record_batch` accepts `{"type": "plan"}` (a goal with `kind=plan`), and
   `record_fact` flags forward-looking phrasing with `metadata.suggest_goal`
-  (a hint — never an auto-convert). New `pmb goals` / `pmb goals done <ulid>`.
+  (a hint - never an auto-convert). New `pmb goals` / `pmb goals done <ulid>`.
 - **Offline LLM keyed-state tier.** During consolidation, an offline bounded LLM
   proposes keyed current-state (`{attribute, value, negation, confidence}`) for
   facts the cheap regex missed; confidence≥0.8 positives upsert via the
@@ -416,14 +431,14 @@ plus the recall-singleflight and semantic-intent follow-ups.
   `consolidate.suggest_keyed`; never on the recall hot path.
 - **Per-deployment reference data.** Optional `PMB_HOME/reference.yaml` extends
   attribute aliases / known techs / stopwords / function-words (extend-only) and
-  overrides kind priorities — no Python edits. Missing file = identical
+  overrides kind priorities - no Python edits. Missing file = identical
   behaviour.
 
 ### Changed
 
 - **Write-time quality gate (opt-in, `write.quality_gate`, default OFF).** When
   on, suspected-junk facts are flagged (`quality_flag=suspect_junk`) and capped
-  at importance 0.2 and excluded from keyed promotion — never rejected.
+  at importance 0.2 and excluded from keyed promotion - never rejected.
 
 ## [0.5.0]
 
@@ -431,7 +446,7 @@ plus the recall-singleflight and semantic-intent follow-ups.
 
 - **recall_smart no longer hangs the interactive path.** It is bounded by an
   overall wall-clock deadline (`recall.smart_deadline_ms`, default 15s) with a
-  local-only fast path — it never resolves an LLM / spawns the Claude CLI on the
+  local-only fast path - it never resolves an LLM / spawns the Claude CLI on the
   foreground path (the cause of 120s timeouts). LLM query-decomposition is opt-in
   (`recall.smart_allow_llm`) and, when on, is clamped to the remaining budget. A
   new explicit `recall_deep` tool/method runs the slow, thorough pass on demand.
@@ -447,16 +462,16 @@ plus the recall-singleflight and semantic-intent follow-ups.
 
 ### Added
 
-- **`pmb repair-keyed`** — two-pass keyed-fact repair: promote current-state facts
+- **`pmb repair-keyed`** - two-pass keyed-fact repair: promote current-state facts
   buried in plain text into keyed facts, then collapse alias/duplicate keys onto
   one canonical value. Archive-only, dry-run by default.
-- **`pmb migrate-workspaces`** — merge a per-project workspace into a unified
+- **`pmb migrate-workspaces`** - merge a per-project workspace into a unified
   memory, tagged `project=<name>`; the source is left intact (reversible). The
   `recall` tool gains an optional `project` filter over the one memory.
-- **`pmb mcp status`** + a running-server registry — see how many MCP servers are
+- **`pmb mcp status`** + a running-server registry - see how many MCP servers are
   live and their memory; an HTTP `pmb mcp serve` refuses to start a second instance
   on a live host:port (per-session servers each load the model + LanceDB).
-- **Backend circuit breaker** — a repeatedly-failing/slow deep backend is
+- **Backend circuit breaker** - a repeatedly-failing/slow deep backend is
   temporarily disabled for the interactive path (`recall.breaker_threshold`,
   `recall.breaker_cooldown_s`); state exposed via `breaker_status`.
 - **Performance dashboard** now records & shows per-call recall_smart stages,
@@ -478,7 +493,7 @@ plus the recall-singleflight and semantic-intent follow-ups.
   (`pmb track-action`); a Stop hook synthesizes one activity entry per turn
   *only if* the agent didn't record its own (`pmb autowrite`), gated by a
   git-free, outcome-based importance score (tests passed / failure fixed /
-  deploy ran — not raw file count). Every entry is tagged `source=autowrite`,
+  deploy ran - not raw file count). Every entry is tagged `source=autowrite`,
   shown as auto, and removable with `pmb forget-auto`. Works on Claude Code
   (hooks), OpenAI Codex (rollout parse, `pmb codex-notify`), and MCP-only hosts
   (git observer, `pmb ambient-watch`). `pmb hooks capabilities` reports
@@ -491,7 +506,7 @@ plus the recall-singleflight and semantic-intent follow-ups.
   classifies a surfaced lesson with zero overlap with the turn's work as
   not-applicable and excludes it from the adherence denominator, instead of
   counting it as a phantom "not followed". Follow-rate is now over *applicable*
-  surfaces — it reflects relevant lessons, not surfacing volume.
+  surfaces - it reflects relevant lessons, not surfacing volume.
 - **Opt-in semantic lesson tier** (`recall.lesson_semantic`, experimental, off
   by default): cosine over the existing embeddings to catch paraphrase /
   cross-lingual lesson matches the lexical gate can't.
@@ -510,11 +525,11 @@ plus the recall-singleflight and semantic-intent follow-ups.
 
 ### Fixed
 
-- **`lean` profile was silently ignored** — the post-registration tool filter
+- **`lean` profile was silently ignored** - the post-registration tool filter
   fell back to the full default set; it now selects the lean set correctly.
 - **`Engine.close()` drains the async batch-write, deferred-graph, and touch
   queues** (each bounded) so in-flight work isn't dropped on shutdown.
-- **Persistent WAL no longer forced on non-PMB databases** — the global
+- **Persistent WAL no longer forced on non-PMB databases** - the global
   `sqlite3.connect` pragma patch applies `journal_mode=WAL` only to PMB-owned
   DBs (under `PMB_HOME` / named `events.sqlite` / `:memory:`); third-party
   connections in the same process get only the ephemeral pragmas.
@@ -642,8 +657,8 @@ caught three bugs that made `session_brief` / `overview` unusable from an agent:
 - **Tool-profile filter is event-loop-safe.** It used `asyncio.run(list_tools())`,
   which raised (and left an un-awaited coroutine) when the server was built
   inside a running loop (in-memory client / embedded host). It now detects a
-  running loop and skips the introspection cleanly; the stdio server path —
-  where gating actually matters — is unchanged.
+  running loop and skips the introspection cleanly; the stdio server path -
+  where gating actually matters - is unchanged.
 
 Tests: `tests/test_mcp_e2e.py` (3: tool exposure, long-chat `session_brief`,
 recall answer-quality + lessons + `overview`).

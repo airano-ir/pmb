@@ -1,9 +1,9 @@
-"""F3 — close the X2 channel-weights learning loop (NEVER auto-applied).
+"""F3 - close the X2 channel-weights learning loop (NEVER auto-applied).
 
 X2 shipped `propose_channel_weights(samples)` but nothing fed it samples. This
-collects weak-labelled `(channel_scores, useful)` samples — channels of a
+collects weak-labelled `(channel_scores, useful)` samples - channels of a
 surfaced top result, labelled useful when the agent later acts on that result
-(feedback boost / lesson-followed) — into a small table, and the maintenance
+(feedback boost / lesson-followed) - into a small table, and the maintenance
 tick runs `propose_channel_weights` over them and writes a SUGGESTION that
 `pmb doctor` prints. The user inspects and applies it via
 `pmb config set recall.channel_weights …`; recall never adopts it on its own

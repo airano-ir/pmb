@@ -1,19 +1,19 @@
-"""C1 — universal value-span detector (no language data).
+"""C1 - universal value-span detector (no language data).
 
 Extraction needs candidate VALUE spans (a city, an employer, a name, a number)
 out of a sentence, in ANY language, with no per-language regex. Two universal
 sources, both already proven script-agnostic in Phase L:
 
-  * proper-noun spans — a capitalised, 3+ char token whose first letter is upper
+  * proper-noun spans - a capitalised, 3+ char token whose first letter is upper
     and the rest lower (Unicode `str.isupper/islower`, so Kyiv / München / Athina
     all qualify; acronyms like NASA do not). Reuses pamvr's tokenizer + the
     not-proper function-word set. Case + inflection are PRESERVED ("Kieve", not
     "kiev") because C2 injects the raw span into an English hypothesis and the
     keyed store clusters inflected variants by cosine.
-  * number/date spans — a universal digit run (`42`, `2026-06-12`, `10:30`).
+  * number/date spans - a universal digit run (`42`, `2026-06-12`, `10:30`).
 
 Identifier-shaped tokens (`record_batch`, `qwen2.5`, `gpt4`) are excluded so a
-code token can never become a city — the normal case for this user's code-mixed
+code token can never become a city - the normal case for this user's code-mixed
 messages (RU prose + EN identifiers).
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ _NUM_RE = re.compile(r"\d[\d .,:/\-]*")
 def looks_like_identifier(text: str) -> bool:
     """A code identifier, not a natural-language value: underscores, a
     letters+digits mix (qwen2.5, gpt4, h100), or a dotted path (file.py).
-    Pure numbers ("42", "2026") are NOT identifiers — they are number spans."""
+    Pure numbers ("42", "2026") are NOT identifiers - they are number spans."""
     if "_" in text:
         return True
     has_alpha = any(c.isalpha() for c in text)
@@ -55,7 +55,7 @@ def _proper_spans(sentence: str) -> list[Span]:
         raw = m.group(0).strip("'")
         if len(raw) < 3:
             continue
-        # Capitalised word: first upper, rest lower (Unicode-aware) — same shape
+        # Capitalised word: first upper, rest lower (Unicode-aware) - same shape
         # as pamvr._extract_proper_nouns, but we keep the RAW case.
         if not (raw[0].isupper() and raw[1:].islower()):
             continue

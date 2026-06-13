@@ -1,13 +1,13 @@
 """
 Multi-algorithm typo-tolerant query correction (Improvements K + L).
 
-5-layer cascade — each layer catches a different type of typo:
+5-layer cascade - each layer catches a different type of typo:
 
-  1. EXACT match              — fast path, query token == entity name
-  2. SUBSTRING containment    — "Aliceee" contains "alice", or "alic" ⊂ "alice"
-  3. LEVENSHTEIN ≤ 2          — 1-2 char edits (insert/delete/substitute/transpose)
-  4. TRIGRAM Jaccard ≥ 0.55   — catches 3-4 char mistakes, robust on long words
-  5. SOUNDEX                  — phonetic match for radical mis-spellings
+  1. EXACT match              - fast path, query token == entity name
+  2. SUBSTRING containment    - "Aliceee" contains "alice", or "alic" ⊂ "alice"
+  3. LEVENSHTEIN ≤ 2          - 1-2 char edits (insert/delete/substitute/transpose)
+  4. TRIGRAM Jaccard ≥ 0.55   - catches 3-4 char mistakes, robust on long words
+  5. SOUNDEX                  - phonetic match for radical mis-spellings
 
 Algorithms are ordered cheapest → most expensive. Cascade stops at first
 strong match. If multiple algorithms find candidates, we pick the one with
@@ -16,7 +16,7 @@ the highest confidence score.
 Cost on 100 entities: ~0.5-1.5ms per query (microseconds per algorithm × 5
 × 100 entities). Negligible.
 
-For 10k+ entities we'd index trigrams in a inverted index — TODO. For
+For 10k+ entities we'd index trigrams in a inverted index - TODO. For
 typical user workspaces (100-5000 entities) linear is fine.
 """
 
@@ -30,12 +30,12 @@ from dataclasses import dataclass
 log = logging.getLogger(__name__)
 
 
-# A token to consider for correction — looks like a name (capitalized in
+# A token to consider for correction - looks like a name (capitalized in
 # query) or 3+ char word.
 _TOKEN_RE = re.compile(r"\b[A-Za-z][a-zA-Z'\-]{2,29}\b")
 
 
-# Function words we should never auto-correct — they're query scaffolding,
+# Function words we should never auto-correct - they're query scaffolding,
 # not entity references. Stops things like 'who' → 'how' just because they
 # share 2 letters with some entity.
 _QUERY_FUNCTION_WORDS = {
@@ -111,7 +111,7 @@ def levenshtein(a: str, b: str, max_edits: int = 3) -> int:
 
 def substring_score(query_tok: str, entity: str) -> float:
     """1.0 if one contains the other (case-insensitive); 0 otherwise.
-    Asymmetric weighted — longer-contains-shorter is stronger signal."""
+    Asymmetric weighted - longer-contains-shorter is stronger signal."""
     q, e = query_tok.lower(), entity.lower()
     if not q or not e:
         return 0.0
@@ -299,7 +299,7 @@ def _build_candidate_index(
         if len(parts) == 2:
             multi[(parts[0], parts[1])] = (low, kind)
         elif len(parts) > 2:
-            # Index first two words too — partial matching
+            # Index first two words too - partial matching
             multi[(parts[0], parts[1])] = (low, kind)
     return single, multi
 
@@ -350,7 +350,7 @@ def correct_query(
         a_text = tokens[i][2].lower()
         b_text = tokens[i+1][2].lower()
         if (a_text, b_text) in multi_word:
-            # Exact multi-word match — nothing to correct
+            # Exact multi-word match - nothing to correct
             matched_indices.add(i)
             matched_indices.add(i + 1)
 

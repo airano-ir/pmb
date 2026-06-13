@@ -90,7 +90,7 @@ class SessionTracker:
         sess = self.current(auto_create=False)
         if not sess:
             return None
-        # Simply delete the state file — the next request will create a new one
+        # Simply delete the state file - the next request will create a new one
         f = self._state_file()
         if f.exists():
             f.unlink()

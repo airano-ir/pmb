@@ -9,7 +9,7 @@ asks an LLM to rewrite the query into 1-5 concrete entity hints
 
 Why this is opt-in:
   - Adds ~one LLM call per recall when enabled. With `claude -p` that's
-    25-50s — unusable for hot recall paths.
+    25-50s - unusable for hot recall paths.
   - Quality not yet validated against real user queries.
   - For most explicit-entity queries the existing extractor is already
     enough and this would just add cost.
@@ -17,7 +17,7 @@ Why this is opt-in:
 Caching:
   - We cache rewrites in <workspace>/query_expansion.jsonl keyed by query
     string. Repeat queries pay zero. The cache is invalidated only if the
-    user deletes the file — there's no version key because the LLM prompt
+    user deletes the file - there's no version key because the LLM prompt
     rarely changes.
 """
 
@@ -107,7 +107,7 @@ def expand_query(
     try:
         # LLMClient.consolidate(events_text) returns
         # {consolidate, summary, confidence, reasoning}. We don't use that
-        # shape here — we want raw JSON. Send the prompt as a single
+        # shape here - we want raw JSON. Send the prompt as a single
         # "events_text" item and parse the response ourselves.
         out = llm.consolidate([_PROMPT + query])
         # The shared parser already strips fences and extracts JSON, so
@@ -120,7 +120,7 @@ def expand_query(
     except Exception:
         entities = []
 
-    # Cache even empty results — re-asking the LLM is expensive
+    # Cache even empty results - re-asking the LLM is expensive
     _append_cache(workspace_storage_dir, query, entities)
     return entities
 

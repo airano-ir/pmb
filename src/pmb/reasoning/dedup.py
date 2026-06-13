@@ -1,10 +1,10 @@
 """
-Multi-layer dedup — Improvement U.
+Multi-layer dedup - Improvement U.
 
 Three lines of defense + an async background queue for borderline cases:
 
   L1  exact-text match
-      Cheapest possible — normalize whitespace + casefold; if identical
+      Cheapest possible - normalize whitespace + casefold; if identical
       string exists in last N events of same event_type in this workspace,
       return that ULID.
 
@@ -29,7 +29,7 @@ Trade-off rationale (vs mem0's LLM-on-every-write):
 
 False-merge protection:
   - High cosine threshold (0.92, not 0.85). Precision >> recall.
-  - Same event_type only — never merges a 'goal' with a 'fact'.
+  - Same event_type only - never merges a 'goal' with a 'fact'.
   - Merged entries are ARCHIVED with metadata.merged_into=<canonical>, never
     deleted. `pmb dedupe --undo` can restore.
 
@@ -55,10 +55,10 @@ log = logging.getLogger(__name__)
 
 
 # Tunable thresholds. Lower = catch more dups, higher = fewer false merges.
-# These are intentionally CONSERVATIVE — we lean precision over recall.
+# These are intentionally CONSERVATIVE - we lean precision over recall.
 COSINE_HIGH: float = 0.92    # ≥ this  → definite duplicate, auto-merge
 COSINE_MID:  float = 0.80    # ∈[MID..HIGH) → borderline, async LLM verify
-# Below COSINE_MID we never even consider it a candidate — too different.
+# Below COSINE_MID we never even consider it a candidate - too different.
 
 # How far back to look for candidates (in days). Older items are too stale
 # to be likely dups; bounding the search keeps L2 fast on large workspaces.
@@ -87,7 +87,7 @@ class DedupBorderline:
 # ----------------------------------------------------------------------
 
 _WS_RE = re.compile(r"\s+")
-_PUNCT_NORMALIZE_RE = re.compile(r"[—–]")  # em/en dash → hyphen
+_PUNCT_NORMALIZE_RE = re.compile(r"[--]")  # em/en dash → hyphen
 
 
 def normalize_for_exact_match(text: str) -> str:
@@ -149,7 +149,7 @@ def find_exact_duplicate(
     """L1: scan recent same-type active events for an identical normalized
     content string. Returns the canonical event's ULID if found.
 
-    O(N) over recent events — bounded by lookback window. ~5ms for 200
+    O(N) over recent events - bounded by lookback window. ~5ms for 200
     events in practice.
     """
     norm_target = normalize_for_exact_match(content)
@@ -182,7 +182,7 @@ def find_exact_duplicate(
 
 
 # ----------------------------------------------------------------------
-# L2: semantic dedup (cosine) — needs an embedder
+# L2: semantic dedup (cosine) - needs an embedder
 # ----------------------------------------------------------------------
 
 def find_semantic_duplicate(
@@ -195,7 +195,7 @@ def find_semantic_duplicate(
 ) -> tuple[DedupHit | None, tuple[str, float] | None]:
     """L2: given pre-computed cosine similarities, decide if any is a dup.
 
-    `candidates` should come from PMB's vector index (LanceDB) — engine
+    `candidates` should come from PMB's vector index (LanceDB) - engine
     builds it via `engine._dedup_nearest_candidates(content, event_type)`.
     Dedup module stays agnostic of where vectors live.
 
@@ -206,7 +206,7 @@ def find_semantic_duplicate(
     if not candidates:
         return None, None
     # Filter by event_type via SQLite (only candidates with the SAME type
-    # qualify — never merge a goal with a fact)
+    # qualify - never merge a goal with a fact)
     ulids = [c[0] for c in candidates]
     sim_by_ulid = {c[0]: c[1] for c in candidates}
     placeholders = ",".join("?" * len(ulids))
@@ -316,7 +316,7 @@ def sweep_workspace(
 ) -> dict:
     """One-shot dedup pass over all active events.
 
-    `embeddings_provider` must return a list of tuples — engine pulls these
+    `embeddings_provider` must return a list of tuples - engine pulls these
     from LanceDB+SQLite (where vectors actually live). Dedup module stays
     agnostic of storage.
 
@@ -330,7 +330,7 @@ def sweep_workspace(
     if not items:
         return {"n_clusters": 0, "n_merged": 0, "by_type": {}}
 
-    # Group by event_type — never merge across types.
+    # Group by event_type - never merge across types.
     by_type_groups: dict[str, list] = {}
     for it in items:
         ulid, etype, imp, acc, ts, vec = it
@@ -407,7 +407,7 @@ def sweep_workspace(
 
 def _archive_with_pointer(db_path: Path, loser_ulid: str, winner_ulid: str) -> None:
     """Soft-archive `loser_ulid`, store merged_into pointer in metadata.
-    Reversible — `pmb dedupe --undo` can restore.
+    Reversible - `pmb dedupe --undo` can restore.
     """
     now = time.time()
     with sqlite3.connect(db_path) as conn:
@@ -460,7 +460,7 @@ def undo_merges(db_path: Path, workspace_id: str) -> int:
 
 
 # ----------------------------------------------------------------------
-# L2.5 async worker — drain dedup_pending using a local/cloud LLM
+# L2.5 async worker - drain dedup_pending using a local/cloud LLM
 # ----------------------------------------------------------------------
 
 _LLM_PROMPT = """You are a memory dedup judge for a personal memory system.
@@ -476,8 +476,8 @@ Fact B:
 {b}
 
 Answer with exactly ONE word, no explanation:
-  MERGE     — same fact, keep one (the canonical, fact B)
-  KEEP_BOTH — different facts, keep both
+  MERGE     - same fact, keep one (the canonical, fact B)
+  KEEP_BOTH - different facts, keep both
 """
 
 
@@ -551,7 +551,7 @@ def run_pending(
         prompt = _LLM_PROMPT.format(a=p["new_content"], b=p["candidate_content"])
         verdict_raw = call_llm(prompt)
         if not verdict_raw:
-            # No LLM available — keep both, mark resolved with 'unknown'
+            # No LLM available - keep both, mark resolved with 'unknown'
             mark_verdict(db_path, p["id"], "unknown")
             n_skipped += 1
             continue

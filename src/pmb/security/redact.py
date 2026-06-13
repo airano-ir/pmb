@@ -2,7 +2,7 @@
 Secret redaction before write.
 
 Goal: stop obvious credentials from landing in events.sqlite verbatim.
-Not a substitute for keeping secrets out of agent transcripts entirely —
+Not a substitute for keeping secrets out of agent transcripts entirely -
 just a final guard at the persistence boundary.
 
 Strategy:
@@ -28,13 +28,13 @@ from typing import Any
 # Order matters: more specific patterns first so they consume before the
 # generic Bearer / KEY=value patterns catch them.
 _PATTERNS: list[tuple[str, re.Pattern]] = [
-    # Anthropic explicit (more specific — must run before generic sk-)
+    # Anthropic explicit (more specific - must run before generic sk-)
     ("anthropic-key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}\b")),
     # OpenAI style API keys (excludes sk-ant- which is Anthropic)
     ("openai-key", re.compile(r"\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_\-]{20,}\b")),
     # AWS Access Key ID
     ("aws-access-key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    # AWS Secret Access Key (heuristic — 40 char base64 after explicit context only)
+    # AWS Secret Access Key (heuristic - 40 char base64 after explicit context only)
     ("aws-secret", re.compile(
         r"(?i)\baws_secret_access_key\s*[=:]\s*[\"']?([A-Za-z0-9/+=]{40})[\"']?"
     )),
@@ -52,7 +52,7 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     )),
     # Bearer / Authorization header (case-insensitive)
     ("bearer-token", re.compile(r"(?i)\b(?:bearer|authorization:\s*bearer)\s+[A-Za-z0-9._\-]{16,}")),
-    # Private key blocks (PEM) — redact the body, keep the header line
+    # Private key blocks (PEM) - redact the body, keep the header line
     ("pem-private-key", re.compile(
         r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"
         r"[\s\S]+?"

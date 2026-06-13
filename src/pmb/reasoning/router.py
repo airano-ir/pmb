@@ -17,7 +17,7 @@ This module:
   2. Returns per-layer multipliers that the recall pipeline applies to
      base scores, biasing which layer surfaces in the top-K.
 
-It does NOT replace existing recall layers — it tunes their relative
+It does NOT replace existing recall layers - it tunes their relative
 contribution PER QUERY. Layers stay always-on (for safety) but their
 weight is dynamic.
 
@@ -86,10 +86,10 @@ _INFERENTIAL_RE = re.compile(
 # NOTE: the query-side patterns reference only GENERIC self-words
 # ("user", "i", "me", "my"). The USER'S OWN NAME ("who is Bob",
 # "where does Bob live") is matched dynamically via
-# `_identity_re_for_names`, fed by the mined user-name cache — we never
+# `_identity_re_for_names`, fed by the mined user-name cache - we never
 # hardcode a specific personal name here.
 
-# Shared fragments — reused by the static identity regex AND the
+# Shared fragments - reused by the static identity regex AND the
 # per-user-name dynamic regex so the two never drift.
 _ID_ATTRS = (
     r"name|email|stack|language|languages|editor|terminal|preference|"
@@ -179,7 +179,7 @@ _DECISION_RE = re.compile(
     re.IGNORECASE,
 )
 
-# "Direct lookup" pattern — short factual question
+# "Direct lookup" pattern - short factual question
 _DIRECT_RE = re.compile(
     r"^\s*(what|who|where|which) (is|are|was|were|did) ",
     re.IGNORECASE,
@@ -238,7 +238,7 @@ class QueryIntent:
 class QueryRouter:
     """Classifies queries and returns layer multipliers.
 
-    Pure stateless — same query → same weights.
+    Pure stateless - same query → same weights.
 
     Multiple intent types can fire simultaneously; in that case
     multipliers compose (max of competing values, since boosts are
@@ -320,12 +320,12 @@ class QueryRouter:
             weights.facts_boost = min(weights.facts_boost, 0.6)
 
         if "inferential" in types:
-            # "Why / would / should" — reflections capture interpretations.
+            # "Why / would / should" - reflections capture interpretations.
             weights.reflections_boost = max(weights.reflections_boost, 1.5)
             weights.raw_boost = max(weights.raw_boost, 1.2)
 
         if "decision" in types:
-            # "What did we decide / agree / conclude" — the answer is a
+            # "What did we decide / agree / conclude" - the answer is a
             # decision activity, not the loudest argument. Boost activity
             # events whose metadata.kind is in the decision family.
             # 1.8 picked empirically: enough to outrank typical surface-form
@@ -337,7 +337,7 @@ class QueryRouter:
             weights.raw_boost = min(weights.raw_boost, 0.9)
 
         if "historical" in types:
-            # "What did we use before" — the LATEST pinned fact is the wrong
+            # "What did we use before" - the LATEST pinned fact is the wrong
             # answer; we want the superseded state. Flatten the recency
             # boost and add a small bonus for older events.
             weights.historical_recency_mul = min(weights.historical_recency_mul, 0.25)

@@ -72,7 +72,7 @@ class BatchMixin:
         result["bulk_mode"] = True
         result["bulk_ulids"] = list(self._bulk_collected_ulids)
         self._bulk_collected_ulids = []
-        # Invalidate caches in one shot — record_batch's per-item bumps
+        # Invalidate caches in one shot - record_batch's per-item bumps
         # were skipped in bulk mode.
         try:
             self.recall_cache.bump_generation()
@@ -84,11 +84,11 @@ class BatchMixin:
         """Fire-and-forget batch write, now CRASH-SAFE via a durable outbox.
 
         The items are written to the `write_outbox` SQLite table SYNCHRONOUSLY
-        (~1ms — this is the durability point), then a single background drainer
+        (~1ms - this is the durability point), then a single background drainer
         replays them through the full `record_batch` pipeline (embedding,
         LanceDB, graph, dedup). If the process dies between this call and the
         write completing, the row stays `pending` and is replayed on the next
-        drainer start / `recover_outbox()` — nothing is lost. The old
+        drainer start / `recover_outbox()` - nothing is lost. The old
         fire-and-forget daemon-thread path lost items on process death; it is
         kept only behind `write.outbox=False` for bisecting.
 
@@ -96,7 +96,7 @@ class BatchMixin:
         use them); a recall right after MAY miss the new events for ~100-1000ms
         while the drainer writes + embeds.
         """
-        # Light validation only — heavy lifting in background
+        # Light validation only - heavy lifting in background
         if not items or not isinstance(items, list):
             return {"n_accepted": 0, "processing": "skipped", "errors": ["empty or invalid items"]}
         n_items = sum(1 for i in items if isinstance(i, dict) and i.get("type"))
@@ -113,7 +113,7 @@ class BatchMixin:
             if outbox_id is not None:
                 out["outbox_id"] = outbox_id
             else:
-                # Durable enqueue failed (disk full / locked) — fall back to the
+                # Durable enqueue failed (disk full / locked) - fall back to the
                 # in-memory thread so the write still has a chance, and log it.
                 out["outbox"] = "enqueue_failed_fell_back"
                 self._spawn_legacy_async(items)
@@ -128,7 +128,7 @@ class BatchMixin:
         # ── legacy path (write.outbox=False): fire-and-forget daemon thread ──
         self._spawn_legacy_async(items)
         out = {"ok": True, "n": n_items}
-        # Adherence nudge — short consequence-framed reminder when the
+        # Adherence nudge - short consequence-framed reminder when the
         # agent has been writing without reading. The agent SEES this in
         # the response payload and self-corrects. Quiet when adherence is
         # fine. This is the cheapest way to lift prepare-call rate on
@@ -200,7 +200,7 @@ class BatchMixin:
         """Start the single per-engine drainer thread if it isn't running."""
         import threading
         if _OUTBOX_STOP.is_set():
-            return  # interpreter is shutting down — don't spawn new threads
+            return  # interpreter is shutting down - don't spawn new threads
         # Register this engine's wake so the atexit handler can interrupt it.
         with _OUTBOX_WAKES_LOCK:
             if self._outbox_wake not in _OUTBOX_WAKES:
@@ -262,14 +262,14 @@ class BatchMixin:
         done; on failure back off and retry up to 5 times, then mark failed.
 
         Exits cleanly the moment the workspace DB no longer exists (the dir was
-        torn down — e.g. a temp test workspace), so finished-test drainer
+        torn down - e.g. a temp test workspace), so finished-test drainer
         threads don't linger and race on the storage layer."""
         import os as _os
         import sqlite3 as _sql
         import time as _t
         while True:
             if _OUTBOX_STOP.is_set():
-                return  # interpreter shutting down — leave before finalization
+                return  # interpreter shutting down - leave before finalization
             try:
                 if not _os.path.exists(str(self.workspace.db_path)):
                     return
@@ -286,7 +286,7 @@ class BatchMixin:
                 row = None
             if row is None:
                 # Nothing pending. Wait briefly for a wake, then EXIT the
-                # thread if still idle — the next _outbox_enqueue / recover
+                # thread if still idle - the next _outbox_enqueue / recover
                 # respawns it. This bounds lingering drainer threads (one per
                 # engine would otherwise sleep forever and pile up across a
                 # test session, raising the odds of a native fault under load).
@@ -363,7 +363,7 @@ class BatchMixin:
 
         Args:
             timeout: max seconds to wait. Returns False if not drained
-                in time (you should treat that as an error — investigate).
+                in time (you should treat that as an error - investigate).
 
         Returns:
             True if drained cleanly, False on timeout.
@@ -414,11 +414,11 @@ class BatchMixin:
         with `type` echoed back so the agent can stitch ULIDs back to inputs.
 
         Unknown / malformed items are skipped (logged in errors), the rest
-        proceed — partial failure does NOT abort the batch.
+        proceed - partial failure does NOT abort the batch.
         """
         # Improvement Z+AA: cap content size per item as a SAFETY guard
         # (agents occasionally dump 20KB+ blobs). The async wrapper handles
-        # latency, so this can be generous — 5000 chars preserves nuance
+        # latency, so this can be generous - 5000 chars preserves nuance
         # while still preventing pathological inputs.
         MAX_CONTENT = 5000
         items = _cap_batch_content(items or [], MAX_CONTENT)
@@ -430,7 +430,7 @@ class BatchMixin:
         # Improvement CC: serialize concurrent batches. Multiple async batch
         # threads must NOT overlap on self._batch_defer / self._batch_pending
         # or items get lost. The lock is per-engine, held only during one
-        # batch — async callers still return instantly because each batch
+        # batch - async callers still return instantly because each batch
         # is wrapped in its own thread by record_batch_async.
         with self._batch_lock:
             # Improvement X: defer all embeddings for the whole batch into one
@@ -445,7 +445,7 @@ class BatchMixin:
             # silently fall through to per-event extract in _index_event_in_graph,
             # so this is a pure best-effort speedup.
             #
-            # BUT this prefetch is a SYNCHRONOUS LLM call — it would block the
+            # BUT this prefetch is a SYNCHRONOUS LLM call - it would block the
             # whole batch write. When graph.async_llm is on (default), we skip
             # it and let the background graph worker do per-event extraction
             # off the write path. We only run the synchronous batch prefetch
@@ -553,7 +553,7 @@ class BatchMixin:
                         results.append(res)
                         n_ok += 1
                     elif t in ("goal", "plan"):
-                        # "plan" is an alias for a goal — the natural home for
+                        # "plan" is an alias for a goal - the natural home for
                         # "remember, next we'll do X". Tagged kind=plan so it's
                         # still a goal (surfaced by prepare / open-goals) but
                         # distinguishable.
@@ -691,7 +691,7 @@ class BatchMixin:
         """Pre-extract entities for the whole batch in ONE LLM call.
 
         Pulls the user-supplied text from each item (different field per type
-        — content / fact / main / title / summary), redacts it the same way
+        - content / fact / main / title / summary), redacts it the same way
         record_event will, then sends the whole list to
         `entity_extractor.extract_batch`. Results land in `self._extract_cache`
         keyed by the cleaned text so `_index_event_in_graph` (called later
@@ -716,7 +716,7 @@ class BatchMixin:
                 return it.get("content") or it.get(t) or ""
             if t in ("keyed_fact", "key_fact"):
                 return it.get("value") or it.get("content") or ""
-            # fact / activity / unknown — content is the primary field.
+            # fact / activity / unknown - content is the primary field.
             return it.get("content") or it.get("fact") or ""
 
         pairs: list[tuple[str, tuple]] = []

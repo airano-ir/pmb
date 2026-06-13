@@ -3,17 +3,17 @@
 The lexical intent detector (`detect_intents`) covers EN/RU/UK question
 patterns. For a query in another language ("Wo wohne ich?", "¿Dónde vivo?") it
 finds nothing and the hook stays silent. When the engine is warm (i.e. served by
-the daemon — hooks must stay <100ms, so we never load the model on the cold
+the daemon - hooks must stay <100ms, so we never load the model on the cold
 per-process path), this tier classifies the message semantically.
 
 TWO implementations, in precedence order:
 
-  * B1 — the Semantic Anchor Engine (`engine.anchor_index()`): margin-based,
+  * B1 - the Semantic Anchor Engine (`engine.anchor_index()`): margin-based,
     one-vs-rest, with per-set thresholds CALIBRATED at FPR ≤ 1% (Phase A2).
     This is the default tier (`lang.anchors`, on) and the one that actually
-    earns multilingual coverage — a German/Japanese/Spanish query lands on the
+    earns multilingual coverage - a German/Japanese/Spanish query lands on the
     English anchors with no per-language data.
-  * C5 (legacy) — per-intent exemplar CENTROIDS by raw cosine. Kept only for
+  * C5 (legacy) - per-intent exemplar CENTROIDS by raw cosine. Kept only for
     `hooks.semantic_intents` with anchors explicitly disabled. The measured
     finding was that raw-cosine centroids do NOT beat lexical; margins + FPR
     calibration are what changed that, which is why anchors supersede this.
@@ -41,7 +41,7 @@ def classify_anchor_intent(engine, message: str) -> str | None:
 
     Returns None when the engine is cold / anchors are off / nothing fires, and
     explicitly when the top hit is a trivial ack (so we don't surface memory on
-    "了解" / "merci"). Best-effort — never raises into the hook."""
+    "了解" / "merci"). Best-effort - never raises into the hook."""
     msg = (message or "").strip()
     if not msg:
         return None
@@ -126,7 +126,7 @@ def classify_semantic_intent(engine, message: str,
     if not msg:
         return None
     # B1: anchors are the authoritative semantic tier when enabled. If they fire
-    # nothing we do NOT fall through to the weaker centroid path — anchors are
+    # nothing we do NOT fall through to the weaker centroid path - anchors are
     # FPR-calibrated, so "anchors found nothing" is a real negative, not a gap.
     try:
         if engine.config.get("lang.anchors"):

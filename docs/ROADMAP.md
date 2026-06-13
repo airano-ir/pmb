@@ -1,21 +1,21 @@
 # PMB roadmap
 
 Honest and local-first. PMB is a personal tool: every item below keeps memory on
-your disk, offline by default, with no call-home. Dates are intentionally absent —
+your disk, offline by default, with no call-home. Dates are intentionally absent -
 this is a one-maintainer project; order signals priority, not a schedule.
 
-## Shipped — v0.9.0 "Anchor Engine" (2026-06)
+## Shipped - v0.9.0 "Anchor Engine" (2026-06)
 
 Language packs are no longer required. RU/UK `packs/ru.yaml` + `packs/uk.yaml`
 were **deleted**; many languages now ride one mechanism instead of a pack each:
 
-- **Semantic anchors** — English exemplars classify intents + keyed-fact
+- **Semantic anchors** - English exemplars classify intents + keyed-fact
   extraction; the multilingual embedder transfers them cross-lingually, so a
   query in any language the model knows lands on the right anchor.
-- **ALD (anchor→lexicon distillation)** — the cold lexical path self-compiles
+- **ALD (anchor→lexicon distillation)** - the cold lexical path self-compiles
   from your own traffic into `$PMB_HOME/lang/auto.yaml`; a language you use gets
   faster over time with zero configuration.
-- **Measured** — V1 RU/UK recall top-1 = 1.00 (byte-identical to the pack era);
+- **Measured** - V1 RU/UK recall top-1 = 1.00 (byte-identical to the pack era);
   101-query multilingual eval overall top-3 ≈ 0.91; anchor classify p95 ≈ 81 ms.
   A blocking CI gate runs the eval with packs off so recall can't silently
   regress. See [adding-a-language.md](adding-a-language.md).
@@ -40,14 +40,14 @@ were **deleted**; many languages now ride one mechanism instead of a pack each:
 ## Ingest + storage
 
 - **Backup** via litestream (continuous SQLite replication to a bucket you own).
-- **Optional cloud-sync**, bring-your-own bucket — never a PMB-hosted service.
+- **Optional cloud-sync**, bring-your-own bucket - never a PMB-hosted service.
 - **tree-sitter** project indexing for Rust / TypeScript (today's deep indexer is
   Python-first; other languages fall back to a lighter scan).
 - **Image OCR** so screenshots and scanned PDFs become searchable memory.
 
 ## Non-goals
 
-- No hosted PMB service, no telemetry, no call-home — there is nothing to add
+- No hosted PMB service, no telemetry, no call-home - there is nothing to add
   later because there is no server.
 - No silent network calls on the read or write path. Optional LLM passes
   (`consolidate`, LLM synthesizers) stay explicit and opt-in.

@@ -1,5 +1,5 @@
 """
-Spreading activation — the priming side of the graph.
+Spreading activation - the priming side of the graph.
 
 Cognitive analogy: when you recall something, neighbouring concepts in
 your associative network become temporarily more accessible (more
@@ -11,7 +11,7 @@ Implementation:
   - For each entity, find its strongest graph neighbours (event_entity links).
   - For every neighbour event that wasn't already in H, bump its importance
     by `boost * weight / max_weight` so the rarer associations matter more.
-  - The boost is *temporary* — it relies on the existing access_count /
+  - The boost is *temporary* - it relies on the existing access_count /
     last_accessed mechanism + tier decay to fade out within hours.
 
 Cost is small: a single SQLite query per recall (one IN clause over entity
@@ -40,7 +40,7 @@ def apply_spreading_activation(
 ) -> dict:
     """Bump importance of graph neighbours of the recall hits.
 
-    `half_life_hours` is the *effective* lifetime of the boost — we don't
+    `half_life_hours` is the *effective* lifetime of the boost - we don't
     schedule a reverse-decay; instead we scale the boost so that even if
     the user never recalls again, normal decay neutralises it within
     `half_life_hours`.
@@ -73,7 +73,7 @@ def apply_spreading_activation(
             (*entity_ids, max_primed * 5),
         ).fetchall()
         hit_set = set(hit_ulids)
-        # Count how many hit-entities each candidate event shares — more
+        # Count how many hit-entities each candidate event shares - more
         # shared entities = stronger priming target.
         share: dict[str, int] = {}
         for r in rows:

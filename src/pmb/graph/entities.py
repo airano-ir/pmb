@@ -1,7 +1,7 @@
 """
 Entity extraction from raw event text.
 
-Rule-based and fast — runs at event-write time. Designed so we never block
+Rule-based and fast - runs at event-write time. Designed so we never block
 on an LLM call during normal use. Deep semantic extraction can be added
 later in the consolidation pass.
 
@@ -12,7 +12,7 @@ Three layers:
    `files_changed` metadata field already populated by git sync.
 
 2. **Tech names.** Closed-set match against `KNOWN_TECHS`. Trades recall for
-   precision — better to miss `Bun` than to call every English word a tech.
+   precision - better to miss `Bun` than to call every English word a tech.
    Case-insensitive but only on word boundaries.
 
 3. **Concepts.** Conservative noun-like tokens (length ≥ 4, not in stopword
@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pmb import lang as _lang
 from pmb.reference_data import extend_tech_map as _extend_tech_map
 
-# Known technologies — closed set, lowercase canonical name → display alias list.
+# Known technologies - closed set, lowercase canonical name → display alias list.
 # Match against any alias on word boundaries.
 KNOWN_TECHS: dict[str, list[str]] = {
     "postgres": ["postgres", "postgresql", "pg"],
@@ -119,14 +119,14 @@ _FILE_RE = re.compile(
 # token containing 2+ backslashes / forward slashes. The concept extractor
 # strips these wholesale before tokenizing so AppData/Roaming/Users etc.
 # don't pollute the concept set. The Unicode `\w` char-class catches Cyrillic
-# / Greek / accented folder names too — without it a localized Desktop folder
+# / Greek / accented folder names too - without it a localized Desktop folder
 # would leak its words into the concept set.
 _WINPATH_RE = re.compile(
     r"(?:[A-Za-z]:[\\/]|\\\\)[\w\-.\\/ :]+",
     re.IGNORECASE | re.UNICODE,
 )
 # Posix-style absolute paths too, including any path segment containing 2+
-# slashes — works on macOS / Linux logs and on git diff headers.
+# slashes - works on macOS / Linux logs and on git diff headers.
 _POSIXPATH_RE = re.compile(
     r"/(?:[\w\-.]+/){1,}[\w\-.]*",
     re.UNICODE,
@@ -158,7 +158,7 @@ _STOPWORDS = {
     # Dialogue roles (filter so "user" / "agent" / "assistant" don't bloat)
     "user", "agent", "assistant", "system", "bot", "human", "ai",
     "chatbot", "model", "tool",
-    # Generic technical terms — too common to be useful as concept nodes
+    # Generic technical terms - too common to be useful as concept nodes
     "code", "function", "class", "method", "value", "name", "data",
     "type", "object", "instance", "default", "config", "setting",
     "settings", "param", "params", "arg", "args",
@@ -200,7 +200,7 @@ _STOPWORDS = {
     # Acronym fragments that aren't useful as nodes
     "lgbtq", "lgbt", "covid",
     # Generic English nouns / qualifiers that clog the concept set.
-    # Almost every event mentions "ideas", "work", "thing" — they're noise.
+    # Almost every event mentions "ideas", "work", "thing" - they're noise.
     "idea", "ideas", "thing", "things", "way", "ways", "fact", "facts",
     "stuff", "lots", "couple", "anything", "everything", "something",
     "anyone", "someone", "everyone", "nobody", "somebody", "anybody",
@@ -232,7 +232,7 @@ _STOPWORDS = _lang.merged_set("entities_folder_stopwords", _STOPWORDS)
 
 
 # Hardening (H5): Unicode-aware concept matcher. The previous `[a-z]…`
-# regex silently dropped every Cyrillic, Greek, accented Latin etc. word —
+# regex silently dropped every Cyrillic, Greek, accented Latin etc. word -
 # which meant the entity-graph layer was effectively single-lingual even
 # though the embedder / BM25 already handle 50+ languages. `\w` with
 # re.UNICODE matches any letter or digit in any script; `\d` is excluded
@@ -252,7 +252,7 @@ _PHRASE_RE = re.compile(
 
 
 def extract_phrases(text: str, max_n: int = 6) -> list[str]:
-    """Find capitalized 2-3 word phrases — proper-noun-shaped concepts.
+    """Find capitalized 2-3 word phrases - proper-noun-shaped concepts.
 
     Examples it catches: "Claude Code", "Deep Research", "JWT Auth Bug",
     "Bank of America". Filtered against the stop-list so "The Code" /
@@ -260,7 +260,7 @@ def extract_phrases(text: str, max_n: int = 6) -> list[str]:
     """
     out: list[str] = []
     seen: set[str] = set()
-    # Strip absolute paths first — they're full of capitalized folder names
+    # Strip absolute paths first - they're full of capitalized folder names
     # that would otherwise turn into "Users Alexb", "Program Files" etc.
     scrubbed = _WINPATH_RE.sub(" ", text)
     scrubbed = _POSIXPATH_RE.sub(" ", scrubbed)
@@ -269,7 +269,7 @@ def extract_phrases(text: str, max_n: int = 6) -> list[str]:
         key = phrase.lower()
         if key in seen:
             continue
-        # Reject if EVERY word is a stopword/connector — that's a false hit
+        # Reject if EVERY word is a stopword/connector - that's a false hit
         # on something like "The Code" or "The Future". A multi-word phrase
         # like "Claude Code" / "Deep Research" should survive: even though
         # "code"/"deep" are single-word stopwords, the proper-noun first
@@ -342,7 +342,7 @@ def extract_concepts(text: str, max_n: int = 8) -> list[str]:
             continue
         if tok in file_blob:
             continue
-        # Reject short hex strings — they're nearly always session-tag
+        # Reject short hex strings - they're nearly always session-tag
         # noise (e.g. "be8974" from seed scripts) rather than real concepts.
         # A 4-8 char token made entirely of [0-9a-f] with at least one digit
         # is suspicious; if it ALSO has no English-letter pattern, drop it.
@@ -390,11 +390,11 @@ class ExtractedEntities:
 
 
 class EntityExtractor:
-    """Stateless wrapper around the three regex layers — the default backend.
+    """Stateless wrapper around the three regex layers - the default backend.
 
     Sub-classes can override `extract` to add spaCy POS-filter / NER / LLM
     extraction. The engine always talks to this interface so swapping the
-    backend is config-only — no recall code changes.
+    backend is config-only - no recall code changes.
     """
 
     backend_name = "regex"
@@ -431,7 +431,7 @@ class EntityExtractor:
         self,
         items: list[tuple[str, tuple]],
     ) -> list[ExtractedEntities]:
-        """Default batch is just per-event loop — overridden by LLMExtractor
+        """Default batch is just per-event loop - overridden by LLMExtractor
         to send N events in one CLI call. Lets the engine always call
         `extract_batch` without checking the backend type.
         """
@@ -443,7 +443,7 @@ def _normalize_path(p: str) -> str:
 
 
 # ----------------------------------------------------------------------
-# Backend factory — picks the right extractor based on `graph.extractor`
+# Backend factory - picks the right extractor based on `graph.extractor`
 # config. The default is "regex" (the implementation above). Other choices
 # load their backend module lazily so an extra dep (spaCy / LLM CLI) is
 # only required when the user actually opts in.
@@ -459,7 +459,7 @@ def make_extractor(config=None, max_concepts: int = 8) -> EntityExtractor:
       - "llm:ollama":  local Ollama model extracts concepts at write time
       - "llm:codex":   OpenAI Codex CLI extracts concepts at write time
 
-    Unknown values silently fall back to regex (the safest choice — the rest
+    Unknown values silently fall back to regex (the safest choice - the rest
     of the pipeline keeps working).
     """
     backend = "regex"
@@ -479,7 +479,7 @@ def make_extractor(config=None, max_concepts: int = 8) -> EntityExtractor:
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(
-                "graph.extractor=spacy unavailable (%s) — falling back to regex", e)
+                "graph.extractor=spacy unavailable (%s) - falling back to regex", e)
             return EntityExtractor(max_concepts=max_concepts)
 
     if backend.startswith("llm:"):
@@ -496,11 +496,11 @@ def make_extractor(config=None, max_concepts: int = 8) -> EntityExtractor:
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(
-                "graph.extractor=%s unavailable (%s) — falling back to regex", backend, e)
+                "graph.extractor=%s unavailable (%s) - falling back to regex", backend, e)
             return EntityExtractor(max_concepts=max_concepts)
 
-    # Unrecognised — keep working with the safe default.
+    # Unrecognised - keep working with the safe default.
     import logging
     logging.getLogger(__name__).warning(
-        "Unknown graph.extractor=%r — using regex", backend)
+        "Unknown graph.extractor=%r - using regex", backend)
     return EntityExtractor(max_concepts=max_concepts)

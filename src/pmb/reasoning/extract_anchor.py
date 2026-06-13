@@ -1,4 +1,4 @@
-"""C2 — keyed-fact extraction by HYPOTHESIS MARGIN (no per-language regex).
+"""C2 - keyed-fact extraction by HYPOTHESIS MARGIN (no per-language regex).
 
 For each candidate value span (C1, `spans.value_spans`) and each personal
 attribute, build a short ENGLISH hypothesis with the RAW span injected, plus an
@@ -14,7 +14,7 @@ The anti-hypothesis also handles negation/tense for free: "I no longer live in
 Tampa" makes the anti side win (negative margin) → the caller routes that to the
 existing close-on-negation flow instead of asserting (F2).
 
-Cost: ≤ 4 attrs × 4 spans × 2 + 1 ≈ 33 short embeds in one batch (~20–50 ms),
+Cost: ≤ 4 attrs × 4 spans × 2 + 1 ≈ 33 short embeds in one batch (~20-50 ms),
 WRITE path only, WARM-ONLY (cold engine → []). Inflected values are stored raw
 ("Kieve"); keyed canonicalization clusters them by cosine (C2 dedup).
 """
@@ -45,7 +45,7 @@ class KeyedCandidate:
     attr: str
     value: str        # RAW span (case + inflection preserved)
     margin: float     # cos(pos) − cos(anti)
-    pos: float        # cos(sentence, positive hypothesis) — F1 confidence input
+    pos: float        # cos(sentence, positive hypothesis) - F1 confidence input
 
 
 def extract_keyed_anchor(sentence: str, engine, *, tau: float = 0.05,
@@ -57,7 +57,7 @@ def extract_keyed_anchor(sentence: str, engine, *, tau: float = 0.05,
     this value?"). It fires only when that winner (a) clears `pos_floor`,
     (b) beats its own anti-hypothesis by `tau` (the negation/tense guard), and
     (c) beats the runner-up attribute by `attr_gap` (so an ambiguous span yields
-    NO keyed fact rather than a wrong one — precision over recall on writes).
+    NO keyed fact rather than a wrong one - precision over recall on writes).
 
     WARM-ONLY and best-effort: returns [] on a cold engine, when the self
     pre-gate doesn't fire, or on any failure. Never loads the model."""

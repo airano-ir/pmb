@@ -10,7 +10,7 @@ class DedupMixin:
         """Run L1 (exact) then L2 (semantic) dedup checks.
 
         Returns (hit, borderline):
-          hit:        DedupHit if a definite duplicate exists — caller skips write
+          hit:        DedupHit if a definite duplicate exists - caller skips write
           borderline: (candidate_ulid, similarity) if a borderline neighbor
                       was found; caller WRITES then enqueues this pair for
                       async LLM verify (L2.5)
@@ -18,7 +18,7 @@ class DedupMixin:
 
         Improvement Y: when called INSIDE record_batch, skip L2 semantic check
         entirely. The items in one batch came from the same agent thinking
-        pass — they're highly unlikely to dup against existing storage AND
+        pass - they're highly unlikely to dup against existing storage AND
         running L2 doubles the embedding cost (once for dedup search, once
         for the actual write). L1 (exact-text) still runs for safety, and
         the periodic `pmb dedupe` sweep catches anything L1 missed.
@@ -52,7 +52,7 @@ class DedupMixin:
 
         # Improvement Y: inside record_batch, L2 is too expensive (doubles
         # embedding work) and rarely catches anything (items came from one
-        # agent turn). Skip — periodic `pmb dedupe` handles paraphrases.
+        # agent turn). Skip - periodic `pmb dedupe` handles paraphrases.
         if getattr(self, "_batch_defer", False):
             return None, None
 
@@ -88,7 +88,7 @@ class DedupMixin:
     ):
         """L1-only exact-duplicate probe bounded by a short window (HOURS).
 
-        Unlike `_dedup_pre_write` this never embeds — one indexed SQL scan over
+        Unlike `_dedup_pre_write` this never embeds - one indexed SQL scan over
         same-type ACTIVE events newer than `window_h`. Returns the canonical
         event's `DedupHit` or None. Used by `record_activity`, whose items are
         re-logged seconds apart and would otherwise pile up (0.2 / former E6).
@@ -119,7 +119,7 @@ class DedupMixin:
 
         Returns [(ulid, cosine_similarity), ...] sorted descending.
 
-        Used only by dedup — recall has its own (richer) pipeline.
+        Used only by dedup - recall has its own (richer) pipeline.
         """
         import numpy as np
 

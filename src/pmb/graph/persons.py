@@ -1,5 +1,5 @@
 """
-Person entity extraction — no ML, no model downloads.
+Person entity extraction - no ML, no model downloads.
 
 Why not spaCy / HuggingFace NER:
   - 30-500MB download, cold-start latency
@@ -10,7 +10,7 @@ Why not spaCy / HuggingFace NER:
 
 How this works (4 layers, ordered cheap → richer):
 
-  1. SPEAKER METADATA       free, instant — agent already tracks "who's talking"
+  1. SPEAKER METADATA       free, instant - agent already tracks "who's talking"
                             LoCoMo / OpenAI / Anthropic chat APIs all have a
                             `speaker` or `role` field. Use it.
 
@@ -48,7 +48,7 @@ log = logging.getLogger(__name__)
 
 
 # ----------------------------------------------------------------------
-# Stop-list — capitalized words that LOOK like people but aren't
+# Stop-list - capitalized words that LOOK like people but aren't
 # ----------------------------------------------------------------------
 
 MONTHS = {
@@ -90,17 +90,17 @@ COMMON_NON_PERSON = {
     "happy", "sad", "tired", "excited", "nervous",
     "lgbtq", "lgbt", "us", "i'm", "i've", "i'll",
     "covid", "ai", "ml", "llm", "api", "url", "json", "xml", "html",
-    # Question words — common in dialogue, NEVER persons
+    # Question words - common in dialogue, NEVER persons
     "how", "what", "where", "when", "why", "who", "whom", "whose",
     "which", "whether", "whoever", "whatever", "wherever", "whenever",
-    # Dialogue roles — "User:", "Agent:", "Assistant:" are roles, not names
+    # Dialogue roles - "User:", "Agent:", "Assistant:" are roles, not names
     "user", "agent", "assistant", "system", "bot", "human", "chatbot", "model", "tool", "function",
     # Section / project / product nouns mistakenly capitalized
     "frontend", "backend", "fullstack", "client", "server", "service",
     "database", "cache", "queue", "worker", "pipeline", "monorepo",
     "project", "module", "package", "library", "framework", "platform",
     "feature", "bug", "fix", "patch", "release", "version",
-    # Windows path components — extracted from C:\Users\foo\AppData\Roaming\...
+    # Windows path components - extracted from C:\Users\foo\AppData\Roaming\...
     "appdata", "roaming", "programfiles", "programdata", "users",
     "desktop", "documents", "downloads", "local", "temp", "tmp",
     "system32", "windows", "program", "application", "applications",
@@ -111,11 +111,11 @@ COMMON_NON_PERSON = {
     # the sentence-start guard (e.g. "Verify credentials before login")
     "verify", "check", "test", "run", "build", "deploy", "create",
     "delete", "update", "fetch", "send", "load", "save",
-    # CLI agent product names — they ARE proper nouns but rarely human names
+    # CLI agent product names - they ARE proper nouns but rarely human names
     "codex", "claude", "anthropic",
 }
 
-# Known tech names (subset of pmb.graph.entities.KNOWN_TECHS) — block these
+# Known tech names (subset of pmb.graph.entities.KNOWN_TECHS) - block these
 # as persons. We import lazily to avoid circular imports.
 def _known_techs() -> set:
     try:
@@ -147,7 +147,7 @@ _STOPLIST = _full_stoplist()
 # Regex patterns
 # ----------------------------------------------------------------------
 
-# Capitalized word — 2+ chars, starts uppercase. Captures hyphenated names
+# Capitalized word - 2+ chars, starts uppercase. Captures hyphenated names
 # like "Mary-Anne" and apostrophes "O'Connor".
 _CAP_WORD_RE = re.compile(r"\b([A-Z][a-z][a-zA-Z\-']{1,28})\b")
 
@@ -379,26 +379,26 @@ def extract_persons(
                         continue
             add(cand, tier=2, why="capitalized non-stoplist")
 
-    # Stage 2b: name followed by verb — high-confidence person.
+    # Stage 2b: name followed by verb - high-confidence person.
     # This rule SHOULD fire even at sentence start because the entire point
     # is to catch "Caroline said ...", "Bob met ...", "Alice flew to Paris".
     # False positives like "Frontend is React" are caught by the stoplist
     # at _normalize_name; we don't need a sentence-start guard here.
     if text:
         for m in _VERB_AFTER_NAME_RE.finditer(text[:8000]):
-            # Path context guard — skip names that live inside file paths.
+            # Path context guard - skip names that live inside file paths.
             name_end = m.start() + len(m.group(1))
             if _is_path_context(text, m.start(), name_end):
                 continue
             add(m.group(1), tier=1, why="name + action verb")
 
-    # Stage 3: pronoun resolution — if speaker is known and "I/me/my" appears,
+    # Stage 3: pronoun resolution - if speaker is known and "I/me/my" appears,
     # mark the speaker as participating in this event
     if speaker_canon and text and _FIRST_PERSON_RE.search(text):
         rationale.append(f"[3] {speaker_canon}: first-person pronoun → speaker is participant")
         # Already added at tier 1; this is just rationale
 
-    # Stage 4: self-reinforcing dictionary — re-check capitalized words
+    # Stage 4: self-reinforcing dictionary - re-check capitalized words
     # against known persons (this catches names the stop-list might have
     # mis-classified as common nouns, e.g. "May" is a stop-list month but
     # if "May Smith" appears repeatedly, it gets known)

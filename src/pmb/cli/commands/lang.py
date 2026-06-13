@@ -1,9 +1,9 @@
-"""`pmb lang` — manage language packs.
+"""`pmb lang` - manage language packs.
 
 A language pack extends PMB's EN/RU/UK lexical defaults to another language.
 Packs are file-based and opt-in: enabling one copies a template into
 ``$PMB_HOME/lang/<code>.yaml``. `detect` samples the workspace and SUGGESTS
-packs from the corpus — it never enables anything silently (auto-activation by
+packs from the corpus - it never enables anything silently (auto-activation by
 script would pollute, since e.g. German and English share the Latin script).
 """
 from __future__ import annotations
@@ -65,12 +65,12 @@ def enable(code: str = typer.Argument(..., help="Language code, e.g. de, es")):
         dest.write_text(bt[code].read_text(encoding="utf-8"), encoding="utf-8")
         src = "built-in template"
     else:
-        # No template — scaffold an empty pack the user can fill in.
+        # No template - scaffold an empty pack the user can fill in.
         dest.write_text(
             f"code: {code}\nname: {code}\nstopwords: []\nnot_proper: []\n"
             f"first_person: []\nverb_synonyms: {{}}\nattribute_aliases: {{}}\n",
             encoding="utf-8")
-        src = "new empty pack (no built-in template — edit it)"
+        src = "new empty pack (no built-in template - edit it)"
     _lang.clear_cache()
     console.print(
         f"[green]✓ Enabled '{code}'[/] ({src}) → {dest}\n"
@@ -136,7 +136,7 @@ def detect(
     suggested = [h for h in hits if h[1] >= 0.02 and h[2] >= 3]
     if not suggested:
         console.print(
-            "[green]No additional language packs suggested[/] — the corpus "
+            "[green]No additional language packs suggested[/] - the corpus "
             "looks covered by the EN/RU/UK core"
             + (f" (enabled: {', '.join(sorted(enabled))})" if enabled else "")
             + ".")
@@ -144,7 +144,7 @@ def detect(
     console.print("[bold]Suggested language packs[/] (based on the corpus):")
     for code, frac, n in suggested:
         name = str(_lang._load_yaml(bt[code]).get("name") or code)
-        console.print(f"  • [cyan]{code}[/] ({name}) — {frac*100:.1f}% of "
+        console.print(f"  • [cyan]{code}[/] ({name}) - {frac*100:.1f}% of "
                       f"sampled tokens, {n} distinct stopwords matched")
     console.print(f"\n[dim]Enable with: pmb lang enable "
-                  f"{suggested[0][0]}   (opt-in — nothing changed yet)[/]")
+                  f"{suggested[0][0]}   (opt-in - nothing changed yet)[/]")

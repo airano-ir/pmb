@@ -1,5 +1,5 @@
 """
-Code AST extraction (Improvement J — code half).
+Code AST extraction (Improvement J - code half).
 
 Parses code content (Python first; extensible) and emits structured
 entities: functions, classes, imports, decorators. These become graph
@@ -7,7 +7,7 @@ nodes alongside the raw text, so "find code that uses X" lights up
 correctly via entity graph, not just BM25 on raw source.
 
 Stack: pure stdlib for Python (`ast` module).
-Other languages would need tree-sitter — we leave that as a future
+Other languages would need tree-sitter - we leave that as a future
 extension. When content doesn't parse as Python, we fall back to a regex
 scanner that still recovers def/class/import NAMES (no signature/docstring),
 so half-written code from a streaming agent still yields entities. Caller
@@ -17,7 +17,7 @@ Cost: <5ms per file (Python's ast is fast).
 
 Why this matters:
   Devs ask things like "which function calls X" or "find the auth check".
-  Without AST, we just lexically match — misses cases where the call uses
+  Without AST, we just lexically match - misses cases where the call uses
   different variable names. With AST entities ('function', 'class'), the
   graph layer connects code by structure, not just words.
 """
@@ -128,7 +128,7 @@ def extract_python_symbols(code: str) -> list[CodeSymbol]:
     return out
 
 
-# Regex fallback for code that won't parse — half-written, mid-edit, etc.
+# Regex fallback for code that won't parse - half-written, mid-edit, etc.
 # We only catch the cheap stuff: top-level def / class / import names.
 # All patterns end at \n to avoid swallowing subsequent lines.
 _RE_DEF = re.compile(r"^[ \t]*(?:async[ \t]+)?def[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*\(", re.MULTILINE)
@@ -144,11 +144,11 @@ def _extract_via_regex(code: str) -> list[CodeSymbol]:
     """Fallback symbol extraction for code that won't parse as valid Python.
 
     Catches the common case where the user (or AI) is in the middle of
-    writing — incomplete function bodies, dangling colons, half-edited
+    writing - incomplete function bodies, dangling colons, half-edited
     classes. We grab names only; no signature, no docstring, no nesting.
     """
     out: list[CodeSymbol] = []
-    code_head = code[:20000]  # cap — broken code doesn't deserve full scan
+    code_head = code[:20000]  # cap - broken code doesn't deserve full scan
 
     for m in _RE_DEF.finditer(code_head):
         name = m.group(1)
