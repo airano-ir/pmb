@@ -178,7 +178,7 @@ pmb warmup
 Wire one or more agents:
 
 ```bash
-pmb connect claude        # Claude Code
+pmb connect claude-code   # Claude Code
 pmb connect codex         # OpenAI Codex CLI
 pmb connect cursor        # Cursor
 pmb connect windsurf gemini vscode zed opencode continue   # also supported
@@ -187,7 +187,7 @@ pmb connect windsurf gemini vscode zed opencode continue   # also supported
 Point several agents at the same memory:
 
 ```bash
-pmb connect claude --workspace personal
+pmb connect claude-code --workspace personal
 pmb connect cursor --workspace personal
 # both now read/write the same workspace
 ```

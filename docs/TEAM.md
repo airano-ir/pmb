@@ -33,8 +33,8 @@ pmb mcp serve --transport http --host 0.0.0.0 --port 8765 \
 Then on each developer's machine:
 
 ```bash
-pmb connect claude --remote http://memo.local:8765/mcp \
-                   --bearer-token <same secret>
+pmb connect claude-code --remote http://memo.local:8765/mcp \
+                        --bearer-token <same secret>
 ```
 
 Same MCP, same tools, one shared memory.
