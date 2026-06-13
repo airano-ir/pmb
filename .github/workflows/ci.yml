@@ -84,6 +84,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,crypto]"
 
+      # Prime the HF cache with networking ON so the offline suite (conftest
+      # forces HF_HUB_OFFLINE=1) finds the models even on a cache miss — e.g. a
+      # Dependabot PR, which can't restore the default branch's model cache.
+      - name: Prime HF models
+        run: python scripts/prewarm_models.py
+
       # The whole suite, minus quarantined load-flaky tests (run below).
       - name: Full test suite
         run: pytest tests/ -q --tb=short -m "not quarantined"
@@ -116,6 +122,8 @@ jobs:
       - run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,crypto]"
+      - name: Prime HF models
+        run: python scripts/prewarm_models.py
       # Measured 2026-06-10: whole-package line coverage = 63% (18047 stmts).
       # Floor = measured − 2. Ratchet UP at each release F-phase, never down.
       - name: Coverage floor (whole package)
@@ -153,6 +161,8 @@ jobs:
       - run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,crypto]"
+      - name: Prime HF models
+        run: python scripts/prewarm_models.py
       - name: Quarantined tests
         run: pytest tests/ -q --tb=short -m "quarantined" || true
 
@@ -209,6 +219,8 @@ jobs:
       - run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,crypto]"
+      - name: Prime HF models
+        run: python scripts/prewarm_models.py
       - name: Multilingual eval + keyed extraction with packs OFF
         run: >
           pytest -q --tb=short
