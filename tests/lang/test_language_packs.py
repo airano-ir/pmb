@@ -135,7 +135,7 @@ def test_enabled_pack_reaches_modules(tmp_home):
     env = dict(os.environ)
     env["PMB_HOME"] = str(tmp_home)
     env["PYTHONUTF8"] = "1"
-    env["PYTHONPATH"] = str(Path(__file__).parent.parent / "src")
+    env["PYTHONPATH"] = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()) / "src")
     r = subprocess.run([sys.executable, "-c", _PROBE], capture_output=True,
                        text=True, env=env, timeout=120)
     assert "INTEGRATION_OK" in r.stdout, (r.stdout, r.stderr)
@@ -153,7 +153,7 @@ def test_no_pack_floor_only_in_module(tmp_home):
     env = dict(os.environ)
     env["PMB_HOME"] = str(tmp_home)  # no lang/ dir
     env["PYTHONUTF8"] = "1"
-    env["PYTHONPATH"] = str(Path(__file__).parent.parent / "src")
+    env["PYTHONPATH"] = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()) / "src")
     r = subprocess.run([sys.executable, "-c", probe], capture_output=True,
                        text=True, env=env, timeout=120)
     assert "FLOOR_OK" in r.stdout, (r.stdout, r.stderr)

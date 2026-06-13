@@ -101,7 +101,7 @@ def test_record_fact_does_not_flag_settled_fact(tmp_pmb_home, tmp_workspace_dir)
 # ── routing rule lives in the agent-facing text (regression guard) ──────────
 
 def test_routing_rule_present_in_docstrings_and_template():
-    src = Path(__file__).parent.parent / "src" / "pmb"
+    src = next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()) / "src" / "pmb"
     tools = (src / "mcp" / "tools.py").read_text(encoding="utf-8")
     assert "FUTURE INTENT" in tools  # record_fact rule
     connect = (src / "cli" / "connect.py").read_text(encoding="utf-8")

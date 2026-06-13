@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
+_ROOT = next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file())
 
 
 def _read(p: str) -> str:

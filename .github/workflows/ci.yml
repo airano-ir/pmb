@@ -226,5 +226,5 @@ jobs:
           pytest -q --tb=short
           tests/eval/test_packs_off_ratchet.py
           tests/eval/test_memory_eval_multilingual.py
-          tests/test_extract_anchor.py
-          tests/test_anchors.py
+          tests/lang/test_extract_anchor.py
+          tests/lang/test_anchors.py
