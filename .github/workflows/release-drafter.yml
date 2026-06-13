@@ -22,6 +22,10 @@ jobs:
   update_release_draft:
     name: Update Release Draft
     runs-on: ubuntu-latest
+    # Dependabot PRs run with a restricted read-only token, so release-drafter
+    # can't read its config or write the draft (it 404s on the org-level
+    # fallback). Skip them - the draft still updates on every push to main.
+    if: github.actor != 'dependabot[bot]'
     permissions:
       contents: write          # needed to write draft release
       pull-requests: write     # needed for autolabeler
