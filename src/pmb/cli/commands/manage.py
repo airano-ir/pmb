@@ -345,8 +345,7 @@ def setup(
     Defaults are already the effective ones (ablation-tuned) - you only need
     `pmb tune` if you want to change them. Full command list: `docs/COMMANDS.md`.
     """
-    import shutil as _shutil
-
+    from pmb.cli._common import _PMB_SPINNER, wordmark
     from pmb.cli.connect import (
         connect as do_connect,
     )
@@ -354,89 +353,178 @@ def setup(
         detect_installed_agents,
         supported_agents,
     )
+    from pmb.cli.intro import mark_welcomed, play_boot
+
+    play_boot(console, settle=False)  # ✦ ignition, then the live setup panel
     detected = detect_installed_agents()
-    ollama_ok = _shutil.which("ollama") is not None
 
-    console.print(Panel.fit(
-        f"Detected agents: [cyan]{', '.join(detected) or 'none found yet'}[/]\n"
-        f"Ollama (optional local LLM): "
-        + ("[green]installed[/]" if ollama_ok
-           else "[dim]not installed - fine, PMB works fully offline without it[/]") + "\n"
-        "Defaults: ablation-tuned (BM25-heavy fusion, reranker off) - ready to use.",
-        title="PMB setup",
-    ))
-
+    # ── interactive choices happen BEFORE the live panel (you can't prompt
+    #    inside a Rich Live region) ──────────────────────────────────────────
     chosen = agent or (detected[0] if detected else None)
     if not chosen:
+        console.print(wordmark("setup"))
         if yes:
-            console.print("[yellow]No known agent config found.[/] Run your agent "
-                          "once, then [cyan]pmb connect --list[/].")
+            console.print("[yellow]No agent config found yet.[/] Run your agent once, "
+                          "then [cyan]pmb connect <agent>[/].")
             return
+        console.print(f"[dim]detected:[/] {', '.join(detected) or 'none yet'}")
         chosen = typer.prompt("Which agent to connect?", default="claude-code")
     if chosen not in supported_agents():
         console.print(f"[red]Unknown agent:[/] {chosen}. "
                       f"Options: {', '.join(supported_agents())}")
         raise typer.Exit(2)
-
-    if not active and not yes:
-        active = typer.confirm(
-            "Proactive logging - should the agent record its own decisions/lessons "
-            "as it works (not just on 'remember')?",
-            default=False,
-        )
-
+    # Proactive logging stays opt-in (--active) - one fewer question, simpler
+    # setup. The next-step card points to it for anyone who wants it.
     _toggles = _agent_toggles_from_config()
     eff_active = active or bool((_toggles or {}).get("active_mode"))
-    try:
-        result = do_connect(
-            chosen, cwd=Path.cwd(), active=eff_active,
-            active_toggles=(_toggles if eff_active else None),
-            install_hooks=True,   # effective default: reflexive layer ON
-        )
-    except ValueError as e:
-        console.print(f"[red]{e}[/]")
-        raise typer.Exit(2)
 
-    console.print(
-        f"[green]Connected[/] [bold]{chosen}[/] "
-        f"({'active logging' if eff_active else 'conservative rules'}).  "
-        f"[dim]{result['config_path']}[/]"
-    )
-    if result.get("hooks") and not (result["hooks"] or {}).get("error"):
-        prof = result.get("tool_profile")
-        console.print(
-            "[green]Hooks installed[/] (auto-recall + ambient + restore + "
-            "follow-through run automatically)"
-            + (f" · MCP profile: [cyan]{prof}[/]" if prof else "")
+    # ── ONE live screen: scan -> wire -> ✦ wake -> prove ──────────────────────
+    from rich.spinner import Spinner
+    from rich.table import Table
+    from rich.text import Text
+
+    rows: list[list[str]] = []          # each: [kind, text, detail]
+    state = {"done": False}
+    spark = Spinner(_PMB_SPINNER, style="magenta")
+    _GLYPH = {"ok": "[green]✓[/]", "warn": "[yellow]○[/]", "err": "[red]✗[/]"}
+
+    def _panel():
+        grid = Table.grid(padding=(0, 1))
+        grid.add_column(width=2, justify="center")
+        grid.add_column()
+        grid.add_column(style="dim")
+        for kind, txt, detail in rows:
+            grid.add_row(spark if kind == "active" else _GLYPH.get(kind, " "),
+                         txt, detail)
+        return Panel(
+            grid, title=Text.from_markup(wordmark()),
+            subtitle=Text("ready" if state["done"] else "setting up", style="dim"),
+            border_style="magenta", padding=(1, 2),
         )
-    # Offer to warm the model inline so the very FIRST recall is instant -
-    # otherwise it's a manual step users skip, then conclude PMB is slow.
-    did_warmup = False
-    if not yes and typer.confirm(
-        "Warm up the embedding model now? (~90 MB on first run; makes the first "
-        "recall instant)", default=True,
-    ):
+
+    def _run(emit):
+        emit("ok", f"found {', '.join(detected) or 'no agent'}", "")
+        h = emit("active", f"wiring into {chosen}", "")
+        try:
+            result = do_connect(
+                chosen, cwd=Path.cwd(), active=eff_active,
+                active_toggles=(_toggles if eff_active else None),
+                install_hooks=True,
+            )
+        except ValueError as e:
+            emit("err", f"wiring failed: {e}", "", replace=h)
+            raise typer.Exit(2)
+        hooks_ok = (bool(result.get("hooks"))
+                    and not (result.get("hooks") or {}).get("error"))
+        emit("ok", f"wired into {chosen}" + ("  +hooks" if hooks_ok else ""),
+             str(result.get("config_path", "")), replace=h)
+
+        eng = None
+        h = emit("active", "waking the memory engine", "first run pulls ~450 MB")
         try:
             from pmb.core.engine import Engine
-            console.print("[dim]Loading model + indexes…[/]")
-            Engine(cwd=Path.cwd()).warmup(with_first_query=True)
-            console.print("[green]Warmed up[/] - the first recall will be instant.")
-            did_warmup = True
-        except Exception as e:  # never let a warmup hiccup abort setup
-            console.print(f"[yellow]Warmup skipped:[/] {e}  "
-                          "(run [cyan]pmb warmup[/] later)")
+            try:  # keep the panel clean - no stray HF progress bar
+                from transformers.utils import logging as _hf_log
+                _hf_log.disable_progress_bar()
+            except Exception:
+                pass
+            eng = Engine(cwd=Path.cwd())
+            eng.warmup(with_first_query=True)
+            emit("ok", "memory engine ready", "", replace=h)
+        except Exception as e:
+            emit("warn", "engine not warmed (run `pmb warmup` later)",
+                 str(e)[:40], replace=h)
 
-    steps = ["[bold]Next:[/]", "  1. Restart your agent so it loads PMB."]
-    n = 2
-    if not did_warmup:
-        steps.append(f"  {n}. [cyan]pmb warmup[/]  - pre-load so the first recall is fast.")
-        n += 1
-    steps += [
-        f"  {n}. [cyan]pmb doctor[/]  - confirm PMB is wired correctly.",
-        f"  {n + 1}. [cyan]pmb ollama status[/]  - only if you want a fully-local LLM.",
-        f"  {n + 2}. Commands: [cyan]docs/COMMANDS.md[/] or [cyan]pmb --help[/].",
-    ]
-    console.print(Panel.fit("\n".join(steps), title="Done"))
+        if eng is not None:
+            h = emit("active", "proving it works", "")
+            try:
+                import time as _t
+                from datetime import datetime
+                stamp = datetime.now().strftime("%Y-%m-%d")
+                t0 = _t.time()
+                ulid = eng.record_fact(f"PMB activated on {stamp}")
+                pack = eng.recall("when was pmb activated", top_k=3)
+                ms = (_t.time() - t0) * 1000.0
+                hit = any(getattr(r, "ulid", None) == ulid
+                          for r in getattr(pack, "results", []))
+                emit("ok", f"remembered & recalled in {ms:.0f} ms" if hit
+                     else f"memory write + read ok ({ms:.0f} ms)", "", replace=h)
+            except Exception as e:
+                emit("warn", "self-test skipped", str(e)[:40], replace=h)
+            try:
+                eng.close()
+            except Exception:
+                pass
+
+    def _emit_live(live):
+        def emit(kind, text, detail="", replace=None):
+            if replace is None:
+                rows.append([kind, text, detail])
+                idx = len(rows) - 1
+            else:
+                rows[replace] = [kind, text, detail]
+                idx = replace
+            live.update(_panel())
+            return idx
+        return emit
+
+    def _emit_plain(kind, text, detail="", replace=None):
+        if kind == "active":
+            return None
+        sym = {"ok": "✓", "warn": "○", "err": "✗"}.get(kind, "·")
+        console.print(f"  {sym} {text}" + (f"  [dim]{detail}[/]" if detail else ""))
+        return None
+
+    live_cm, emit = None, _emit_plain
+    if console.is_terminal:
+        try:
+            from rich.live import Live
+            live_cm = Live(_panel(), console=console, refresh_per_second=12)
+            live_cm.__enter__()
+            emit = _emit_live(live_cm)
+        except Exception:
+            live_cm, emit = None, _emit_plain
+    try:
+        _run(emit)
+        state["done"] = True
+        if live_cm is not None:
+            live_cm.update(_panel())
+    finally:
+        if live_cm is not None:
+            try:
+                live_cm.__exit__(None, None, None)
+            except Exception:
+                pass
+
+    # ── a friendly, actionable "what now" card ──
+    from rich.console import Group as _Group
+
+    do = Table.grid(padding=(0, 2))
+    do.add_column(justify="center", width=3)
+    do.add_column()
+    do.add_row("[magenta]1[/]", "[bold]restart your agent[/]  "
+               "[dim]- so it picks up pmb[/]")
+    do.add_row("[magenta]2[/]", "[bold]just talk to it[/]  "
+               "[dim]- pmb captures & recalls automatically[/]")
+
+    opt = Table.grid(padding=(0, 2))
+    opt.add_column(justify="right", style="dim")
+    opt.add_column()
+    opt.add_row("seed memory", "[cyan]pmb import chatgpt <export.json>[/]")
+    opt.add_row("instant recall", "[cyan]pmb daemon start[/]")
+    if not eff_active:
+        opt.add_row("self-logging", "[cyan]pmb setup --active[/]")
+
+    footer = Text.from_markup(
+        "[dim]explore[/] [cyan]pmb[/]   [dim]·[/]   [dim]verify[/] [cyan]pmb doctor[/]"
+        "   [dim]·[/]   [dim]stats[/] [cyan]pmb stats[/]")
+
+    body = _Group(do, "", Text.from_markup("[dim]optional power-ups[/]"), opt,
+                  "", footer)
+    console.print()
+    console.print(Panel(body, title=wordmark("you're all set"),
+                        border_style="#a78bfa", padding=(1, 2)))
+    mark_welcomed()  # onboarded - bare `pmb` now opens the palette, not the welcome
 
 
 

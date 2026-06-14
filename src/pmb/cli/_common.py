@@ -35,15 +35,65 @@ app = typer.Typer(
 console = Console()
 
 
-def loading(message: str):
-    """Transient spinner for a slow CLI operation, e.g.
+# ── PMB's signature mark: a "memory spark" that is BOTH logo and spinner ──────
+# The same ✦ glyph is the brand wordmark when idle, and a slow breathing pulse
+# while anything loads (model warm-up, recall, setup). One mark, like Claude's.
+PMB_MARK = "✦"
+_PMB_SPARK_FRAMES = ["·", "∙", "•", "✦", "✶", "✦", "•", "∙"]
+# Memory-pulse: a wave rippling out from a central core, then fading - PMB's
+# standalone "breathing" animation for HEAVY waits (engine wake, deep recall),
+# the metaphor of a memory forming. Distinct from the inline ✦ spark above; this
+# is PMB's analog to Claude's cloud.
+_PMB_PULSE_FRAMES = [
+    "·    ·    ✦    ·    ·",
+    "·    ◦    ✶    ◦    ·",
+    "◦    •    ✦    •    ◦",
+    "•    ✦    ·    ✦    •",
+    "✦    ◦    ·    ◦    ✦",
+    "◦    ·    ·    ·    ◦",
+]
+try:  # register custom Rich spinners; fall back to "dots" if Rich moves them
+    from rich._spinners import SPINNERS as _RICH_SPINNERS
+    _RICH_SPINNERS.setdefault("pmb", {"interval": 90, "frames": _PMB_SPARK_FRAMES})
+    _RICH_SPINNERS.setdefault(
+        "pmb-pulse", {"interval": 110, "frames": _PMB_PULSE_FRAMES})
+    _PMB_SPINNER = "pmb"
+    _PMB_PULSE = "pmb-pulse"
+except Exception:
+    _PMB_SPINNER = "dots"
+    _PMB_PULSE = "dots"
 
-        with loading("loading embedding model (first run only)…"):
+
+def wordmark(tagline: str | None = None) -> str:
+    """The `✦ pmb` brand wordmark as Rich markup (static; the same ✦ animates in
+    `loading()`)."""
+    s = f"[magenta]{PMB_MARK}[/] [bold]pmb[/]"
+    return f"{s}  [dim]{tagline}[/]" if tagline else s
+
+
+def loading(message: str):
+    """Transient PMB spark-spinner for a slow CLI operation, e.g.
+
+        with loading("waking the memory engine (first run only)…"):
             ...
 
-    Rich auto-disables the spinner when stdout is not a TTY (CI, pytest
-    capture, pipes), so it never pollutes captured/piped output."""
-    return console.status(f"[cyan]{message}[/]", spinner="dots")
+    Uses PMB's ✦ mark. Rich auto-disables the spinner when stdout is not a TTY
+    (CI, pytest capture, pipes), so it never pollutes captured/piped output."""
+    return console.status(f"[cyan]{message}[/]", spinner=_PMB_SPINNER,
+                          spinner_style="magenta")
+
+
+def pulse(message: str):
+    """Memory-pulse animation for a HEAVY wait (model warm-up, deep recall):
+
+        with pulse("waking the memory engine…"):
+            engine.warmup()
+
+    A ripple from a central core - PMB's standalone analog to Claude's cloud,
+    distinct from `loading()`'s compact inline ✦ spark. Like `loading()`, Rich
+    auto-disables it when stdout is not a TTY, so it never pollutes piped output."""
+    return console.status(f"[magenta]{message}[/]", spinner=_PMB_PULSE,
+                          spinner_style="magenta")
 
 
 def _humanize_time(ts: float | None) -> str:

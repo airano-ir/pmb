@@ -63,15 +63,109 @@ from pmb.cli.commands.lang import lang_app
 app.add_typer(lang_app, name="lang")
 
 
+# ── Group the flat command list into ordered help panels ─────────────────────
+# `pmb --help` otherwise dumps ~70 commands as one wall. These panels turn it
+# into a guided map. Centralized here (one map) so adding a command is one line,
+# not a per-decorator `rich_help_panel=` scattered across files. Anything not
+# listed falls to "More" rather than being dropped.
+_HELP_COMMAND_PANELS: list[tuple[str, list[str]]] = [
+    ("✦ Setup & agents", [
+        "setup", "connect", "doctor", "ambient-watch", "codex-notify"]),
+    ("Capture", [
+        "remember", "fact", "note", "learn", "distill", "lessons", "watch",
+        "sync", "import", "tag", "untag", "tags", "tagged", "ttl"]),
+    ("Recall & explore", [
+        "recall", "why", "overview", "audit", "timeline", "insights", "digest",
+        "history", "correlate", "reminders", "goals", "session"]),
+    ("Maintain memory", [
+        "pin", "forget", "forget-topic", "forget-auto", "decay", "declutter",
+        "dedupe", "prune-expired", "prune-graph", "compact", "reindex",
+        "regraph", "repair-keyed", "rehearse", "consolidate", "reflect",
+        "arcs", "feedback", "migrate-workspaces", "schedule"]),
+    ("Workspaces & data", [
+        "init", "workspaces", "stats", "list", "export", "dashboard", "tui",
+        "tune", "warmup"]),
+    ("Agent internals", [
+        "prepare-context", "auto-context", "session-restore",
+        "lesson-followcheck", "track-action", "autowrite"]),
+]
+_HELP_GROUP_PANELS: dict[str, str] = {
+    "hooks": "✦ Setup & agents", "mcp": "✦ Setup & agents",
+    "daemon": "✦ Setup & agents",
+    "workspace": "Workspaces & data", "index": "Workspaces & data",
+    "snapshot": "Workspaces & data",
+    "graph": "More", "health": "More", "config": "More",
+    "ollama": "More", "lang": "More",
+}
+
+
+def _cmd_name(info) -> str:
+    cb = getattr(info, "callback", None)
+    return info.name or (cb.__name__.replace("_", "-") if cb else "")
+
+
+def _organize_help() -> None:
+    """Assign each command/group a rich help panel + reorder so the panels
+    render in the declared order (Rich uses first-appearance order)."""
+    by_name = {_cmd_name(i): i for i in app.registered_commands}
+    ordered, seen = [], set()
+    for panel, names in _HELP_COMMAND_PANELS:
+        for nm in names:
+            info = by_name.get(nm)
+            if info is not None and nm not in seen:
+                info.rich_help_panel = panel
+                ordered.append(info)
+                seen.add(nm)
+    for info in app.registered_commands:        # anything unlisted -> "More"
+        if _cmd_name(info) not in seen:
+            info.rich_help_panel = "More"
+            ordered.append(info)
+    app.registered_commands = ordered
+    for g in app.registered_groups:             # sub-typers join their panel
+        panel = _HELP_GROUP_PANELS.get(g.name)
+        if panel:
+            g.rich_help_panel = panel
+
+
+_organize_help()
+
+
 @app.callback(invoke_without_command=True)
 def _root(ctx: typer.Context):
-    """PMB - local-first memory for AI agents. Run with no command for status."""
-    # Only render the status dashboard for a bare `pmb`; any subcommand
-    # (and `--help`, which Click handles before this body) passes through.
-    if ctx.invoked_subcommand is None:
-        from pmb.cli._common import console
-        from pmb.cli.status_panel import render_status
-        render_status(console)
+    """PMB - local-first memory for AI agents. Bare `pmb` opens the command
+    palette (in a terminal) or the status dashboard (piped)."""
+    # Any subcommand (and `--help`, which Click handles before this body)
+    # passes through untouched.
+    if ctx.invoked_subcommand is not None:
+        return
+
+    import sys
+
+    from pmb.cli._common import console
+
+    # Bare `pmb` in a real terminal opens the command palette: type what you
+    # want, the list filters live by intent, Enter runs it. Non-interactive
+    # (piped, CI, scripts) or any palette error falls back to the static status
+    # dashboard, so `pmb | cat` and automation keep their plain output.
+    try:
+        if sys.stdin.isatty() and console.is_terminal:
+            # First ever run: the ✦ boot animation + a one-screen welcome, then
+            # stop. Every run after that goes straight to the command palette.
+            from pmb.cli.intro import maybe_first_run
+            if maybe_first_run(console):
+                return
+            from pmb.cli.palette import command_catalog, run_palette
+            chosen = run_palette(console, command_catalog(app))
+            if chosen:
+                import subprocess
+                console.print(f"[dim]>[/] [magenta]✦[/] [bold]pmb {chosen}[/]")
+                subprocess.run([sys.argv[0], *chosen.split()])
+                return
+            # Esc / Ctrl-C falls through to the status dashboard below.
+    except Exception:
+        pass
+    from pmb.cli.status_panel import render_status
+    render_status(console)
 
 
 if __name__ == "__main__":

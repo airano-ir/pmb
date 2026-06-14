@@ -58,7 +58,8 @@ def test_root_help_still_lists_commands():
 def test_bare_pmb_renders_status_panel(isolated_home):
     r = CliRunner().invoke(app, [])
     assert r.exit_code == 0, r.output
-    assert "PMB v" in r.output
+    # The panel title carries the ✦ pmb wordmark + version.
+    assert "✦" in r.output and "pmb" in r.output
     # The panel labels the active workspace + offers the switch hint.
     assert "workspace" in r.output.lower()
     assert "pmb --help" in r.output

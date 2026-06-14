@@ -195,8 +195,9 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-Prime the model once so the first `recall` is fast (the embedding model is
-~90 MB; without this the very first query pays a one-time cold-start load):
+Prime the model once so the first `recall` is fast (the multilingual embedding
+model is ~450 MB; without this the very first query pays a one-time cold-start
+load):
 
 ```bash
 pmb warmup
