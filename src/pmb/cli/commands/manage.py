@@ -48,7 +48,7 @@ def _ensure_daemon_started(pmb_home: Path | None, tool_profile: str | None) -> N
             env["PMB_TOOL_PROFILE"] = tool_profile
         kwargs: dict = {}
         if os.name == "nt":
-            kwargs["creationflags"] = 0x00000008 | 0x00000200  # DETACHED|NEW_GROUP
+            kwargs["creationflags"] = 0x08000000 | 0x00000200  # CREATE_NO_WINDOW|NEW_GROUP
         else:
             kwargs["start_new_session"] = True
         subprocess.Popen(
@@ -326,6 +326,251 @@ def connect(
     )
 
 
+# Curated embedder profiles offered at setup. All run on the default
+# sentence-transformers backend (only the model id changes), so picking one is a
+# single config write + a reindex - no backend/prefix gotchas. Plain-language
+# plus/minus so a human can choose by RAM vs quality.
+_EMBEDDER_PROFILES = [
+    {
+        "key": "light",
+        "label": "Light & fast",
+        "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        "ram": "~0.5 GB",
+        "rec": "any machine, <=8 GB RAM",
+        "pros": "tiny, fast, works everywhere",
+        "cons": "weaker cross-language & rare-script (CJK) recall",
+    },
+    {
+        "key": "balanced",
+        "label": "Balanced",
+        "model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+        "ram": "~1.1 GB",
+        "rec": "12 GB+ RAM",
+        "pros": "noticeably more accurate, same family (no extra setup)",
+        "cons": "~2x the RAM, a bit slower than Light",
+    },
+    {
+        "key": "best",
+        "label": "Best quality",
+        "model": "BAAI/bge-m3",
+        "ram": "~2 GB",
+        "rec": "16 GB+ RAM",
+        "pros": "best cross-language + CJK, sharpest matching",
+        "cons": "heavy RAM, slower on CPU, longer first load",
+    },
+]
+
+
+def _choose_embedder(console, current_model: str, yes: bool) -> str:
+    """Interactive 'which memory model?' pick during setup. Returns a model id.
+    Non-interactive (`--yes`) or any error keeps `current_model` - NEVER blocks
+    setup. Pure-ish: only reads a prompt + prints a table."""
+    if yes:
+        return current_model
+    try:
+        from rich.table import Table
+        t = Table(
+            title="Memory model (embedder) - how PMB understands & matches text",
+            border_style="magenta", show_lines=True,
+        )
+        t.add_column("#", justify="right", style="cyan")
+        t.add_column("Option")
+        t.add_column("RAM", style="dim")
+        t.add_column("Good for", style="dim")
+        t.add_column("Plus / minus")
+        default_idx = 1
+        for i, p in enumerate(_EMBEDDER_PROFILES, 1):
+            is_cur = p["model"] == current_model
+            if is_cur:
+                default_idx = i
+            t.add_row(
+                str(i),
+                p["label"] + ("  [green](current)[/]" if is_cur else ""),
+                p["ram"], p["rec"],
+                f"[green]+[/] {p['pros']}\n[red]-[/] {p['cons']}",
+            )
+        console.print(t)
+        console.print(
+            "[dim]Tip: changing this re-embeds existing memory "
+            "([cyan]pmb reindex[/]). Press Enter to keep the current one.[/]"
+        )
+        choice = typer.prompt("Pick a memory model (number)", default=str(default_idx))
+        idx = int(str(choice).strip())
+        if 1 <= idx <= len(_EMBEDDER_PROFILES):
+            return _EMBEDDER_PROFILES[idx - 1]["model"]
+    except Exception:
+        pass
+    return current_model
+
+
+# The OFFLINE LLM tier (consolidate.backend) - writes lessons/summaries during
+# `pmb consolidate`/sleep. BACKGROUND only: never on the per-message hook, so it
+# does NOT affect injection speed. Only the backends resolve_llm_client actually
+# supports (auto/claude/anthropic/ollama) - no codex here, no fake 'none' (the
+# tier simply doesn't run unless you invoke it / enable auto_trigger).
+_LLM_TIER_PROFILES = [
+    {
+        "key": "auto", "label": "Auto (recommended)", "backend": "auto",
+        "needs": "nothing if you use Claude Code",
+        "pros": "zero setup - Claude CLI if present, else API key, else Ollama",
+        "cons": "uses whatever is available (less explicit)",
+    },
+    {
+        "key": "claude", "label": "Claude CLI", "backend": "claude",
+        "needs": "`claude` in PATH",
+        "pros": "no API key - reuses your Claude Code auth",
+        "cons": "requires Claude Code installed",
+    },
+    {
+        "key": "ollama", "label": "Ollama (local)", "backend": "ollama",
+        "needs": "`ollama serve` + a pulled model",
+        "pros": "fully local & private, no cloud",
+        "cons": "you run the server; quality depends on the local model",
+    },
+    {
+        "key": "anthropic", "label": "Anthropic API", "backend": "anthropic",
+        "needs": "ANTHROPIC_API_KEY",
+        "pros": "fast, nothing to install locally",
+        "cons": "needs a paid API key",
+    },
+]
+
+
+def _choose_llm_tier(console, current_backend: str, yes: bool) -> str:
+    """Interactive 'offline brain' pick during setup. Returns a backend id.
+    Non-interactive (`--yes`) or any error keeps `current_backend` - NEVER
+    blocks. This tier is BACKGROUND only (no effect on injection speed)."""
+    if yes:
+        return current_backend
+    try:
+        from rich.table import Table
+        t = Table(
+            title="Offline brain (LLM tier) - writes lessons/summaries in the background",
+            border_style="magenta", show_lines=True,
+        )
+        t.add_column("#", justify="right", style="cyan")
+        t.add_column("Option")
+        t.add_column("Needs", style="dim")
+        t.add_column("Plus / minus")
+        default_idx = 1
+        for i, p in enumerate(_LLM_TIER_PROFILES, 1):
+            is_cur = p["backend"] == current_backend
+            if is_cur:
+                default_idx = i
+            t.add_row(
+                str(i),
+                p["label"] + ("  [green](current)[/]" if is_cur else ""),
+                p["needs"],
+                f"[green]+[/] {p['pros']}\n[red]-[/] {p['cons']}",
+            )
+        console.print(t)
+        console.print(
+            "[dim]Background only: runs during [cyan]pmb consolidate[/]/sleep, "
+            "NEVER on the per-message hook - it does NOT slow injection. "
+            "Press Enter to keep the current one.[/]"
+        )
+        choice = typer.prompt("Pick an offline brain (number)", default=str(default_idx))
+        idx = int(str(choice).strip())
+        if 1 <= idx <= len(_LLM_TIER_PROFILES):
+            return _LLM_TIER_PROFILES[idx - 1]["backend"]
+    except Exception:
+        pass
+    return current_backend
+
+
+def _resolve_model_target(name: str | None, current: str) -> str:
+    """Map a profile key (light/balanced/best) or a raw embedder id to a model
+    id. Empty -> keep current. An unknown string is treated as a raw
+    sentence-transformers id (so power users aren't boxed into the presets)."""
+    if not name or not name.strip():
+        return current
+    n = name.strip()
+    for p in _EMBEDDER_PROFILES:
+        if p["key"] == n.lower() or p["model"] == n:
+            return p["model"]
+    return n
+
+
+@app.command()
+def model(
+    name: str | None = typer.Argument(
+        None, help="Profile (light/balanced/best) or any embedder id. "
+                   "Omit for the interactive menu."),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="No prompts; re-embed + restart automatically."),
+    no_reindex: bool = typer.Option(
+        False, "--no-reindex",
+        help="Switch the model but DON'T re-embed existing memory "
+             "(run `pmb reindex` yourself later)."),
+):
+    """Switch the embedding model and load it - download + re-embed memory +
+    restart the daemon, in ONE step.
+
+      pmb model              # interactive menu (light / balanced / best)
+      pmb model best         # switch to bge-m3 (best quality, needs RAM)
+      pmb model BAAI/bge-m3  # any sentence-transformers id
+    """
+    import os
+    import subprocess
+    import sys
+
+    from pmb.cli._common import loading
+    from pmb.config import Config
+
+    home = Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb"))
+    cfg = Config(pmb_home=home)
+    current = cfg.get("embedding.model")
+
+    if name:
+        target = _resolve_model_target(name, current)
+    else:
+        console.print(f"[dim]current model:[/] {current}")
+        target = _choose_embedder(console, current, yes=False)
+
+    if not target or target == current:
+        console.print(f"[dim]Keeping current model:[/] {current}")
+        return
+
+    if not yes and not typer.confirm(
+            f"Switch to {target}?  Downloads it and re-embeds ALL memory.",
+            default=True):
+        console.print("[dim]Cancelled - model unchanged.[/]")
+        return
+
+    cfg.set_global("embedding.model", target)
+    console.print(f"[green]✓[/] embedding.model → [cyan]{target}[/] "
+                  f"[dim]({home / 'config.yaml'})[/]")
+
+    if no_reindex:
+        console.print("[yellow]Skipped reindex[/] - run [cyan]pmb reindex[/] "
+                      "before the new model can recall existing memory.")
+    else:
+        try:
+            eng = Engine(cwd=Path.cwd())
+            with loading(f"downloading + loading {target}, re-embedding memory…"):
+                eng.warmup()
+                res = eng.reindex_embeddings()
+            console.print(
+                f"[cyan]Re-embedded[/] {res.get('n_events', 0)} events in "
+                f"[yellow]{res.get('elapsed_seconds', 0)}s[/] with the new model")
+        except Exception as e:
+            console.print(f"[red]Load/reindex failed:[/] {e}")
+            console.print("[dim]The model is set; free RAM / check network, "
+                          "then run [cyan]pmb reindex[/].[/]")
+            raise typer.Exit(1)
+
+    # Restart the daemon so the live hook path uses the new model. Via subprocess
+    # (the CLI resolves the typer command cleanly); the daemon itself spawns
+    # windowless from daemon.py.
+    try:
+        subprocess.run([sys.executable, "-m", "pmb.cli", "daemon", "restart"],
+                       timeout=180)
+        console.print("[green]✓[/] daemon restarted on the new model")
+    except Exception as e:
+        console.print(f"[dim]Restart the daemon yourself for live use "
+                      f"({e}): pmb daemon restart[/]")
+
+
 @app.command()
 def setup(
     agent: str | None = typer.Argument(
@@ -378,6 +623,46 @@ def setup(
     _toggles = _agent_toggles_from_config()
     eff_active = active or bool((_toggles or {}).get("active_mode"))
 
+    # ── memory-model (embedder) choice - BEFORE the live panel (can't prompt
+    #    inside a Rich Live region). Persists to the GLOBAL config so the daemon
+    #    and every workspace use it; warm step below then loads the chosen one.
+    picked_ram = "~0.5 GB"
+    try:
+        import os as _os
+
+        from pmb.config import Config as _Config
+        _home = Path(_os.environ.get("PMB_HOME") or (Path.home() / ".pmb"))
+        _cfg = _Config(pmb_home=_home)
+        _current = _cfg.get("embedding.model")
+        _picked = _choose_embedder(console, _current, yes)
+        picked_ram = next((p["ram"] for p in _EMBEDDER_PROFILES
+                           if p["model"] == _picked), picked_ram)
+        if _picked and _picked != _current:
+            _cfg.set_global("embedding.model", _picked)
+            console.print(f"[green]✓[/] memory model → [cyan]{_picked}[/] "
+                          f"[dim]({_home / 'config.yaml'})[/]")
+            console.print("[yellow]If you already have memory, run "
+                          "[cyan]pmb reindex[/] to re-embed it with the new model.[/]")
+    except Exception as e:
+        console.print(f"[dim]embedder choice skipped: {e}[/]")
+
+    # ── offline-brain (LLM tier) choice - BACKGROUND work only, no injection
+    #    cost. Persisted to the global config like the embedder.
+    try:
+        import os as _os2
+
+        from pmb.config import Config as _Config2
+        _home2 = Path(_os2.environ.get("PMB_HOME") or (Path.home() / ".pmb"))
+        _cfg2 = _Config2(pmb_home=_home2)
+        _cur_llm = _cfg2.get("consolidate.backend")
+        _picked_llm = _choose_llm_tier(console, _cur_llm, yes)
+        if _picked_llm and _picked_llm != _cur_llm:
+            _cfg2.set_global("consolidate.backend", _picked_llm)
+            console.print(f"[green]✓[/] offline brain → [cyan]{_picked_llm}[/] "
+                          f"[dim]({_home2 / 'config.yaml'})[/]")
+    except Exception as e:
+        console.print(f"[dim]offline-brain choice skipped: {e}[/]")
+
     # ── ONE live screen: scan -> wire -> ✦ wake -> prove ──────────────────────
     from rich.spinner import Spinner
     from rich.table import Table
@@ -420,7 +705,7 @@ def setup(
              str(result.get("config_path", "")), replace=h)
 
         eng = None
-        h = emit("active", "waking the memory engine", "first run pulls ~450 MB")
+        h = emit("active", "waking the memory engine", f"first run pulls {picked_ram}")
         try:
             from pmb.core.engine import Engine
             try:  # keep the panel clean - no stray HF progress bar

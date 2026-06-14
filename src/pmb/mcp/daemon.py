@@ -86,24 +86,52 @@ def pretool_lessons(engine, excerpt: str, seen: set) -> list:
     if not excerpt or not excerpt.strip():
         return []
     try:
-        from pmb.core.text_match import distinctive_tokens, is_strong
+        import re as _re
+
+        from pmb.core.text_match import (
+            distinctive_tokens,
+            is_strong,
+            shell_command_names,
+        )
     except Exception:
         return []
+    # Command name(s) the agent is about to run, extracted STRUCTURALLY (no
+    # hardcoded command list). Lets a rule that NAMES a command ('never use git')
+    # fire even though 'git' is too short to be a distinctive token.
+    cmds = shell_command_names(excerpt)
+    q = distinctive_tokens(excerpt)
     try:
         cands = engine.find_lessons(excerpt, limit=6) or []
     except Exception:
-        return []
-    q = distinctive_tokens(excerpt)
+        cands = []
+    # ALSO pull rules that mention a command we're about to run - distinctive
+    # token matching drops short names like 'git', so a bare 'never use git' rule
+    # would never even be a candidate. Cheap recent-lesson scan for a raw word hit.
+    if cmds:
+        have = {L.get("ulid") for L in cands}
+        try:
+            for L in (engine.find_lessons("", limit=200) or []):
+                words = set(_re.findall(r"[a-z0-9_.\-/]+",
+                                        (L.get("content") or "").lower()))
+                if (cmds & words) and L.get("ulid") not in have:
+                    cands.append(L)
+                    have.add(L.get("ulid"))
+        except Exception:
+            pass
     fired = []
     for L in cands:
         u = L.get("ulid")
         if not u or u in seen:
             continue
-        ov = q & distinctive_tokens(L.get("content") or "")
-        # Confident-match bar: TWO distinctive overlapping tokens, OR ONE
-        # identifier-grade one (record_batch, qwen2.5 - is_strong). The guard
-        # interrupts the agent, so a single common-word overlap isn't enough.
-        if len(ov) >= 2 or any(is_strong(t) for t in ov):
+        content = L.get("content") or ""
+        ov = q & distinctive_tokens(content)
+        words = set(_re.findall(r"[a-z0-9_.\-/]+", content.lower()))
+        cmd_hit = bool(cmds & words)  # the rule names the command we're running
+        # Fire on: a rule that NAMES this command, OR two distinctive overlapping
+        # tokens, OR one identifier-grade one (record_batch, qwen2.5 - is_strong).
+        # The guard interrupts the agent, so the generic bar is high - but a rule
+        # naming the exact command we're about to run always qualifies.
+        if cmd_hit or len(ov) >= 2 or any(is_strong(t) for t in ov):
             seen.add(u)
             fired.append(L)
         if len(fired) >= 2:

@@ -230,6 +230,8 @@ class Engine(
         # v0.9 SAE: built lazily on first WARM use (never loads the model on the
         # cold path); None until then.
         self._anchor_index = None
+        # Query-worthiness classifier (SAE pattern, new axis) - lazy + warm-only.
+        self._query_worthiness = None
 
         # v0.9 E1: apply this workspace's cached corpus-derived stopwords to the
         # live tokenizer (gated; empty cache / off → no change). The tick

@@ -481,11 +481,53 @@ class LessonsMixin:
         except Exception:
             min_ov = 1
 
+        # Corpus document-frequency over the candidate lessons (E1 / IDF,
+        # computed PER CALL from the candidates - no global state, no
+        # maintenance tick). In a workspace where most lessons are about the
+        # same project, a token like "memory"/"recall"/"hook" is globally
+        # distinctive but LOCALLY generic: it recurs across a large fraction of
+        # lessons and carries no discriminating power, yet the old `_ov >= 1`
+        # gate surfaced any lesson sharing one such token - the main off-topic
+        # surface channel observed live. We measure each token's frequency in
+        # THIS corpus and gate on CORPUS-DISTINCTIVE overlap (tokens rare here),
+        # plus keep a rarity-weighted overlap for ranking. Follows lesson #942
+        # (derive from DATA, not hardcoded lists) and #987 (precision via
+        # stopwords) - this is the per-workspace, self-tuning generalisation.
+        from collections import Counter as _Counter
+        doc_tokens: list[set[str]] = [
+            distinctive_tokens(it.get("content") or "") for it in items
+        ]
+        df: _Counter = _Counter()
+        for _ct in doc_tokens:
+            df.update(_ct)
+        n_corpus = len(items)
+        try:
+            idf_gate = bool(self.config.get("recall.lesson_idf_gate"))
+        except Exception:
+            idf_gate = True
+        try:
+            idf_min_corpus = int(self.config.get("recall.lesson_idf_min_corpus") or 12)
+        except Exception:
+            idf_min_corpus = 12
+        try:
+            df_max_frac = float(self.config.get("recall.lesson_corpus_df_max") or 0.25)
+        except Exception:
+            df_max_frac = 0.25
+        corpus_gate_on = idf_gate and n_corpus >= idf_min_corpus
+        df_cut = df_max_frac * n_corpus  # token in <= this many docs == distinctive
+
         # Lexical signal for every candidate (the always-on, model-free tier).
-        for it in items:
-            ov = q_tokens & distinctive_tokens(it.get("content") or "")
+        for it, _ct in zip(items, doc_tokens):
+            ov = q_tokens & _ct
             it["_ov"] = len(ov)
             it["_strong"] = sum(1 for t in ov if is_strong(t))
+            # corpus-distinctive overlap: shared tokens that are RARE here
+            it["_dov"] = sum(1 for t in ov if df.get(t, 0) <= df_cut)
+            # rarity-weighted overlap (corpus-rare tokens dominate the rank)
+            it["_wov"] = (
+                sum(1.0 - (df.get(t, 0) / n_corpus) for t in ov)
+                if n_corpus else float(len(ov))
+            )
             it["_sim"] = 0.0
 
         # Optional SEMANTIC tier (opt-in: recall.lesson_semantic). Reuses the
@@ -524,8 +566,16 @@ class LessonsMixin:
             except Exception:
                 pass  # best-effort - the lexical tier still stands on its own
 
-        kept = [it for it in items
-                if it["_ov"] >= min_ov or it["_sim"] >= sem_min]
+        if corpus_gate_on:
+            # Require a CORPUS-DISTINCTIVE overlap (a token rare in this
+            # workspace) - not just any globally-distinctive token. This is the
+            # precision fix: a lesson sharing only workspace-generic words is
+            # dropped. The semantic tier (if on) can still admit a paraphrase.
+            kept = [it for it in items
+                    if it["_dov"] >= min_ov or it["_sim"] >= sem_min]
+        else:
+            kept = [it for it in items
+                    if it["_ov"] >= min_ov or it["_sim"] >= sem_min]
         if self.config.get("lessons.rank_v2"):
             # R9: blend the signals the system ALREADY has into the rank, not
             # just lexical overlap - importance (a 0.97 rule should beat a stale
@@ -547,7 +597,10 @@ class LessonsMixin:
             _now9 = _t9.time()
 
             def _rank(it: dict):
-                lex = it["_strong"] * 2.0 + it["_ov"] + it["_sim"]
+                # rarity-weighted overlap (_wov) replaces raw count so a lesson
+                # matching on a corpus-rare token outranks one matching on a
+                # common word; identical to _ov when every token is unique.
+                lex = it["_strong"] * 2.0 + it["_wov"] + it["_sim"]
                 imp = float(it.get("importance") or 0.5)
                 surf, flw = fol.get(it["ulid"], (0, 0))
                 damp = 0.6 if (surf >= 10 and flw == 0) else 1.0
@@ -560,7 +613,7 @@ class LessonsMixin:
             kept.sort(key=lambda it: (it["_strong"], round(it["_sim"], 4), it["_ov"]),
                       reverse=True)
         for it in kept:  # strip scratch fields before returning
-            for k in ("_ov", "_strong", "_sim"):
+            for k in ("_ov", "_strong", "_sim", "_dov", "_wov"):
                 it.pop(k, None)
         return [_trim_item(it) for it in kept[:limit]]
 
@@ -635,10 +688,47 @@ class LessonsMixin:
         if not q_tokens:
             return [_trim_item(it) for it in items[:limit]]
 
-        def _score(item: dict) -> float:
-            return len(q_tokens & distinctive_tokens(item.get("content") or ""))
-        items.sort(key=_score, reverse=True)
-        return [_trim_item(it) for it in items if _score(it) >= 1][:limit]
+        # Corpus-distinctive gate (the SAME E1/IDF precision fix as
+        # find_lessons): a decision must share a token RARE in this workspace's
+        # decision corpus, so it can't surface on one workspace-generic word.
+        # One tokenization pass per item (the old code tokenized twice).
+        from collections import Counter as _Counter
+        doc_tokens = [distinctive_tokens(it.get("content") or "") for it in items]
+        df: _Counter = _Counter()
+        for _ct in doc_tokens:
+            df.update(_ct)
+        n_corpus = len(items)
+        try:
+            idf_gate = bool(self.config.get("recall.lesson_idf_gate"))
+        except Exception:
+            idf_gate = True
+        try:
+            idf_min_corpus = int(self.config.get("recall.lesson_idf_min_corpus") or 12)
+        except Exception:
+            idf_min_corpus = 12
+        try:
+            df_max_frac = float(self.config.get("recall.lesson_corpus_df_max") or 0.25)
+        except Exception:
+            df_max_frac = 0.25
+        corpus_gate_on = idf_gate and n_corpus >= idf_min_corpus
+        df_cut = df_max_frac * n_corpus
+
+        scored: list[tuple[float, dict]] = []
+        for it, _ct in zip(items, doc_tokens):
+            ov = q_tokens & _ct
+            if not ov:
+                continue
+            # corpus-distinctive overlap (tokens rare in this workspace)
+            dov = sum(1 for t in ov if df.get(t, 0) <= df_cut)
+            passes = (dov >= 1) if corpus_gate_on else (len(ov) >= 1)
+            if not passes:
+                continue
+            # rarity-weighted overlap for ranking
+            wov = (sum(1.0 - (df.get(t, 0) / n_corpus) for t in ov)
+                   if n_corpus else float(len(ov)))
+            scored.append((wov, it))
+        scored.sort(key=lambda p: p[0], reverse=True)
+        return [_trim_item(it) for _, it in scored][:limit]
 
     def recent_unconfirmed_surfaces(
         self, minutes: float = 30.0, limit: int = 50,

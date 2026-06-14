@@ -216,6 +216,26 @@ class EmbedMixin:
                 self._anchor_index = None
         return self._anchor_index
 
+    def query_worthiness(self):
+        """Query-worthiness classifier (SAE pattern, new axis) - built lazily and
+        ONLY when warm, so the cold path never loads the embedder for it. Returns
+        the QueryWorthiness or None (cold / disabled). Gated by
+        `auto_recall.query_worthiness`; exemplars embed once per warm engine."""
+        if not getattr(self, "_is_warm", False):
+            return None
+        try:
+            if not bool(self.config.get("auto_recall.query_worthiness")):
+                return None
+        except Exception:
+            pass
+        if getattr(self, "_query_worthiness", None) is None:
+            try:
+                from pmb.reasoning.query_worthiness import QueryWorthiness
+                self._query_worthiness = QueryWorthiness(self.search.embed_batch)
+            except Exception:
+                self._query_worthiness = None
+        return self._query_worthiness
+
     def anchor_fires(self, text: str, name: str) -> bool:
         """B2 warm-only single-anchor check (`is_lesson_intent` /
         `looks_like_future_intent`). Returns False when cold, when anchors are

@@ -488,6 +488,8 @@ class RecallMixin:
         raw_hits: list[SearchHit] = self.search.search(
             query=query,
             top_k=top_k * 5,  # headroom for the archived filter
+            crosslingual_damp=float(
+                self.config.get("recall.crosslingual_bm25_damp") or 1.0),
         )
 
         # Stage 2: graph expansion - entities in the query may surface events

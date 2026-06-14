@@ -133,6 +133,36 @@ def relevance(query: str, content: str) -> tuple[int, int]:
     return len(overlap), strong
 
 
+_SHELL_SPLIT = re.compile(r"&&|\|\||[|;&\n()`]")
+_ENV_ASSIGN = re.compile(r"^\w+=")
+
+
+def shell_command_names(text: str) -> set[str]:
+    """Executable names a shell command line will invoke, extracted STRUCTURALLY
+    - the program token at the start and after each shell operator
+    (``| && || ; & ( )``). NO hardcoded command list: whatever the command is we
+    read its name, stripping a leading path (``/usr/bin/git`` -> ``git``) and any
+    leading ``VAR=value`` env assignments (shell grammar, not a keyword list).
+
+    The PreToolUse guard uses this so a rule that NAMES a command ('never use
+    git', 'use pnpm not npm') reliably matches even when the name is shorter than
+    a distinctive token (git, rm, gh, jq, ci) - distinctive_tokens drops <4-char
+    words, which made bare command rules invisible at tool-call time.
+    """
+    out: set[str] = set()
+    for seg in _SHELL_SPLIT.split(text or ""):
+        toks = seg.split()
+        i = 0
+        while i < len(toks) and _ENV_ASSIGN.match(toks[i]):  # skip env assignments
+            i += 1
+        if i >= len(toks):
+            continue
+        prog = toks[i].rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower().strip(".-")
+        if prog and not prog.startswith("-"):
+            out.add(prog)
+    return out
+
+
 def is_relevant(query: str, content: str, *, min_overlap: int = 2) -> bool:
     """Symmetric relevance bar: the lesson relates to the query if they share
     >= `min_overlap` distinctive tokens OR >= 1 strong (identifier-grade)

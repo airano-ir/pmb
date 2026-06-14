@@ -2,6 +2,61 @@
 
 All notable changes to PMB are documented here.
 
+## [0.9.3] - 2026-06-14 - Injection precision, cross-lingual recall, model picker
+
+Sharper auto-context: the hook injects the right memory and stays quiet on small
+talk, recall finds cross-language answers, and you pick the embedding model in
+`setup` (or swap it later in one command). All additive + config-gated - default
+behaviour is safe.
+
+### Injection precision (read path)
+- **Absolute-evidence gate on by default.** `auto_recall.evidence_min_cosine`
+  0.0 -> 0.045: a GENERIC_FACTUAL question the workspace knows nothing about now
+  surfaces nothing instead of the min-max top hit (cross-domain noise 100% -> 0%
+  on the measured corpus).
+- **Specificity gate.** `auto_recall.specificity_strong_cosine` (0.08): a hit
+  must share a distinctive token with the message OR be a strong embedding match
+  - removes same-domain-but-unhelpful hits the floor alone can't separate.
+- **Conversational gate.** A meta turn ("is it better now?") with a diffuse
+  match (small score gap + low confidence + no lexical anchor) surfaces nothing
+  (`auto_recall.conversational_gap_max` / `conversational_conf_max`).
+- **Query-worthiness classifier (opt-in).** The SAE anchor-margin pattern on a
+  new axis - conversational vs knowledge-seeking - via English exemplars + the
+  multilingual embedder (`auto_recall.query_worthiness`, default off; measured a
+  clean split, kept opt-in since the cheap gates already cover the common cases).
+- **Rules vs Context split.** Lessons render as RULES (high recall); recall hits
+  render as "Possibly relevant context (background, not rules)" (high precision).
+- **Corpus-IDF lesson gate.** `find_lessons` / `find_decisions` require a token
+  RARE in this workspace's own corpus, not just globally distinctive
+  (`recall.lesson_idf_gate`).
+
+### Cross-lingual recall
+- **OOV bm25 damping.** When a query's content tokens are entirely
+  out-of-vocabulary for the BM25 corpus (e.g. a foreign-language query over an
+  English corpus), the lexical channel is down-weighted so the vector channel
+  decides (`recall.crosslingual_bm25_damp`, 0.3). F4 cross-lingual top-1 0.27 ->
+  0.55, with no in-language regression (floors raised to lock it in).
+
+### Memory model picker
+- **`pmb setup` asks which embedder** - Light / Balanced / Best, with plain
+  plus/minus + RAM, and loads the chosen one. Plus an offline-LLM-tier choice
+  (auto / claude / ollama / anthropic) - background only, no injection cost.
+- **`pmb model`** switches the embedder later in ONE step: download + load +
+  re-embed memory (`reindex`) + restart the daemon. `pmb model best`,
+  `pmb model BAAI/bge-m3`, or the interactive menu.
+
+### Guard & fixes
+- **Command-aware PreToolUse guard.** A rule that NAMES a command ("never use
+  git") now fires before every invocation (`git push` / `git status` / chained),
+  via structural command-name extraction - no hardcoded command list.
+- **No flashing console windows on Windows** - background spawns use
+  CREATE_NO_WINDOW (the daemon still survives the launching process).
+- **CI offline-model robustness** - `scripts/prewarm_models.py` retries
+  downloads and fails fast on the essential embedder; the HF cache key no longer
+  rotates on version bumps.
+- **Fixed a latency-trace crash** - the PreToolUse shadow-sample reused the
+  perf-timer variable name (`auto_recall.py`).
+
 ## [0.9.2] - 2026-06-14 - Command palette + first-run
 
 A from-the-first-second CLI experience. No engine behavior change.

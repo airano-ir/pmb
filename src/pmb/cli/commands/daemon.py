@@ -83,8 +83,9 @@ def start(
 
     kwargs: dict = {}
     if os.name == "nt":
-        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        kwargs["creationflags"] = 0x00000008 | 0x00000200
+        # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP - background daemon with no
+        # flashing console window; survives the launching process exiting.
+        kwargs["creationflags"] = 0x08000000 | 0x00000200
     else:
         kwargs["start_new_session"] = True
 

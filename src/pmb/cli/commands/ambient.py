@@ -143,7 +143,9 @@ def _maybe_autostart_daemon(eng) -> None:
         import sys as _sys2
         kwargs: dict = {}
         if os.name == "nt":
-            kwargs["creationflags"] = 0x00000008 | 0x00000200  # DETACHED|NEW_GROUP
+            # CREATE_NO_WINDOW|NEW_GROUP: no flashing console window, and the
+            # child still outlives the parent (verified) - DETACHED_PROCESS flashed.
+            kwargs["creationflags"] = 0x08000000 | 0x00000200
         else:
             kwargs["start_new_session"] = True
         # S6: serve the configured tool profile over HTTP (set by `pmb connect
@@ -676,10 +678,11 @@ def _spawn_detached_autowrite(window: int) -> bool:
             close_fds=True,
         )
         if os.name == "nt":
-            # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP - fully cut from the
-            # parent so it survives the Stop hook returning.
+            # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP - no flashing console
+            # window, and the child still survives the Stop hook returning
+            # (verified). DETACHED_PROCESS detaches too but flashes a console.
             kwargs["creationflags"] = (
-                getattr(_sp, "DETACHED_PROCESS", 0x00000008)
+                getattr(_sp, "CREATE_NO_WINDOW", 0x08000000)
                 | getattr(_sp, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
             )
         else:

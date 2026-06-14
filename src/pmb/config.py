@@ -231,18 +231,90 @@ SCHEMA: dict[str, _Setting] = {
         min=0.0, max=1.0,
     ),
     "auto_recall.evidence_min_cosine": _Setting(
-        float, 0.0,
+        float, 0.045,
         "R3 absolute-evidence gate for GENERIC_FACTUAL surfacing. The `score` "
         "floor above is min-max-normalized (top hit ≈ 1.0 even when the corpus "
-        "is irrelevant), so it nearly always passes. When > 0, ALSO require the "
-        "top hit's UN-normalized vector similarity (signals.raw_cosine = "
-        "1/(1+L2_distance), in [0,1]) to clear this bar, so a question the "
-        "workspace knows nothing about surfaces nothing. NOTE the scale is "
-        "compressed (real matches land ~0.05-0.15 with the default embedder, "
-        "not 0.5+), so the right floor is small and DATA-dependent - keep this "
-        "0.0 (off) until the V1 recall eval measures the relevant-vs-noise "
-        "distribution on your corpus and picks the floor.",
+        "is irrelevant), so it nearly always passes. This ALSO requires the top "
+        "hit's UN-normalized vector similarity (signals.raw_cosine = "
+        "1/(1+L2_distance), in [0,1]) to clear this bar, so a GENERIC_FACTUAL "
+        "question the workspace knows nothing about surfaces nothing instead of "
+        "the min-max top hit. Only consulted on the WARM path (cold recall is "
+        "skipped entirely as RECALL_COLD_SKIP, so this never blocks cold). "
+        "DEFAULT 0.045 was calibrated on the real 906-event corpus with the "
+        "shipped paraphrase-multilingual-MiniLM-L12-v2 embedder: answerable "
+        "queries land hits[0].raw_cosine >= 0.060 (e.g. 0.060-0.108), "
+        "no-answer queries <= 0.033 (sourdough/Patagonia/espresso), so 0.045 "
+        "sits in the gap. The 1/(1+L2) scale is embedder-specific - RECALIBRATE "
+        "(or set 0.0 to disable) if you swap the embedder (e.g. bge-m3).",
         min=0.0, max=1.0,
+    ),
+    "auto_recall.specificity_strong_cosine": _Setting(
+        float, 0.08,
+        "Specificity gate for GENERIC_FACTUAL surfacing (companion to "
+        "evidence_min_cosine). A hit that clears the evidence floor but shares "
+        "NO distinctive token with the message is surfaced only if its absolute "
+        "raw_cosine reaches this STRONGER bar. Removes 'same-domain but "
+        "unhelpful' hits - topically-adjacent matches (~0.06 cosine, zero "
+        "lexical overlap) that aren't what was asked - which the evidence floor "
+        "cannot separate from real matches (both land ~0.05-0.10). Measured on "
+        "the real corpus with the default MiniLM embedder: genuine hits have a "
+        "distinctive lexical overlap OR raw_cosine>=~0.08; the same-domain noise "
+        "has neither (and cross-lingual hits below the bar were wrong answers "
+        "anyway, so suppressing them is correct). Only applies to "
+        "GENERIC_FACTUAL - explicit PAST_QUERY always surfaces. 0 disables. "
+        "Embedder-specific - recalibrate if you swap the embedder.",
+        min=0.0, max=1.0,
+    ),
+    "auto_recall.conversational_gap_max": _Setting(
+        float, 0.08,
+        "Query-worthiness gate (companion to the specificity gate). A "
+        "GENERIC_FACTUAL message that is really CONVERSATIONAL/meta - 'is it "
+        "better now?', 'did you test it?', 'what do you think?' - rather than a "
+        "knowledge query should surface NOTHING from the Context (recall) "
+        "channel. Such a message has a DIFFUSE match: its top1->top2 score gap "
+        "is below this, AND confidence is below conversational_conf_max, AND its "
+        "top hit shares no distinctive token with the message. Measured on a "
+        "labelled set: gap<0.08 & conf<0.70 suppresses ~60% of conversational "
+        "noise with ZERO knowledge-query false-positives, and catches exactly "
+        "the same-domain hits the cosine specificity gate cannot. 0 disables.",
+        min=0.0, max=1.0,
+    ),
+    "auto_recall.conversational_conf_max": _Setting(
+        float, 0.70,
+        "Confidence ceiling for the conversational query-worthiness gate "
+        "(see auto_recall.conversational_gap_max). A message whose recall "
+        "confidence is at or above this is treated as a real query (kept) even "
+        "if the score gap is small. 0 disables the conversational gate.",
+        min=0.0, max=1.0,
+    ),
+    "auto_recall.query_worthiness": _Setting(
+        bool, False,
+        "OPT-IN (default off). Query-worthiness gate (SAE anchor pattern, WARM "
+        "only). Classifies a "
+        "GENERIC_FACTUAL message as a real KNOWLEDGE query vs a CONVERSATIONAL / "
+        "meta turn ('is it better now?', 'did you test it?', 'what do you "
+        "think?') by margin against English exemplar sets, and suppresses the "
+        "Context (recall) channel for conversational turns. Catches what the "
+        "cheap gap/conf/lexical gate misses (the embedder separates conversational "
+        "FORM cleanly even though it can't separate topic relevance). Measured "
+        "split: conversational margin mean +0.40 vs knowledge -0.38, en+ru. "
+        "English exemplars only - the multilingual embedder transfers, no "
+        "per-language rules. Off falls back to the lexical conversational gate. "
+        "DEFAULT OFF because on the measured corpus the cheaper evidence + "
+        "specificity + gap/conf gates already suppress conversational turns, so "
+        "this added no incremental win there - flip ON for the robust net when "
+        "conversational turns leak past the cheap gates (it costs one embed per "
+        "GENERIC_FACTUAL message, warm path only).",
+    ),
+    "auto_recall.query_worthiness_tau": _Setting(
+        float, 0.05,
+        "Margin threshold for the query-worthiness gate "
+        "(auto_recall.query_worthiness): margin = max cos(msg, conversational "
+        "exemplars) - max cos(msg, knowledge exemplars); >= this => conversational "
+        "=> suppress Context. 0.05 is the measured midpoint of the gap (lowest "
+        "conversational +0.11, highest knowledge -0.06). Raise to suppress less "
+        "(only very clearly conversational), lower to suppress more.",
+        min=-1.0, max=1.0,
     ),
     "auto_recall.project_min_mentions": _Setting(
         int, 3,
@@ -812,6 +884,21 @@ SCHEMA: dict[str, _Setting] = {
         "`pmb.reasoning.scoring.propose_channel_weights` can SUGGEST a vector "
         "from feedback, but recall never adopts one on its own.",
     ),
+    "recall.crosslingual_bm25_damp": _Setting(
+        float, 0.3,
+        "Cross-lingual recall fix. When a query's CONTENT tokens are ENTIRELY "
+        "out-of-vocabulary for the BM25 corpus (an English question over a "
+        "foreign-language fact, or a Russian query over an English corpus), the "
+        "lexical channel can only match coincidental function words on "
+        "wrong-language distractors; min-max then lifts a distractor above the "
+        "true cross-lingual vector match (this is why F4 xl top1 lags top3). "
+        "This MULTIPLIES the BM25 fusion weight by `damp` for SUCH queries only, "
+        "so the vector channel decides. 1.0 = off (byte-identical). Lower = "
+        "stronger vector preference for OOV queries. By construction it never "
+        "touches in-language queries (their content words are in vocab), so it "
+        "cannot regress in-language ranking - only cross-lingual queries move.",
+        min=0.0, max=1.0,
+    ),
     "lessons.rank_v2": _Setting(
         bool, True,
         "R9: rank find_lessons results by lexical strength × importance × "
@@ -830,6 +917,41 @@ SCHEMA: dict[str, _Setting] = {
         "2 for stricter precision - fewer, surer lessons, which is what makes "
         "the adherence follow-rate meaningful instead of drowning in noise.",
         min=1, max=5,
+    ),
+    "recall.lesson_idf_gate": _Setting(
+        bool, True,
+        "Corpus-aware precision gate for lesson surfacing (E1/IDF). The plain "
+        "overlap gate counts every distinctive shared token equally, but in a "
+        "workspace where most lessons are about the same project a token like "
+        "'memory'/'recall'/'hook' is GLOBALLY distinctive yet LOCALLY generic - "
+        "it recurs across a large fraction of lessons and carries no "
+        "discriminating power, so a single such overlap surfaces off-topic "
+        "lessons (the main observed false-positive channel). When on, a lesson "
+        "must share a token that is RARE in THIS workspace's lesson corpus "
+        "(document-frequency below recall.lesson_corpus_df_max) to pass. Derived "
+        "per-call from the candidate lessons - no hardcoded list, no maintenance "
+        "tick. Only engages once the corpus is big enough to estimate frequency "
+        "(recall.lesson_idf_min_corpus); smaller workspaces keep the legacy "
+        "overlap gate. Off restores the pre-gate behaviour exactly.",
+    ),
+    "recall.lesson_idf_min_corpus": _Setting(
+        int, 12,
+        "Minimum number of candidate lessons before the corpus-IDF gate "
+        "(recall.lesson_idf_gate) engages. Below this the document-frequency "
+        "estimate is too noisy to call a token 'corpus-generic', so the legacy "
+        "overlap gate is used unchanged. Keeps tiny / new workspaces behaving "
+        "exactly as before.",
+        min=2, max=1000,
+    ),
+    "recall.lesson_corpus_df_max": _Setting(
+        float, 0.25,
+        "A lesson-corpus token whose document frequency exceeds this fraction "
+        "is treated as 'corpus-generic' (no discriminating power) and does NOT "
+        "count toward the surfacing gate (recall.lesson_idf_gate). 0.25 mirrors "
+        "the E1 high-frequency-stopword cutoff: a token in >25% of this "
+        "workspace's lessons is noise here even if it is a real word. Lower = "
+        "stricter (only very rare tokens surface a lesson).",
+        min=0.05, max=1.0,
     ),
     "recall.lesson_semantic": _Setting(
         bool, False,
