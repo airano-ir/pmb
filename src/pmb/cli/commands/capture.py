@@ -114,8 +114,8 @@ def warmup():
     `pmb warmup` at startup and the actual user-facing query is hot.
     """
     eng = Engine()
-    console.print("[dim]Warming up PMB (model + BM25 + LanceDB)...[/]")
-    result = eng.warmup(with_first_query=True)
+    with loading("waking the memory engine - model + BM25 + LanceDB…"):
+        result = eng.warmup(with_first_query=True)
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Stage")
     table.add_column("ms")
@@ -347,7 +347,8 @@ def distill(
     path - cannot affect recall quality or speed.
     """
     eng = Engine()
-    res = eng.distill_lessons(session_id=session, backend=backend, dry_run=dry_run)
+    with loading("distilling lessons from the session (LLM)…"):
+        res = eng.distill_lessons(session_id=session, backend=backend, dry_run=dry_run)
     if res.get("skipped") == "no_llm":
         console.print("[yellow]No LLM backend available.[/] Install Claude CLI / "
                       "Ollama, or set ANTHROPIC_API_KEY.")
@@ -610,7 +611,8 @@ def why(
     """
     from pmb.reasoning.pamvr import explain_pamvr
     eng = Engine()
-    pack = eng.recall(query=query, top_k=top_k)
+    with loading("searching memory (loading embedding model on first run)…"):
+        pack = eng.recall(query=query, top_k=top_k)
 
     console.print(f"\n[bold]Why these results for:[/] {query}")
     console.print(f"[dim]Workspace {pack.workspace_name} · {pack.elapsed_ms:.1f}ms · "
@@ -666,7 +668,8 @@ def overview(
             max_events = int(eng.config.get("overview.max_events"))
         except Exception:
             max_events = 40
-    ov = eng.topic_overview(topic, max_events=max_events)
+    with loading("building overview (loading embedding model on first run)…"):
+        ov = eng.topic_overview(topic, max_events=max_events)
     if ov.get("empty"):
         console.print(f"[yellow]No memories about[/] '{esc(topic)}'.")
         return

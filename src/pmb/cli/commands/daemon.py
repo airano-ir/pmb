@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -32,6 +33,31 @@ def _probe(host: str, port: int, timeout: float = 0.5) -> dict | None:
         return None
 
 
+def _free_port(host: str, port: int, tries: int = 20) -> int:
+    """First bindable port at or above `port` (so the daemon never silently dies
+    on a busy 8765 - e.g. when a streamable-http MCP server already holds it)."""
+    for p in range(port, port + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, p))
+                return p
+            except OSError:
+                continue
+    return port  # give up; let the daemon surface the bind error to its log
+
+
+def _daemon_log_path():
+    """`<pmb_home>/daemon.log` - where the spawned daemon's stdout/stderr go, so
+    a crash (bad port, model failure) is diagnosable instead of swallowed."""
+    from pathlib import Path
+    try:
+        from pmb.core.workspace import detect_workspace
+        home = detect_workspace().pmb_home
+    except Exception:
+        home = Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb"))
+    return Path(home) / "daemon.log"
+
+
 @daemon_app.command()
 def start(
     port: int = typer.Option(8765, "--port"),
@@ -46,20 +72,39 @@ def start(
             f"port {live.get('port')}).")
         return
 
-    flags = 0
+    # Auto-pick a free port so a busy 8765 (e.g. a streamable-http MCP server
+    # already on it) doesn't make the daemon die silently on bind. Hooks locate
+    # the daemon via the registry, so the exact port doesn't matter.
+    requested = port
+    port = _free_port(host, port)
+    if port != requested:
+        console.print(f"[dim]port {requested} is busy - starting on {port} "
+                      f"instead.[/]")
+
     kwargs: dict = {}
     if os.name == "nt":
         # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        flags = 0x00000008 | 0x00000200
-        kwargs["creationflags"] = flags
+        kwargs["creationflags"] = 0x00000008 | 0x00000200
     else:
         kwargs["start_new_session"] = True
-    subprocess.Popen(
-        [sys.executable, "-m", "pmb.cli", "daemon", "run",
-         "--port", str(port), "--host", host],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL, **kwargs,
-    )
+
+    # Send the daemon's stdout/stderr to a log (NOT DEVNULL) so a crash - bad
+    # port, model failure - is diagnosable instead of swallowed.
+    log_path = _daemon_log_path()
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        out = open(log_path, "a", encoding="utf-8")  # noqa: SIM115 (child owns it)
+    except Exception:
+        out = subprocess.DEVNULL
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "pmb.cli", "daemon", "run",
+             "--port", str(port), "--host", host],
+            stdout=out, stderr=out, stdin=subprocess.DEVNULL, **kwargs,
+        )
+    finally:
+        if out is not subprocess.DEVNULL:
+            out.close()
 
     with console.status("starting memory daemon…"):
         for _ in range(50):  # ~5s for uvicorn to bind (model warms async after)
@@ -69,13 +114,13 @@ def start(
                 console.print(
                     f"[green]✓ Daemon up[/] v{data.get('version')} · "
                     f"workspace {data.get('workspace')} · "
-                    f"warm={data.get('warm')}\n"
+                    f"warm={data.get('warm')} · port {port}\n"
                     f"[dim]Hooks will use it on the next message. "
                     f"Embedding model finishes warming in the background.[/]")
                 return
     console.print(
         "[yellow]Daemon spawned but health didn't respond yet.[/] "
-        "Check `pmb daemon status` in a moment.")
+        f"Check `pmb daemon status` in a moment, or the log:\n[dim]{log_path}[/]")
 
 
 @daemon_app.command()

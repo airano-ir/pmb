@@ -2,6 +2,31 @@
 
 All notable changes to PMB are documented here.
 
+## [0.9.2] - 2026-06-14 - Command palette + first-run
+
+A from-the-first-second CLI experience. No engine behavior change.
+
+- **CLI - command palette.** Bare `pmb` in a terminal opens a fuzzy + synonym
+  launcher over every command: type by intent ("make it fast" -> `warmup`,
+  "forget old stuff" -> `declutter`/`decay`), arrows to pick, Enter runs. Instant
+  and model-free; falls back to the status dashboard when piped (`cli/palette.py`).
+- **CLI - first run.** The first `pmb` plays a brain-forming spark boot animation
+  and a one-screen welcome (shown once via `~/.pmb/.welcomed`); `pmb setup` is now
+  question-free when an agent is detected (`cli/intro.py`).
+- **CLI - grouped `--help`.** ~66 commands organized into 7 ordered panels (Setup
+  & agents / Capture / Recall & explore / Maintain / Workspaces & data / Agent
+  internals / More) instead of one flat wall.
+- **CLI - no more blank screens.** 11 model/LLM commands (recall, why, overview,
+  reindex, rehearse, dedupe, reflect, arcs, consolidate, distill, regraph) show a
+  spinner during cold model/LLM work instead of an empty field.
+- **Daemon - robust start.** `pmb daemon start` auto-picks a free port when 8765
+  is busy (e.g. a streamable-http MCP server already holds it) instead of dying
+  silently, and the spawned daemon's stdout/stderr go to `~/.pmb/daemon.log` (was
+  DEVNULL) so a crash is diagnosable.
+- **Fix.** The "first run pulls ~90 MB" hint corrected to ~450 MB (the real size
+  of the multilingual embedding model) in `pmb setup` and the README.
+- **Brand.** The spark wordmark is consistent across setup, status, palette, help.
+
 ## [0.9.1] - 2026-06-13
 
 Repository hardening + open-source polish. No engine behavior change.

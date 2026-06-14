@@ -65,6 +65,7 @@ def render_status(console) -> None:
     from rich.table import Table
 
     import pmb
+    from pmb.cli._common import wordmark
 
     version = getattr(pmb, "__version__", "?")
 
@@ -76,7 +77,7 @@ def render_status(console) -> None:
         console.print(Panel.fit(
             f"[red]Could not open a workspace:[/] {e}\n"
             f"[dim]Run `pmb init` in a project, or `pmb --help`.[/]",
-            title=f"PMB v{version}",
+            title=wordmark(f"v{version}"),
         ))
         return
 
@@ -153,7 +154,7 @@ def render_status(console) -> None:
         "",
         "[dim]`pmb --help` for commands · `pmb workspace use <name>` to switch[/]",
     )
-    console.print(Panel(body, title=f"PMB v{version}", border_style="cyan"))
+    console.print(Panel(body, title=wordmark(f"v{version}"), border_style="cyan"))
 
     try:
         eng.close()

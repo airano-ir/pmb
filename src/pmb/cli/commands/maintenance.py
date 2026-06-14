@@ -252,11 +252,12 @@ def rehearse(
     high-importance facts above the noise floor.
     """
     eng = Engine()
-    result = eng.rehearse(
-        importance_threshold=importance,
-        min_idle_days=idle_days,
-        max_rehearse=max_n,
-    )
+    with loading("rehearsing idle memories (loads the model on first run)…"):
+        result = eng.rehearse(
+            importance_threshold=importance,
+            min_idle_days=idle_days,
+            max_rehearse=max_n,
+        )
     console.print(
         f"[cyan]Rehearsed[/] {result['n_rehearsed']} / {result['n_candidates']} "
         f"eligible memories in {result['elapsed_seconds']:.1f}s "
@@ -275,8 +276,8 @@ def reindex():
     Time: ~1ms/event on CPU. 1000 events ≈ 2 minutes.
     """
     eng = Engine()
-    console.print("[yellow]Re-embedding all events with current model...[/]")
-    result = eng.reindex_embeddings()
+    with loading("re-embedding all events with the current model…"):
+        result = eng.reindex_embeddings()
     console.print(
         f"[cyan]Reindexed[/] {result['n_events']} events in "
         f"[yellow]{result['elapsed_seconds']}s[/]"
@@ -340,8 +341,8 @@ def dedupe(
         console.print(f"[cyan]{len(pairs)}[/] pending pairs")
         return
     if run_pending:
-        console.print(f"[yellow]Running LLM verify ({backend})...[/]")
-        result = eng.dedupe_run_pending(backend=backend)
+        with loading(f"dedup: LLM verify of borderline pairs ({backend})…"):
+            result = eng.dedupe_run_pending(backend=backend)
         console.print(
             f"[cyan]Processed[/] {result['n_processed']}: "
             f"merged={result['n_merged']}, kept={result['n_kept']}, "
@@ -349,8 +350,8 @@ def dedupe(
         )
         return
     type_list = [t.strip() for t in types.split(",")] if types else None
-    console.print(f"[yellow]Sweeping (threshold={threshold:.2f})...[/]")
-    result = eng.dedupe_sweep(threshold=threshold, event_types=type_list)
+    with loading(f"dedup: clustering by cosine ≥ {threshold:.2f}…"):
+        result = eng.dedupe_sweep(threshold=threshold, event_types=type_list)
     console.print(
         f"[cyan]Dedupe done.[/] clusters={result['n_clusters']}, "
         f"merged={result['n_merged']}, by_type={result['by_type']}"
@@ -470,8 +471,8 @@ def regraph():
     Time: ~1ms/event. 1000 events ≈ 1 second.
     """
     eng = Engine()
-    console.print("[yellow]Rebuilding graph from active events...[/]")
-    result = eng.regraph()
+    with loading("rebuilding the entity graph from active events…"):
+        result = eng.regraph()
     console.print(
         f"[cyan]Regraphed[/] {result['events_reindexed']} events → "
         f"{result['entities_created']} entity links"
@@ -500,7 +501,8 @@ def reflect(
     """
     eng = Engine()
     if source:
-        out = eng.reflect_event(source, backend=backend)
+        with loading(f"reflecting on {source} (LLM)…"):
+            out = eng.reflect_event(source, backend=backend)
         if out is None:
             console.print("[yellow]Nothing to do[/] (already reflected, or no LLM, or source missing)")
             return
@@ -512,9 +514,10 @@ def reflect(
                 console.print(f"    • {q}")
         return
 
-    result = eng.reflect_batch(
-        limit=limit, max_age_days=max_age_days, backend=backend,
-    )
+    with loading(f"reflecting on up to {limit} events (LLM)…"):
+        result = eng.reflect_batch(
+            limit=limit, max_age_days=max_age_days, backend=backend,
+        )
     if result.get("skipped") == "no_llm":
         console.print("[yellow]No LLM backend available.[/] "
                       "Install Claude CLI / Ollama / set ANTHROPIC_API_KEY.")
@@ -564,7 +567,8 @@ def arcs(
             if a['summary']:
                 console.print(f"    {a['summary'][:280]}")
     elif action == "cluster":
-        result = eng.cluster_events_into_arcs(limit=limit, backend=backend)
+        with loading("clustering events into narrative arcs (LLM)…"):
+            result = eng.cluster_events_into_arcs(limit=limit, backend=backend)
         if result.get("skipped") == "no_llm":
             console.print("[yellow]No LLM backend available.[/]")
             return
@@ -832,15 +836,16 @@ def consolidate(
             return
         console.print(f"[cyan]Auto-trigger fired:[/] {decision['reason']}")
     try:
-        result = eng.consolidate(
-            dry_run=dry_run,
-            backend=backend,
-            model=model,
-            since_days=since_days,
-            similarity_threshold=threshold,
-            min_cluster_size=min_size,
-            max_clusters=max_clusters,
-        )
+        with loading("consolidating memories (clustering + LLM)…"):
+            result = eng.consolidate(
+                dry_run=dry_run,
+                backend=backend,
+                model=model,
+                since_days=since_days,
+                similarity_threshold=threshold,
+                min_cluster_size=min_size,
+                max_clusters=max_clusters,
+            )
     except ImportError as e:
         console.print(f"[red]Missing dependency:[/] {e}")
         console.print("[dim]Install with: pip install -e .[consolidate][/]")
