@@ -35,9 +35,20 @@ def test_recallresult_exposes_raw_cosine():
 
 @pytest.fixture
 def warm_engine(tmp_pmb_home, tmp_workspace_dir):
+    # crosslingual_bm25_damp pinned OFF (1.0): these tests isolate the
+    # evidence/specificity gates, which gate on ABSOLUTE raw_cosine. The OOV
+    # cross-lingual damper is an orthogonal RANKING feature - on this 2-fact toy
+    # corpus it re-orders which low-relevance hit lands at rank 0, perturbing the
+    # gate assertions (on a real corpus raw_cosine stays low, so the floor still
+    # suppresses - verified separately). Pin it off so the gate is tested alone.
     eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home,
                  config_overrides={"recall.cache_size": 0,
-                                   "auto_recall.enabled": True})
+                                   "auto_recall.enabled": True,
+                                   "recall.crosslingual_bm25_damp": 1.0,
+                                   # isolate the evidence/specificity gates from
+                                   # the orthogonal conversational query-worthiness
+                                   # gate (tested separately).
+                                   "auto_recall.conversational_gap_max": 0.0})
     eng.warmup()  # load the embedder FIRST so the facts get real vectors
     eng.record_fact("The API runs Postgres 17 on port 5432")
     eng.record_fact("We deploy with Kubernetes on GKE")
@@ -81,3 +92,27 @@ def test_evidence_floor_gates_when_above_the_top_hit(warm_engine):
     # if it routed to the gated recall path, the 1.0 floor must have emptied it
     if Intent.GENERIC_FACTUAL in res.intents and Intent.PAST_QUERY not in res.intents:
         assert not res.recall_hits
+
+
+def test_default_floor_suppresses_no_answer_generic_factual(warm_engine):
+    # The shipped default (auto_recall.evidence_min_cosine = 0.045, calibrated on
+    # the real corpus) must drop a GENERIC_FACTUAL question the workspace knows
+    # nothing about - the observed false-positive channel where the min-max top
+    # hit (score ≈ 1.0) surfaced unrelated lessons/facts.
+    from pmb.hooks import run_auto_context
+    from pmb.hooks.auto_recall import Intent
+    res = run_auto_context(warm_engine, "xyzzy plugh frobnicate quux blorp?")
+    if Intent.GENERIC_FACTUAL in res.intents and Intent.PAST_QUERY not in res.intents:
+        assert not res.recall_hits, \
+            "a no-answer GENERIC_FACTUAL query must surface nothing under the default floor"
+
+
+def test_default_floor_keeps_real_generic_factual_match(warm_engine):
+    # The flip side: the default floor must NOT over-block - a genuine topical
+    # match (raw_cosine well above 0.045) still surfaces.
+    from pmb.hooks import run_auto_context
+    from pmb.hooks.auto_recall import Intent
+    res = run_auto_context(warm_engine, "what database port does the api use?")
+    if Intent.GENERIC_FACTUAL in res.intents and Intent.PAST_QUERY not in res.intents:
+        assert res.recall_hits, \
+            "a real topical GENERIC_FACTUAL match must still clear the default floor"

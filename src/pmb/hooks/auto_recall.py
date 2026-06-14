@@ -386,6 +386,59 @@ def _resolve_project_name(
     return None
 
 
+def _specificity_ok(message: str, hit: dict, strong_cosine: float) -> bool:
+    """Specificity gate for GENERIC_FACTUAL recall surfacing.
+
+    A hit that already cleared the absolute-evidence floor is surfaced only if
+    it is genuinely SPECIFIC to the message: it shares >= 1 distinctive token
+    with the message, OR its absolute embedding similarity is strong on its own
+    (>= strong_cosine). This separates real matches from 'same-domain but
+    unhelpful' hits - the topically-adjacent results (moderate ~0.06 cosine,
+    zero lexical overlap) that the evidence floor alone cannot tell apart from
+    real ones (both land ~0.05-0.10). Measured on the real corpus: genuine hits
+    have a distinctive lexical overlap OR raw_cosine >= ~0.08; the same-domain
+    noise has neither. strong_cosine <= 0 disables the gate (always passes).
+    """
+    if strong_cosine <= 0:
+        return True
+    sig = hit.get("signals") or {}
+    if float(sig.get("raw_cosine") or 0.0) >= strong_cosine:
+        return True
+    from pmb.core.text_match import distinctive_tokens
+    return bool(distinctive_tokens(message)
+                & distinctive_tokens(hit.get("content") or ""))
+
+
+def _looks_conversational(
+    message: str, hits: list, confidence: float,
+    gap_max: float, conf_max: float,
+) -> bool:
+    """Query-worthiness gate: True when a GENERIC_FACTUAL message is really
+    CONVERSATIONAL / meta ('is it better now?', 'did you test it?') rather than
+    a knowledge query, so the Context (recall) channel should surface nothing.
+
+    Signature of a conversational turn (measured on a labelled set): the recall
+    is DIFFUSE - small top1->top2 score gap (no clear winner) AND low confidence
+    - AND the top hit shares no distinctive token with the message. Any one of:
+    a real lexical anchor, a clear winner (gap >= gap_max), or high confidence
+    means we treat it as a genuine query and keep it. This catches the
+    same-domain noise the absolute-cosine specificity gate cannot (a 0.09-cosine
+    off-topic hit). Disabled when either threshold is <= 0.
+    """
+    if gap_max <= 0 or conf_max <= 0 or not hits:
+        return False
+    if confidence >= conf_max:
+        return False  # confident -> a real query
+    s0 = float(hits[0].get("score") or 0.0)
+    s1 = float(hits[1].get("score") or 0.0) if len(hits) > 1 else 0.0
+    if (s0 - s1) >= gap_max:
+        return False  # a clear winner -> a real query
+    from pmb.core.text_match import distinctive_tokens
+    if distinctive_tokens(message) & distinctive_tokens(hits[0].get("content") or ""):
+        return False  # has a lexical anchor -> a real query
+    return True
+
+
 def run_auto_context(
     engine,
     message: str,
@@ -394,6 +447,10 @@ def run_auto_context(
     recall_top_k: int = 5,
     recall_min_score: float = 0.30,
     recall_evidence_min: float = 0.0,   # R3: absolute raw-cosine gate (0 = off)
+    specificity_strong_cosine: float = 0.0,  # specificity gate (0 = off)
+    conversational_gap_max: float = 0.0,     # cheap conversational gate (0 = off)
+    conversational_conf_max: float = 0.0,    # cheap conversational gate (0 = off)
+    query_worthiness_tau: float = 0.0,       # SAE query-worthiness gate (warm)
     lessons_limit: int = 5,
     decisions_limit: int = 3,
     surface_decisions: bool = True,
@@ -464,10 +521,15 @@ def run_auto_context(
                 _INTENT_TO_CATEGORY,
                 record_shadow_t1,
             )
-            t0 = next((i for i in intents if i in _INTENT_TO_CATEGORY), None)
-            if t0:
+            # NB: do NOT reuse the name `t0` here - it is the perf-counter start
+            # set above and read at the end for latency_ms. Shadowing it with the
+            # intent (which can be None) crashed latency math on the 5% sample.
+            cat_intent = next((i for i in intents if i in _INTENT_TO_CATEGORY), None)
+            if cat_intent:
                 from pmb.hooks.semantic_intent import classify_anchor_intent
-                record_shadow_t1(engine, t0, classify_anchor_intent(engine, msg) == t0)
+                record_shadow_t1(
+                    engine, cat_intent,
+                    classify_anchor_intent(engine, msg) == cat_intent)
     except Exception:
         pass
 
@@ -575,10 +637,28 @@ def run_auto_context(
                         return True
                     sig = h.get("signals") or {}
                     return float(sig.get("raw_cosine") or 0.0) >= recall_evidence_min
+                # SAE query-worthiness (warm only): is this a conversational/meta
+                # turn rather than a knowledge query? Catches what the cheap
+                # gap/conf/lexical gate misses. Only for GENERIC_FACTUAL - an
+                # explicit PAST_QUERY always surfaces.
+                qw_conv = False
+                if Intent.PAST_QUERY not in intents and query_worthiness_tau:
+                    try:
+                        _qw = engine.query_worthiness()
+                        if _qw is not None:
+                            qw_conv = _qw.is_conversational(msg, query_worthiness_tau)
+                    except Exception:
+                        qw_conv = False
                 if hits and (
                     Intent.PAST_QUERY in intents
                     or (hits[0].get("score", 0.0) >= recall_min_score
-                        and _abs_ok(hits[0]))
+                        and _abs_ok(hits[0])
+                        and _specificity_ok(
+                            msg, hits[0], specificity_strong_cosine)
+                        and not _looks_conversational(
+                            msg, hits, conf,
+                            conversational_gap_max, conversational_conf_max)
+                        and not qw_conv)
                 ):
                     res.recall_hits = hits
                     res.recall_query = msg
@@ -716,8 +796,12 @@ def format_context(
                 )
 
     if res.recall_hits:
+        # The "information" channel: background context, NOT rules. Labelled
+        # distinctly from lessons (the "rules" channel) so the agent weights
+        # them differently - rules override behaviour, context just informs.
         buf.append(
-            f"\nRecall hits for {_trim(res.recall_query, 60)!r} "
+            f"\nPossibly relevant context (background, not rules) for "
+            f"{_trim(res.recall_query, 60)!r} "
             f"(confidence={res.recall_confidence:.2f}):"
         )
         for h in res.recall_hits[:5]:
@@ -810,6 +894,14 @@ def compute_prepare_context_text(engine, message: str,
         recall_top_k=int(engine.config.get("auto_recall.recall_top_k") or 5),
         recall_min_score=float(engine.config.get("auto_recall.recall_min_score") or 0.30),
         recall_evidence_min=float(engine.config.get("auto_recall.evidence_min_cosine") or 0.0),
+        specificity_strong_cosine=float(
+            engine.config.get("auto_recall.specificity_strong_cosine") or 0.0),
+        conversational_gap_max=float(
+            engine.config.get("auto_recall.conversational_gap_max") or 0.0),
+        conversational_conf_max=float(
+            engine.config.get("auto_recall.conversational_conf_max") or 0.0),
+        query_worthiness_tau=float(
+            engine.config.get("auto_recall.query_worthiness_tau") or 0.0),
         surface_decisions=bool(engine.config.get("auto_recall.surface_decisions")),
     )
     if res.skipped or res.is_empty():

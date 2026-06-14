@@ -764,6 +764,18 @@ class HybridSearch:
     def size(self) -> int:
         return len(self._bm25_ulids)
 
+    def _bm25_vocab(self) -> set[str]:
+        """Cached set of all BM25 corpus tokens, for cross-lingual / OOV
+        detection. Rebuilt only when the token-list length changes (cheap)."""
+        n = len(self._bm25_tokens)
+        if getattr(self, "_vocab_cache_n", -1) != n:
+            vocab: set[str] = set()
+            for toks in self._bm25_tokens:
+                vocab.update(toks)
+            self._vocab_cache = vocab
+            self._vocab_cache_n = n
+        return self._vocab_cache
+
     def search(
         self,
         query: str,
@@ -771,6 +783,7 @@ class HybridSearch:
         importance_map: dict[str, float] | None = None,
         timestamp_map: dict[str, float] | None = None,
         recency_half_life_days: float = 30.0,
+        crosslingual_damp: float = 1.0,
     ) -> list[SearchHit]:
         """
         Hybrid search.
@@ -846,7 +859,25 @@ class HybridSearch:
 
         norm_bm25 = normalize(bm25_arr)
         norm_vec = normalize(vec_arr)
-        hybrid = self.bm25_weight * norm_bm25 + self.vec_weight * norm_vec
+
+        # Cross-lingual / out-of-vocabulary damping: when the query's CONTENT
+        # tokens are ENTIRELY absent from the BM25 corpus vocabulary (an English
+        # question over a foreign-language fact, or a Russian query over an
+        # English corpus), the lexical channel can only fire on coincidental
+        # function-word overlap with WRONG-language distractors - min-max then
+        # lifts a distractor to 1.0 and it beats the true cross-lingual vector
+        # match. In that case lean on the vector channel. By construction this
+        # NEVER touches in-language queries (their content words are in vocab),
+        # so it cannot regress in-language ranking. Gated: 1.0 (default) = no-op.
+        eff_bm25_w, eff_vec_w = self.bm25_weight, self.vec_weight
+        if crosslingual_damp < 1.0:
+            from pmb.core.text_match import distinctive_tokens
+            q_content = distinctive_tokens(query)
+            if q_content and not (q_content & self._bm25_vocab()):
+                eff_bm25_w = self.bm25_weight * float(crosslingual_damp)
+                eff_vec_w = 1.0 - eff_bm25_w
+
+        hybrid = eff_bm25_w * norm_bm25 + eff_vec_w * norm_vec
 
         # Importance multiplier
         importance_arr = np.array(

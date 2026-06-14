@@ -171,11 +171,12 @@ QUERIES: list[tuple[str, str, int]] = [
 # OVERALL floor and the large buckets (para/de/es/fr/ru) are the real gate.
 TOP1_FLOOR = {"para": 0.80, "en": 0.00, "de": 0.66, "es": 0.66, "fr": 0.75,
               "it": 0.40, "pl": 0.60, "pt": 0.00, "ru": 0.80, "uk": 0.50,
-              "ja": 0.00, "zh": 0.00, "xl": 0.00}
+              "ja": 0.00, "zh": 0.00, "xl": 0.40}  # xl lifted 0.27->0.55 by
+# recall.crosslingual_bm25_damp=0.3 (OOV bm25 damping); floor set a margin below.
 TOP3_FLOOR = {"para": 0.90, "en": 0.50, "de": 0.75, "es": 0.75, "fr": 0.85,
               "it": 0.42, "pl": 0.60, "pt": 0.50, "ru": 0.85, "uk": 0.60,
               "ja": 0.50, "zh": 0.50, "xl": 0.66}
-OVERALL_TOP1_FLOOR = 0.62
+OVERALL_TOP1_FLOOR = 0.72  # 0.62 -> 0.72 after crosslingual_bm25_damp (measured 0.80)
 OVERALL_TOP3_FLOOR = 0.80
 
 

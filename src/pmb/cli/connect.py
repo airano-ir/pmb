@@ -876,6 +876,9 @@ def probe_mcp(timeout_seconds: float = 6.0) -> tuple[bool, str]:
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, encoding="utf-8",
+            # CREATE_NO_WINDOW on Windows so the short-lived probe server does not
+            # flash a console window (0 elsewhere). Attr exists only on Windows.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except FileNotFoundError:
         return False, "pmb-mcp not found in PATH"

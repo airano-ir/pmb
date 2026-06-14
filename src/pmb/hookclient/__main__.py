@@ -187,7 +187,7 @@ def _exec_full_cli(cli_args: list[str], detached: bool = False,
         kwargs: dict = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
                         "stdin": subprocess.DEVNULL}
         if os.name == "nt":
-            kwargs["creationflags"] = 0x00000008 | 0x00000200  # DETACHED|NEW_GROUP
+            kwargs["creationflags"] = 0x08000000 | 0x00000200  # CREATE_NO_WINDOW|NEW_GROUP
         else:
             kwargs["start_new_session"] = True
         try:
