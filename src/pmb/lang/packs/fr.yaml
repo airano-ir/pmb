@@ -1,0 +1,98 @@
+# French language pack (template). Enable with `pmb lang enable fr`, which
+# copies this into $PMB_HOME/lang/fr.yaml. Extend-only: it ADDS French terms to
+# PMB's EN/RU/UK defaults, it never removes them.
+code: fr
+name: French
+
+stopwords:
+  - le
+  - la
+  - les
+  - un
+  - une
+  - des
+  - du
+  - de
+  - et
+  - ou
+  - mais
+  - est
+  - sont
+  - était
+  - étaient
+  - suis
+  - ai
+  - a
+  - avons
+  - je
+  - j
+  - tu
+  - il
+  - elle
+  - nous
+  - vous
+  - mon
+  - ma
+  - mes
+  - en
+  - dans
+  - sur
+  - avec
+  - par
+  - pour
+  - pas
+  - maintenant
+  - aujourd'hui
+  - quoi
+  - qui
+  - où
+  - quand
+  - comment
+  - pourquoi
+
+not_proper:
+  - quoi
+  - qui
+  - où
+  - quand
+  - comment
+  - pourquoi
+  - aujourd'hui
+  - hier
+  - demain
+  - maintenant
+  - je
+  - j
+  - mon
+  - ma
+  - mes
+
+first_person:
+  - je
+  - j
+  - me
+  - moi
+  - mon
+  - ma
+  - mes
+
+verb_synonyms:
+  live: [habite, habites, habitons, vis, vit, vivons, réside, résides]
+  work: [travaille, travailles, travaillons, employé]
+  use: [utilise, utilises, utilisons, utilisez]
+  own: [possède, possèdes, possédons, ai, avons]
+  decide: [décidé, décidée, décidés, décidons, convenu]
+  deploy: [déployé, déployée, déployés, déployons]
+  migrate: [migré, migrée, migrés, migrons]
+  fix: [corrigé, corrigée, corrigés, réparé, résolu]
+  name: [appelle, appelé, appelée, nom]
+
+attribute_aliases:
+  city: [ville, commune, lieu_de_résidence]
+  country: [pays]
+  employer: [employeur, entreprise, société, boite, boîte]
+  job_title: [poste, métier, profession, rôle]
+  email: [email, courriel, adresse_mail]
+  phone: [téléphone, portable, mobile]
+  hometown: [ville_natale, lieu_de_naissance]
+  relationship_status: [situation_familiale]

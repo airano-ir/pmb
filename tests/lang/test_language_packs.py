@@ -3,10 +3,10 @@
 EN lexical data stays in code; the RU/UK floor now lives in the built-in
 ALWAYS-ACTIVE packs ``pmb/lang/packs/{ru,uk}.yaml`` (L1 — keeps the .py modules
 Cyrillic-free while EN+RU+UK matching is byte-identical; the parity is gated by
-tests/test_lang_pack_parity.py). Other built-in templates (de, es) stay OPT-IN:
-active only when copied into ``$PMB_HOME/lang/``. A pack EXTENDS the merged
-sets/groups — never removes — so enabling de adds German on top of the EN+RU+UK
-floor.
+tests/test_lang_pack_parity.py). Other built-in templates (de, es, fr) stay
+OPT-IN: active only when copied into ``$PMB_HOME/lang/``. A pack EXTENDS the
+merged sets/groups — never removes — so enabling de adds German on top of the
+EN+RU+UK floor.
 """
 from __future__ import annotations
 
@@ -103,11 +103,17 @@ def test_c4_user_cue_is_pack_aware(tmp_home):
 
 def test_builtin_templates_present_and_load():
     bt = lang.builtin_templates()
-    assert "de" in bt and "es" in bt
+    assert "de" in bt and "es" in bt and "fr" in bt
     de = lang._load_yaml(bt["de"])
     assert "der" in de["stopwords"]
     assert "wohnt" in de["verb_synonyms"]["live"]
     assert "stadt" in de["attribute_aliases"]["city"]
+    fr = lang._load_yaml(bt["fr"])
+    assert fr["name"] == "French"
+    assert "où" in fr["stopwords"]
+    assert "je" in fr["first_person"]
+    assert "habite" in fr["verb_synonyms"]["live"]
+    assert "ville" in fr["attribute_aliases"]["city"]
 
 
 # ── integration: a real module picks up an enabled pack (subprocess so the
@@ -126,6 +132,22 @@ assert canonicalize_attribute("stadt") == "city"
 print("INTEGRATION_OK")
 """
 
+_PROBE_FR = """
+import pmb.reasoning.pamvr as pamvr
+from pmb.reasoning.attributes import canonicalize_attribute, has_user_subject_cue
+assert "the" in pamvr._STOP and "où" in pamvr._STOP, "stopword floor+fr"
+assert "live" in pamvr.VERB_SYNS["live"] and "habite" in pamvr.VERB_SYNS["live"]
+assert "pourquoi" in pamvr._NOT_PROPER
+assert pamvr._FIRST_PERSON_RE.search("je travaille à Paris")
+assert has_user_subject_cue("Je travaille chez Datadog")
+assert has_user_subject_cue("J'ai une maison")
+assert has_user_subject_cue("J’ai une maison")
+assert not has_user_subject_cue("Alice travaille chez Datadog")
+assert canonicalize_attribute("ville") == "city"
+assert canonicalize_attribute("société") == "employer"
+print("FR_INTEGRATION_OK")
+"""
+
 
 def test_enabled_pack_reaches_modules(tmp_home):
     src = lang.builtin_templates()["de"]
@@ -139,6 +161,20 @@ def test_enabled_pack_reaches_modules(tmp_home):
     r = subprocess.run([sys.executable, "-c", _PROBE], capture_output=True,
                        text=True, env=env, timeout=120)
     assert "INTEGRATION_OK" in r.stdout, (r.stdout, r.stderr)
+
+
+def test_enabled_french_template_reaches_modules(tmp_home):
+    src = lang.builtin_templates()["fr"]
+    (tmp_home / "lang").mkdir(parents=True, exist_ok=True)
+    (tmp_home / "lang" / "fr.yaml").write_text(
+        src.read_text(encoding="utf-8"), encoding="utf-8")
+    env = dict(os.environ)
+    env["PMB_HOME"] = str(tmp_home)
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONPATH"] = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()) / "src")
+    r = subprocess.run([sys.executable, "-c", _PROBE_FR], capture_output=True,
+                       text=True, env=env, timeout=120)
+    assert "FR_INTEGRATION_OK" in r.stdout, (r.stdout, r.stderr)
 
 
 def test_no_pack_floor_only_in_module(tmp_home):

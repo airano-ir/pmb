@@ -78,10 +78,10 @@ domain vocabulary. It is opt-in and additive - with no pack files PMB behaves
 exactly as shipped.
 
 ```bash
-pmb lang list              # shipped templates (de, es) + what's enabled
+pmb lang list              # shipped templates (de, es, fr) + what's enabled
 pmb lang detect            # sample your workspace, suggest a template (never auto-enables)
 pmb lang enable de         # copy the German template to $PMB_HOME/lang/de.yaml
-pmb lang enable fr         # no template for fr → scaffolds an empty file to edit
+pmb lang enable fr         # copy the French template to $PMB_HOME/lang/fr.yaml
 pmb daemon restart         # warm daemon picks it up
 pmb reindex                # align the BM25 index with the extended tokenizer
 ```
@@ -126,8 +126,8 @@ the BM25 index is rebuilt with the extended tokenizer.
 
 ## Contributing a template upstream
 
-Built-in templates live in `src/pmb/lang/packs/` (`de.yaml`, `es.yaml` are the
-reference examples). To contribute a new template, add a file there and open a
-PR. Note that templates are a convenience for the cold-start escape hatch above -
-the core no longer depends on them, and the project does **not** ship
-default-active packs.
+Built-in templates live in `src/pmb/lang/packs/` (`de.yaml`, `es.yaml`, and
+`fr.yaml` are the reference examples). To contribute a new template, add a file
+there and open a PR. Note that templates are a convenience for the cold-start
+escape hatch above - the core no longer depends on them, and the project does
+**not** ship default-active packs.
