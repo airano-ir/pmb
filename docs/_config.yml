@@ -1,0 +1,18 @@
+# GitHub Pages config for the PMB docs.
+#
+# Enable it once in the repo: Settings -> Pages -> Source "Deploy from a branch"
+# -> branch main -> folder /docs -> Save. After that, every push rebuilds the
+# site at https://oleksiijko.github.io/pmb/ . You do not push to Pages directly;
+# you push the repo as usual and GitHub rebuilds.
+#
+# This uses a natively supported theme, so no extra workflow or plugin file is
+# needed. GitHub Pages also enables, by default: jekyll-optional-front-matter
+# (renders these plain .md files), jekyll-readme-index (uses README.md as the
+# folder home), and jekyll-relative-links (rewrites the relative .md links to
+# the built pages). That is why the docs work as a site with no per-page edits.
+#
+# Want a different look? Change `theme` to any supported theme: minima,
+# jekyll-theme-cayman, jekyll-theme-slate, jekyll-theme-architect, and so on.
+title: PMB
+description: Local-first persistent memory for AI coding agents. No cloud, no keys.
+theme: jekyll-theme-cayman

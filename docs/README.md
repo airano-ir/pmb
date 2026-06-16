@@ -74,4 +74,5 @@ Look things up.
 ## Project
 
 - [Roadmap](ROADMAP.md): what is planned next.
-- [Changelog](../CHANGELOG.md): what changed in each release.
+- [Changelog](https://github.com/oleksiijko/pmb/blob/main/CHANGELOG.md): what
+  changed in each release.

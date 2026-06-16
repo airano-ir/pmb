@@ -58,7 +58,7 @@ That's it - your agent now remembers. No account, no keys, nothing leaves your m
 
 > **Docs:** [Getting started](docs/guide/getting-started.md) ·
 > [Deleting memories](docs/guide/deleting-memories.md) ·
-> [all documentation](docs/index.md).
+> [all documentation](docs/README.md).
 
 ---
 
