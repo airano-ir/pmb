@@ -4,7 +4,9 @@ over streamable-HTTP (type: http) instead of a stdio Engine+model per client.
 Two safety-critical properties:
   * The daemon token is PERSISTENT, so the baked `Authorization` header stays
     valid across daemon restarts (idle-exit + hook autostart).
-  * Hosts that can't take an HTTP entry (codex / extensions) fall back to stdio
+  * codex can't take an HTTP entry, so under daemon mode it wires the lightweight
+    `pmb mcp proxy` stdio<->daemon bridge (still ONE shared warm process); hosts
+    that can't share the daemon at all (extensions / remote) fall back to stdio
     and SAY SO, instead of silently writing a broken entry.
 
 HOME + PMB_HOME are redirected to tmp so nothing touches the real config /
@@ -66,13 +68,28 @@ def test_connect_claude_stdio_default_unchanged(isolated):
     assert "command" in r["entry"]
 
 
-def test_connect_codex_daemon_falls_back_to_stdio(isolated):
+def test_connect_codex_daemon_uses_stdio_proxy(isolated):
+    # codex can't take an HTTP entry, but under daemon mode it now wires the
+    # lightweight `pmb mcp proxy` stdio<->daemon bridge (shares the ONE warm
+    # process) instead of falling back to its own heavy Engine+model.
     from pmb.cli.connect import connect as do_connect
     r = do_connect("codex", cwd=isolated, scope="project",
                    install_hooks=False, use_daemon=True)
     assert r["daemon_http"] is False
-    assert r["daemon_http_unavailable"] is True
-    assert "command" in r["entry"]   # stdio kept, not a broken http entry
+    assert r["daemon_proxy"] is True
+    assert r["daemon_http_unavailable"] is False     # it IS sharing the daemon
+    e = r["entry"]
+    assert "command" in e                             # stdio-shaped, not http
+    assert e.get("args", [])[-2:] == ["mcp", "proxy"]  # the bridge, not pmb-mcp
+
+
+def test_connect_codex_stdio_keeps_heavy_server(isolated):
+    # --stdio (use_daemon=False) keeps the old per-session in-process server.
+    from pmb.cli.connect import connect as do_connect
+    r = do_connect("codex", cwd=isolated, scope="project",
+                   install_hooks=False, use_daemon=False)
+    assert r["daemon_proxy"] is False
+    assert r["entry"].get("args", [])[-2:] != ["mcp", "proxy"]
 
 
 # ── S6-default: the flip + its safety pins ──────────────────────────────────

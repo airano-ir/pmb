@@ -13,7 +13,8 @@ Endpoints:
   POST /api/recall           → run recall (body: {"query": "...", "top_k": 10})
   POST /api/pin/<ulid>       → pin event
   POST /api/unpin/<ulid>     → unpin
-  POST /api/archive/<ulid>   → archive
+  POST /api/archive/<ulid>   → archive (soft, reversible)
+  POST /api/delete/<ulid>    → delete (body {"hard": false} archives; true purges)
   POST /api/feedback         → log feedback (body: {ulid, verdict})
 
 Binds to 127.0.0.1 only (no remote access by default).
@@ -161,6 +162,10 @@ def make_handler(engine):
                     return
                 if route.startswith("/api/archive/"):
                     self._send_json(self._handle_archive(route[len("/api/archive/"):]))
+                    return
+                if route.startswith("/api/delete/"):
+                    ulid = route[len("/api/delete/"):]
+                    self._send_json(self._handle_delete(ulid, bool(payload.get("hard"))))
                     return
                 if route == "/api/feedback":
                     self._send_json(self._handle_feedback(payload))
@@ -559,6 +564,15 @@ def make_handler(engine):
                 engine.events.archive(ulid)
                 engine.recall_cache.bump_generation()
                 return {"ok": True, "ulid": ulid}
+            except Exception as e:
+                return {"error": str(e)}
+
+        def _handle_delete(self, ulid: str, hard: bool) -> dict:
+            """Delete a memory. hard=False archives (reversible); hard=True
+            purges permanently (vector + row + graph links). delete_event bumps
+            the recall cache itself."""
+            try:
+                return engine.delete_event(ulid, hard=hard)
             except Exception as e:
                 return {"error": str(e)}
 

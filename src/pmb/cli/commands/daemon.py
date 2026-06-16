@@ -201,3 +201,47 @@ def restart(
     stop()
     time.sleep(0.5)
     start(port=port, host=host)
+
+
+@daemon_app.command(name="kill-all")
+def kill_all():
+    """Kill the daemon AND every registered PMB process, then clear the registry.
+
+    Use when stray / duplicate pmb processes pile up - each warm one holds the
+    embedding model in RAM, which on a small box starves the daemon. On Windows
+    this is a tree-kill (/T), so child prewarm threads go too.
+    """
+    import signal
+
+    from pmb.mcp.registry import list_servers, unregister_server
+    try:
+        entries = list_servers(prune=False, with_rss=False)
+    except Exception as e:
+        console.print(f"[red]Could not read the registry:[/] {e}")
+        entries = []
+    pids = sorted({int(e["pid"]) for e in entries if e.get("pid")})
+    if not pids:
+        console.print("[yellow]No registered PMB processes to kill.[/]")
+        return
+    killed, gone = [], []
+    for pid in pids:
+        try:
+            if os.name == "nt":
+                r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                                   capture_output=True)
+                ok = r.returncode == 0
+            else:
+                os.kill(pid, signal.SIGTERM)
+                ok = True
+        except Exception:
+            ok = False
+        (killed if ok else gone).append(pid)
+        try:
+            unregister_server(pid)
+        except Exception:
+            pass
+    console.print(f"[green]✓ Killed[/] {len(killed)} PMB process(es): {killed}")
+    if gone:
+        console.print(f"[dim]Already gone / not killable: {gone}[/]")
+    console.print("[dim]Registry cleared. Start fresh with "
+                  "[cyan]pmb daemon start[/].[/]")

@@ -214,6 +214,65 @@ def _read_key() -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
+def live_select(console, *, title, subtitle, headers, rows, default=0):
+    """Arrow-key menu that redraws IN PLACE (Rich Live + single-key read).
+
+    `rows` is a list of cell-tuples (markup ok); the FIRST cell is the row label
+    and gets bold-highlighted on the active row. ↑/↓ move, Enter confirms, a
+    digit 1-9 quick-picks, esc / ctrl-c cancels. Returns the chosen index, or
+    None on cancel. Requires an interactive TTY (the caller guards with
+    `console.is_terminal` and keeps a static-prompt fallback for non-TTY / CI)."""
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+
+    from pmb.cli._common import wordmark
+
+    n = len(rows)
+    if n == 0:
+        return None
+    selected = max(0, min(int(default), n - 1))
+
+    def _frame(sel: int):
+        t = Table(box=None, padding=(0, 1), show_header=bool(headers))
+        t.add_column(" ", width=1)
+        t.add_column("#", justify="right", width=2)
+        for h in headers:
+            t.add_column(h)
+        for i, row in enumerate(rows):
+            on = i == sel
+            marker = "[magenta]◆[/]" if on else " "
+            num = f"[bold magenta]{i + 1}[/]" if on else f"[dim]{i + 1}[/]"
+            label = f"[bold bright_white]{row[0]}[/]" if on else row[0]
+            t.add_row(marker, num, label, *row[1:])
+        return Panel(t, title=Text.from_markup(wordmark(title)),
+                     subtitle=Text(subtitle, style="dim"),
+                     border_style="magenta", padding=(1, 2))
+
+    with Live(_frame(selected), console=console, auto_refresh=False,
+              screen=False, transient=False) as live:
+        live.refresh()  # paint the first frame before we block on a keypress
+        while True:
+            try:
+                key = _read_key()
+            except Exception:
+                return selected  # can't read keys → take the highlighted default
+            if key in ("esc", "ctrl-c"):
+                return None
+            if key == "enter":
+                return selected
+            if key == "up":
+                selected = max(0, selected - 1)
+            elif key == "down":
+                selected = min(n - 1, selected + 1)
+            elif key and key.isdigit() and 1 <= int(key) <= n:
+                return int(key) - 1   # number = pick + confirm
+            else:
+                continue
+            live.update(_frame(selected), refresh=True)
+
+
 def run_palette(console, catalog: list[dict]) -> str | None:
     """Interactive command palette: type to filter, up/down to pick, Enter to
     choose. Returns the chosen command name, or None on Esc / Ctrl-C. Inline

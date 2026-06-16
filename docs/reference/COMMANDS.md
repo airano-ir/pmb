@@ -18,19 +18,27 @@ Nothing leaves your machine except the workspace-sync commands you run on purpos
 
 | Command | What it does |
 |---|---|
-| `pmb connect <agent>` 🟢 | Wire PMB into an agent's MCP config + install its rules. Agents: `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `vscode`, `zed`, `opencode`, `continue`. |
+| `pmb setup [agent]` 🟢 | **Recommended one-command setup.** Detect your agent, pick the memory model, wire MCP + rules + hooks, warm the engine, and start the shared daemon - in one guided flow. Omit `agent` to auto-detect. |
+| `pmb setup --all` 🟢 | Wire **every detected agent** at once (Claude Code + Codex + Cursor + …), all sharing the one warm daemon. |
+| `pmb connect <agent>` 🟢 | Wire PMB into an agent's MCP config + install its rules. Agents: `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `vscode`, `zed`, `opencode`, `continue`. Points at the shared daemon by default (codex via the `pmb mcp proxy` bridge); `--stdio` keeps a per-client server. |
 | `pmb connect <agent> --active` 🟢 | Same, but installs **proactive-logging** rules: the agent records its own decisions / lessons / what it did during coding, without waiting for "remember". Recall stays lazy. |
 | `pmb connect --list` 🟢 | Show every supported agent and where its config lives. |
 | `pmb connect <agent> --workspace NAME` 🟢 | Point several agents at **one shared** workspace. |
 | `pmb connect <agent> --probe` 🟢 | After wiring, spawn `pmb-mcp` briefly to confirm it starts. |
+| `pmb model [light\|balanced\|best]` 🟢 | Switch the embedding model later: download + re-embed memory + restart the daemon in one step. Omit the arg for the interactive menu. |
+| `pmb daemon start\|stop\|status\|restart` 🟢 | Manage the ONE warm daemon (Engine + model + LanceDB) that N clients share for instant recall. |
+| `pmb daemon kill-all` 🟢 | Stop the daemon AND kill every registered PMB process, then clear the registry - the reset when stray/duplicate warm processes pile up. |
+| `pmb mcp serve` / `pmb mcp status` 🟢 | Run a shared HTTP MCP server (team mode) / list running PMB servers + their RAM. |
+| `pmb mcp proxy` 🟢 | (Advanced; auto-wired for codex.) Lightweight stdio↔daemon bridge so a stdio-only host shares the warm daemon instead of loading its own model. |
 | `pmb doctor` 🟢 | Diagnose the install + runtime state. `--remote user@host:/path` prints an SSH-tunneled MCP snippet. |
 | `pmb warmup` 🟢 | Pre-load the model + BM25 + LanceDB so the next recall is fast (avoids the ~1-2 s cold start). |
 | `pmb init [--name NAME]` 🟢 | Initialize a workspace in the current directory (optional - a workspace auto-detects from cwd). |
 
 ```bash
-pip install pmb-ai
-pmb connect claude-code            # wire Claude Code (conservative rules)
-pmb connect codex --active         # wire Codex, agent logs its own work
+pip install pmb-ai      # or: npx pmb-ai  (then the command is `pmb-ai`)
+pmb setup               # guided: detect agent, pick model, wire + warm + daemon
+# or wire everything you have at once (one shared warm daemon):
+pmb setup --all
 # restart the agent
 ```
 

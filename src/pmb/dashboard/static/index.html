@@ -540,6 +540,10 @@
   button.btn.primary{background:var(--accent-soft);
     color:var(--accent);border-color:rgba(126,168,255,.4);font-weight:600}
   button.btn.primary:hover{background:rgba(126,168,255,.28);color:var(--ink)}
+  button.btn.danger{background:rgba(239,68,68,.14);
+    color:#fca5a5;border-color:rgba(239,68,68,.4)}
+  button.btn.danger:hover{background:rgba(239,68,68,.26);color:#fff;
+    border-color:rgba(239,68,68,.6)}
   .row-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
   .row-bar .meta{margin-left:auto;color:var(--faint);font-size:11px}
 
@@ -2713,6 +2717,10 @@ async function showEvent(ulid){
       <button class="btn ${isPinned?'primary':''}" onclick="togglePin('${esc(e.ulid)}', ${!isPinned})" type="button">
         ${isPinned ? '★ Pinned' : 'Pin'}
       </button>
+      <button class="btn" onclick="deleteEvent('${esc(e.ulid)}', false)" type="button"
+        title="Archive - reversible, restore later with pmb restore">Archive</button>
+      <button class="btn danger" onclick="deleteEvent('${esc(e.ulid)}', true)" type="button"
+        title="Delete permanently - cannot be undone">🗑 Delete</button>
       <button class="btn" style="margin-left:auto" onclick="closeModal()" type="button">Close</button>
     </div>`;
 }
@@ -2734,6 +2742,24 @@ function closeModal(){$('#event-modal').classList.remove('show');}
 async function togglePin(ulid, pin){
   await api('/api/'+(pin?'pin':'unpin')+'/'+ulid, {method:'POST'});
   showEvent(ulid);
+}
+// Re-run the active tab's loader (clearing its one-shot cache) so a deleted
+// memory disappears from the view immediately.
+function refreshActive(){
+  loaded[activeTab] = false;
+  (TAB_LOAD[activeTab]||(()=>{}))();
+}
+async function deleteEvent(ulid, hard){
+  if(hard && !confirm('Delete this memory permanently?\n\nThis cannot be undone. '
+      + 'Use Archive instead if you might want it back.')) return;
+  const r = await api('/api/delete/'+ulid, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({hard: !!hard}),
+  }).catch(_=>({error:'request failed'}));
+  if(r && r.error){ alert('Delete failed: '+r.error); return; }
+  closeModal();
+  refreshActive();
 }
 document.addEventListener('keydown', e=>{if(e.key==='Escape') closeModal();});
 </script>

@@ -25,10 +25,6 @@ in one SQLite file on your disk and feeds them back through MCP.
 
 ⭐ **Star the repo if PMB saves you a re-explanation.**
 
-<!-- Demo GIF: record a short clip, drop it at docs/assets/demo.gif, and uncomment:
-<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/demo.gif" width="760" alt="PMB demo">
--->
-
 </div>
 
 ---
@@ -54,6 +50,15 @@ pmb doctor                         # 7. confirm everything is wired
 ```
 
 That's it - your agent now remembers. No account, no keys, nothing leaves your machine.
+
+> **Command name:** the CLI is **`pmb`**. Installed via `pip` you also get the
+> alias **`pmb-ai`**; installed via `npm` (`npx pmb-ai`) the command is `pmb-ai`.
+> Same tool - use whichever your install gave you. From npm, `npx pmb-ai setup`
+> runs the full cycle: it installs the Python package, then runs setup.
+
+> **Docs:** [Getting started](docs/guide/getting-started.md) ·
+> [Deleting memories](docs/guide/deleting-memories.md) ·
+> [all documentation](docs/index.md).
 
 ---
 
@@ -131,7 +136,7 @@ the right level of detail, in 4-16 ms:
 | `active_arcs` | Narrative arcs the project is currently living in |
 
 For everything else there's `recall(query)` (hybrid search, 35 ms warm)
-and 27 other tools listed in [docs/COMMANDS.md](docs/COMMANDS.md).
+and 27 other tools listed in [docs/reference/COMMANDS.md](docs/reference/COMMANDS.md).
 
 ---
 
@@ -177,7 +182,7 @@ instead of a hand-written pack per language. The cold lexical path then
 language you actually use gets faster over time with zero configuration.
 Recall stays strong across ~11 languages (overall top-3 ≈ 0.9 on a
 101-query eval; top-1 = 1.00 for en/fr/pt/ru, CJK weaker on exact top-1).
-See [docs/adding-a-language.md](docs/adding-a-language.md).
+See [docs/contributing/adding-a-language.md](docs/contributing/adding-a-language.md).
 
 ---
 
@@ -230,7 +235,7 @@ agent. No network, no port, no token. That's the whole story for one person
 on one machine.
 
 > Sharing one memory across machines or a team? That's an optional HTTP
-> mode with bearer-token auth - see [docs/TEAM.md](docs/TEAM.md). You don't
+> mode with bearer-token auth - see [docs/guide/TEAM.md](docs/guide/TEAM.md). You don't
 > need it for local use.
 
 Inspect:
@@ -286,8 +291,8 @@ pmb config set recall.ppr_enabled true      toggle a feature
 pmb connect --rules-only                    refresh CLAUDE.md only
 ```
 
-Step-by-step per agent: [docs/usage.md](docs/usage.md). Full command
-reference: [docs/COMMANDS.md](docs/COMMANDS.md).
+Step-by-step per agent: [docs/guide/usage.md](docs/guide/usage.md). Full command
+reference: [docs/reference/COMMANDS.md](docs/reference/COMMANDS.md).
 
 ## Settings - 25 you care about, 80 you don't
 
@@ -337,7 +342,7 @@ with `pmb config set <key>` - they're hidden from `list`, not gated.
 your machine.
 
 <div align="center">
-<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/02_dashboard.png" width="780" alt="PMB dashboard - Map view">
+<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/08_dashboard.png" width="780" alt="PMB dashboard">
 </div>
 
 Nine tabs: **Map** (entity graph, live), **Timeline** (git-graph by

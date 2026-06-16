@@ -266,12 +266,26 @@ def connect(
         )
         # S6 (Caveat-S6b): start it now so the entry is reachable immediately.
         _ensure_daemon_started(pmb_home, result.get("tool_profile"))
+    elif result.get("daemon_proxy"):
+        console.print(
+            "[green]Shared warm daemon via stdio proxy - the default for codex "
+            "now.[/] codex can't take an HTTP entry, so it launches the "
+            "lightweight [cyan]pmb mcp proxy[/] bridge: stdio in, forwarded to the "
+            "ONE warm daemon over HTTP. No per-session model load - that's the "
+            "codex cold-start lag gone; the proxy autostarts the daemon if it's "
+            "not already up.\n"
+            "  Start it now so the first codex session is instant:\n"
+            "    [cyan]pmb daemon start[/]\n"
+            "  Prefer the old heavy per-session server? [cyan]pmb connect codex "
+            "--stdio[/]."
+        )
+        _ensure_daemon_started(pmb_home, None)
     elif result.get("daemon_http_unavailable"):
         console.print(
-            "[yellow]Stdio entry (HTTP daemon not applicable here):[/] this host "
-            "takes a command-shaped stdio entry (codex / editor extensions / "
-            "--remote), not an HTTP one - wrote stdio. The shared HTTP daemon is "
-            "available for claude-code / cursor."
+            "[yellow]Stdio entry (shared daemon not applicable here):[/] this host "
+            "takes a command-shaped stdio entry (editor extensions / --remote), "
+            "not one we can point at the shared daemon - wrote a per-client stdio "
+            "server. The shared daemon is used for claude-code / cursor / codex."
         )
 
     # Show instruction-rules result so user knows the AI will follow PMB rules
@@ -293,14 +307,24 @@ def connect(
     if hk is not None:
         if isinstance(hk, dict) and hk.get("error"):
             console.print(f"[yellow]Hooks: not installed[/] - {hk['error']}")
-        else:
-            events = (hk or {}).get("events") or []
-            ev = (", ".join(events)) if events else (hk or {}).get("action", "installed")
-            console.print(f"[green]Hooks installed:[/] {ev}")
+        elif (hk or {}).get("events"):
+            # claude-code: the full hook set (per-turn inject + ambient + more).
+            console.print(f"[green]Hooks installed:[/] {', '.join(hk['events'])}")
             console.print(
                 "  → auto-recall, ambient auto-write, session-restore & "
                 "follow-through now run automatically (zero agent cost)."
             )
+        elif agent == "codex":
+            # codex: notify (post-turn) only - NO per-turn / session-start hook.
+            console.print("[green]Codex ambient wired:[/] notify → pmb codex-notify")
+            console.print(
+                "  → ambient auto-write runs after each turn. Codex has no "
+                "per-turn hook, so read-first/auto-recall is driven by the "
+                "AGENTS.md rules (the agent calls prepare()/recall() itself)."
+            )
+        else:
+            console.print("[green]Hooks installed:[/] "
+                          f"{(hk or {}).get('action', 'installed')}")
         if prof:
             console.print(
                 f"[green]MCP profile:[/] {prof} - trimmed to deliberate-only "
@@ -364,9 +388,36 @@ _EMBEDDER_PROFILES = [
 def _choose_embedder(console, current_model: str, yes: bool) -> str:
     """Interactive 'which memory model?' pick during setup. Returns a model id.
     Non-interactive (`--yes`) or any error keeps `current_model` - NEVER blocks
-    setup. Pure-ish: only reads a prompt + prints a table."""
+    setup. On a real terminal it's an in-place arrow menu (Rich Live); off a TTY
+    (CI / piped) it degrades to a static table + numeric prompt."""
     if yes:
         return current_model
+    # 0-based index of the current model -> the menu's default selection.
+    default_idx = next((i for i, p in enumerate(_EMBEDDER_PROFILES)
+                        if p["model"] == current_model), 0)
+
+    # Live, in-place arrow menu when we have a real terminal.
+    if console.is_terminal:
+        try:
+            from pmb.cli.palette import live_select
+            rows = [
+                (p["label"]
+                 + ("  [green](current)[/]" if p["model"] == current_model else ""),
+                 p["ram"], p["rec"],
+                 f"[green]+[/] {p['pros']}\n[red]-[/] {p['cons']}")
+                for p in _EMBEDDER_PROFILES
+            ]
+            idx = live_select(
+                console, title="memory model",
+                subtitle="↑↓ pick · ⏎ choose · esc keep current · "
+                         "changing re-embeds memory",
+                headers=["Option", "RAM", "Good for", "Plus / minus"],
+                rows=rows, default=default_idx)
+            return current_model if idx is None else _EMBEDDER_PROFILES[idx]["model"]
+        except Exception:
+            pass  # fall through to the static prompt
+
+    # Fallback: static table + numeric prompt (non-TTY / CI / any error).
     try:
         from rich.table import Table
         t = Table(
@@ -378,11 +429,8 @@ def _choose_embedder(console, current_model: str, yes: bool) -> str:
         t.add_column("RAM", style="dim")
         t.add_column("Good for", style="dim")
         t.add_column("Plus / minus")
-        default_idx = 1
         for i, p in enumerate(_EMBEDDER_PROFILES, 1):
             is_cur = p["model"] == current_model
-            if is_cur:
-                default_idx = i
             t.add_row(
                 str(i),
                 p["label"] + ("  [green](current)[/]" if is_cur else ""),
@@ -394,7 +442,8 @@ def _choose_embedder(console, current_model: str, yes: bool) -> str:
             "[dim]Tip: changing this re-embeds existing memory "
             "([cyan]pmb reindex[/]). Press Enter to keep the current one.[/]"
         )
-        choice = typer.prompt("Pick a memory model (number)", default=str(default_idx))
+        choice = typer.prompt("Pick a memory model (number)",
+                              default=str(default_idx + 1))
         idx = int(str(choice).strip())
         if 1 <= idx <= len(_EMBEDDER_PROFILES):
             return _EMBEDDER_PROFILES[idx - 1]["model"]
@@ -439,9 +488,34 @@ _LLM_TIER_PROFILES = [
 def _choose_llm_tier(console, current_backend: str, yes: bool) -> str:
     """Interactive 'offline brain' pick during setup. Returns a backend id.
     Non-interactive (`--yes`) or any error keeps `current_backend` - NEVER
-    blocks. This tier is BACKGROUND only (no effect on injection speed)."""
+    blocks. This tier is BACKGROUND only (no effect on injection speed). On a
+    real terminal it's an in-place arrow menu; off a TTY it degrades to a
+    static table + numeric prompt."""
     if yes:
         return current_backend
+    default_idx = next((i for i, p in enumerate(_LLM_TIER_PROFILES)
+                        if p["backend"] == current_backend), 0)
+
+    if console.is_terminal:
+        try:
+            from pmb.cli.palette import live_select
+            rows = [
+                (p["label"]
+                 + ("  [green](current)[/]" if p["backend"] == current_backend else ""),
+                 p["needs"], f"[green]+[/] {p['pros']}\n[red]-[/] {p['cons']}")
+                for p in _LLM_TIER_PROFILES
+            ]
+            idx = live_select(
+                console, title="offline brain",
+                subtitle="↑↓ pick · ⏎ choose · esc keep current · "
+                         "background only, never slows injection",
+                headers=["Option", "Needs", "Plus / minus"],
+                rows=rows, default=default_idx)
+            return current_backend if idx is None else _LLM_TIER_PROFILES[idx]["backend"]
+        except Exception:
+            pass
+
+    # Fallback: static table + numeric prompt (non-TTY / CI / any error).
     try:
         from rich.table import Table
         t = Table(
@@ -452,11 +526,8 @@ def _choose_llm_tier(console, current_backend: str, yes: bool) -> str:
         t.add_column("Option")
         t.add_column("Needs", style="dim")
         t.add_column("Plus / minus")
-        default_idx = 1
         for i, p in enumerate(_LLM_TIER_PROFILES, 1):
             is_cur = p["backend"] == current_backend
-            if is_cur:
-                default_idx = i
             t.add_row(
                 str(i),
                 p["label"] + ("  [green](current)[/]" if is_cur else ""),
@@ -469,7 +540,8 @@ def _choose_llm_tier(console, current_backend: str, yes: bool) -> str:
             "NEVER on the per-message hook - it does NOT slow injection. "
             "Press Enter to keep the current one.[/]"
         )
-        choice = typer.prompt("Pick an offline brain (number)", default=str(default_idx))
+        choice = typer.prompt("Pick an offline brain (number)",
+                              default=str(default_idx + 1))
         idx = int(str(choice).strip())
         if 1 <= idx <= len(_LLM_TIER_PROFILES):
             return _LLM_TIER_PROFILES[idx - 1]["backend"]
@@ -571,6 +643,58 @@ def model(
                       f"({e}): pmb daemon restart[/]")
 
 
+def _setup_done_card(console, wired: list, daemon_live: bool, eff_active: bool) -> None:
+    """The persistent 'you're all set' card. `wired` is a list of
+    (agent, hooks_ok, shared_daemon) tuples - one entry for `pmb setup`, several
+    for `pmb setup --all`. Pure display: builds + prints the panel, nothing else."""
+    from rich.console import Group as _Group
+    from rich.text import Text
+
+    from pmb.cli._common import wordmark
+
+    names = ", ".join(a for a, _, _ in wired) or "no agent"
+    any_hooks = any(h for _, h, _ in wired)
+
+    # One-line "did it actually work?" confirmation - the persistent TL;DR even
+    # after the live panel scrolls away.
+    status = Text.from_markup(
+        f"[green]✓[/] wired into [bold]{names}[/]"
+        + ("  ·  hooks on" if any_hooks else "")
+        + ("  ·  daemon live" if daemon_live else ""))
+
+    do = Table.grid(padding=(0, 2))
+    do.add_column(justify="center", width=3)
+    do.add_column()
+    do.add_row("[magenta]1[/]", "[bold]restart your agent[/]  "
+               "[dim]- so it picks up pmb[/]")
+    do.add_row("[magenta]2[/]", "[bold]just talk to it[/]  "
+               "[dim]- pmb remembers & recalls automatically, no commands[/]")
+
+    opt = Table.grid(padding=(0, 2))
+    opt.add_column(justify="right", style="dim")
+    opt.add_column()
+    opt.add_row("seed memory", "[cyan]pmb import chatgpt <export.json>[/]")
+    opt.add_row("change model", "[cyan]pmb model[/]  [dim](light / balanced / best)[/]")
+    if not daemon_live:
+        opt.add_row("instant recall", "[cyan]pmb daemon start[/]")
+    if not eff_active:
+        opt.add_row("self-logging", "[cyan]pmb setup --active[/]")
+
+    # Management + the escape hatch: kill-all clears stray/duplicate processes
+    # that pile up on a small box (each warm one holds the model in RAM).
+    manage = Text.from_markup(
+        "[dim]check[/] [cyan]pmb doctor[/]   [dim]·[/]   "
+        "[dim]daemon[/] [cyan]pmb daemon status[/]   [dim]·[/]   "
+        "[dim]reset stray procs[/] [cyan]pmb daemon kill-all[/]")
+
+    body = _Group(status, "", do, "",
+                  Text.from_markup("[dim]optional power-ups[/]"), opt,
+                  "", manage)
+    console.print()
+    console.print(Panel(body, title=wordmark("you're all set"),
+                        border_style="#a78bfa", padding=(1, 2)))
+
+
 @app.command()
 def setup(
     agent: str | None = typer.Argument(
@@ -578,6 +702,10 @@ def setup(
     active: bool = typer.Option(
         False, "--active",
         help="Install proactive-logging rules (agent records its own decisions/lessons)."),
+    all_agents: bool = typer.Option(
+        False, "--all",
+        help="Wire EVERY detected agent at once (they all share the one warm "
+             "daemon). Great when you use Claude Code + Codex + Cursor together."),
     yes: bool = typer.Option(
         False, "--yes", "-y",
         help="Non-interactive: take the recommended defaults, no prompts."),
@@ -585,6 +713,7 @@ def setup(
     """Guided first-time setup - detect your agent and wire PMB in one go.
 
       pmb setup                       # detect your agent, ask a couple questions
+      pmb setup --all                 # wire every detected agent (shared daemon)
       pmb setup codex --active --yes  # non-interactive
 
     Defaults are already the effective ones (ablation-tuned) - you only need
@@ -605,19 +734,31 @@ def setup(
 
     # ── interactive choices happen BEFORE the live panel (you can't prompt
     #    inside a Rich Live region) ──────────────────────────────────────────
-    chosen = agent or (detected[0] if detected else None)
-    if not chosen:
-        console.print(wordmark("setup"))
-        if yes:
-            console.print("[yellow]No agent config found yet.[/] Run your agent once, "
-                          "then [cyan]pmb connect <agent>[/].")
+    chosen = None
+    targets: list[str] = []
+    if all_agents:
+        targets = [a for a in detected if a in supported_agents()]
+        if not targets:
+            console.print(wordmark("setup"))
+            console.print("[yellow]No agent configs detected yet.[/] Run an agent "
+                          "once (Claude Code / Codex / Cursor / …), then "
+                          "[cyan]pmb setup --all[/].")
             return
-        console.print(f"[dim]detected:[/] {', '.join(detected) or 'none yet'}")
-        chosen = typer.prompt("Which agent to connect?", default="claude-code")
-    if chosen not in supported_agents():
-        console.print(f"[red]Unknown agent:[/] {chosen}. "
-                      f"Options: {', '.join(supported_agents())}")
-        raise typer.Exit(2)
+        console.print(f"[dim]wiring all detected:[/] {', '.join(targets)}")
+    else:
+        chosen = agent or (detected[0] if detected else None)
+        if not chosen:
+            console.print(wordmark("setup"))
+            if yes:
+                console.print("[yellow]No agent config found yet.[/] Run your agent once, "
+                              "then [cyan]pmb connect <agent>[/].")
+                return
+            console.print(f"[dim]detected:[/] {', '.join(detected) or 'none yet'}")
+            chosen = typer.prompt("Which agent to connect?", default="claude-code")
+        if chosen not in supported_agents():
+            console.print(f"[red]Unknown agent:[/] {chosen}. "
+                          f"Options: {', '.join(supported_agents())}")
+            raise typer.Exit(2)
     # Proactive logging stays opt-in (--active) - one fewer question, simpler
     # setup. The next-step card points to it for anyone who wants it.
     _toggles = _agent_toggles_from_config()
@@ -663,6 +804,77 @@ def setup(
     except Exception as e:
         console.print(f"[dim]offline-brain choice skipped: {e}[/]")
 
+    # ── shared-daemon default: wire the host to the ONE warm daemon (HTTP for
+    #    JSON hosts, stdio proxy for codex) instead of a per-client Engine+model.
+    #    Follows `connect.default_daemon` (on by default); the daemon is started
+    #    right after wiring so the first message is instant.
+    try:
+        import os as _osd
+
+        from pmb.config import Config as _CfgD
+        _homed = Path(_osd.environ.get("PMB_HOME") or (Path.home() / ".pmb"))
+        effective_daemon = bool(_CfgD(pmb_home=_homed).get("connect.default_daemon"))
+    except Exception:
+        effective_daemon = True
+
+    # ── `--all`: wire every detected agent against the ONE shared daemon, warm
+    #    the engine once, then one combined card. (No per-agent live panel - a
+    #    simple line per agent reads better for a batch.) ───────────────────────
+    if all_agents:
+        wired: list = []
+        for ag in targets:
+            try:
+                r = do_connect(ag, cwd=Path.cwd(), active=eff_active,
+                               active_toggles=(_toggles if eff_active else None),
+                               install_hooks=True, use_daemon=effective_daemon)
+            except Exception as e:
+                console.print(f"  [red]✗[/] {ag}: {str(e)[:80]}")
+                continue
+            hk_ok = (bool(r.get("hooks"))
+                     and not (r.get("hooks") or {}).get("error"))
+            shared = bool(r.get("daemon_http") or r.get("daemon_proxy"))
+            tags = ("  +hooks" if hk_ok else "") + ("  +shared-daemon" if shared else "")
+            console.print(f"  [green]✓[/] {ag}{tags}  "
+                          f"[dim]{r.get('config_path', '')}[/]")
+            wired.append((ag, hk_ok, shared))
+        if not wired:
+            console.print("[red]Nothing wired.[/]")
+            raise typer.Exit(1)
+
+        # Warm the shared engine ONCE (every host reuses it), with a quick self-test.
+        try:
+            from pmb.core.engine import Engine
+            try:
+                from transformers.utils import logging as _hf_log
+                _hf_log.disable_progress_bar()
+            except Exception:
+                pass
+            with console.status(
+                    f"waking the memory engine (first run pulls {picked_ram})…"):
+                eng = Engine(cwd=Path.cwd())
+                eng.warmup(with_first_query=True)
+            console.print("  [green]✓[/] memory engine ready")
+            try:
+                eng.close()
+            except Exception:
+                pass
+        except Exception as e:
+            console.print("  [yellow]○[/] engine not warmed (run `pmb warmup` "
+                          f"later)  [dim]{str(e)[:40]}[/]")
+
+        # One shared daemon for all of them.
+        if any(s for _, _, s in wired):
+            _ensure_daemon_started(None, None)
+        try:
+            from pmb.mcp.registry import find_live_daemon
+            _daemon_live = bool(find_live_daemon())
+        except Exception:
+            _daemon_live = False
+
+        _setup_done_card(console, wired, _daemon_live, eff_active)
+        mark_welcomed()
+        return
+
     # ── ONE live screen: scan -> wire -> ✦ wake -> prove ──────────────────────
     from rich.spinner import Spinner
     from rich.table import Table
@@ -694,14 +906,22 @@ def setup(
             result = do_connect(
                 chosen, cwd=Path.cwd(), active=eff_active,
                 active_toggles=(_toggles if eff_active else None),
-                install_hooks=True,
+                install_hooks=True, use_daemon=effective_daemon,
             )
         except ValueError as e:
             emit("err", f"wiring failed: {e}", "", replace=h)
             raise typer.Exit(2)
         hooks_ok = (bool(result.get("hooks"))
                     and not (result.get("hooks") or {}).get("error"))
-        emit("ok", f"wired into {chosen}" + ("  +hooks" if hooks_ok else ""),
+        state["hooks_ok"] = hooks_ok  # surfaced in the final "you're all set" card
+        # remember whether this wiring shares the daemon, so we start it below
+        state["daemon_http"] = bool(result.get("daemon_http"))
+        state["daemon_proxy"] = bool(result.get("daemon_proxy"))
+        state["tool_profile"] = result.get("tool_profile")
+        shared = state["daemon_http"] or state["daemon_proxy"]
+        emit("ok", f"wired into {chosen}"
+             + ("  +hooks" if hooks_ok else "")
+             + ("  +shared-daemon" if shared else ""),
              str(result.get("config_path", "")), replace=h)
 
         eng = None
@@ -781,34 +1001,24 @@ def setup(
             except Exception:
                 pass
 
-    # ── a friendly, actionable "what now" card ──
-    from rich.console import Group as _Group
+    # Start the shared daemon now (if this wiring uses it) so the very first
+    # message is instant - no waiting for the first hook to autostart it.
+    if state.get("daemon_http") or state.get("daemon_proxy"):
+        _ensure_daemon_started(None, state.get("tool_profile"))
 
-    do = Table.grid(padding=(0, 2))
-    do.add_column(justify="center", width=3)
-    do.add_column()
-    do.add_row("[magenta]1[/]", "[bold]restart your agent[/]  "
-               "[dim]- so it picks up pmb[/]")
-    do.add_row("[magenta]2[/]", "[bold]just talk to it[/]  "
-               "[dim]- pmb captures & recalls automatically[/]")
+    # ── the persistent, actionable "you're all set" card ──
+    # Is a shared warm daemon already up? If so, recall is instant and we should
+    # NOT tell the user to start one; if not, offer it as a power-up.
+    try:
+        from pmb.mcp.registry import find_live_daemon
+        _daemon_live = bool(find_live_daemon())
+    except Exception:
+        _daemon_live = False
 
-    opt = Table.grid(padding=(0, 2))
-    opt.add_column(justify="right", style="dim")
-    opt.add_column()
-    opt.add_row("seed memory", "[cyan]pmb import chatgpt <export.json>[/]")
-    opt.add_row("instant recall", "[cyan]pmb daemon start[/]")
-    if not eff_active:
-        opt.add_row("self-logging", "[cyan]pmb setup --active[/]")
-
-    footer = Text.from_markup(
-        "[dim]explore[/] [cyan]pmb[/]   [dim]·[/]   [dim]verify[/] [cyan]pmb doctor[/]"
-        "   [dim]·[/]   [dim]stats[/] [cyan]pmb stats[/]")
-
-    body = _Group(do, "", Text.from_markup("[dim]optional power-ups[/]"), opt,
-                  "", footer)
-    console.print()
-    console.print(Panel(body, title=wordmark("you're all set"),
-                        border_style="#a78bfa", padding=(1, 2)))
+    shared = bool(state.get("daemon_http") or state.get("daemon_proxy"))
+    _setup_done_card(console,
+                     [(chosen, bool(state.get("hooks_ok")), shared)],
+                     _daemon_live, eff_active)
     mark_welcomed()  # onboarded - bare `pmb` now opens the palette, not the welcome
 
 

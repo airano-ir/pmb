@@ -15,8 +15,9 @@ include Makefile
 
 # Documentation
 recursive-include docs *.md
-# Logo + screenshots referenced by README.md (rendered on PyPI page)
-recursive-include docs/assets *.png *.css
+# Logo + the dashboard screenshot referenced by README.md (PyPI page too)
+include docs/assets/logo.png
+include docs/assets/08_dashboard.png
 
 # Test files for downstream packagers who want to verify the install
 recursive-include tests *.py
@@ -38,7 +39,4 @@ prune .venv
 prune .git
 prune .github
 prune scripts/benchmarks/_test_*.py
-prune docs/assets/_capture_server.py
-prune docs/assets/_save_png.py
-prune docs/assets/*.html
 prune .claude

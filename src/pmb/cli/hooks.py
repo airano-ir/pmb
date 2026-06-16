@@ -14,9 +14,15 @@ into the model's context. PMB wires three of them:
         so the adherence dashboard reflects reality.
 
 Targets:
-  - claude-code : settings.json hooks {UserPromptSubmit, SessionStart, Stop}
-  - codex       : ~/.codex/hooks/pmb-session-start.sh (UserPromptSubmit-equiv
-                  only; Codex lacks generic stop/session lifecycle hooks)
+  - claude-code : settings.json hooks {UserPromptSubmit, SessionStart,
+                  PreToolUse, PostToolUse, Stop} - the full set.
+  - codex       : ~/.codex/config.toml `notify` → `pmb codex-notify` (ambient
+                  auto-write on agent-turn-complete). Codex has NO per-turn /
+                  session-start shell hook, so read-first / auto-recall is
+                  driven by the AGENTS.md rules `pmb connect codex` writes (the
+                  agent calls prepare()/recall() itself), not by an injected
+                  hook. (Older PMB wrote a ~/.codex/hooks/pmb-session-start.sh
+                  that Codex never executed; install now cleans it up.)
   - cursor      : not supported (no generic user-prompt shell hook)
 
 Public API (kept stable for tests / CLI):
@@ -29,7 +35,6 @@ Public API (kept stable for tests / CLI):
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -259,25 +264,28 @@ def _install_codex_notify() -> dict:
 
 
 def _install_codex_hook() -> dict:
-    d = _codex_hooks_dir()
-    d.mkdir(parents=True, exist_ok=True)
-    cmd = hook_command_for("codex")
-    script = d / f"{_HOOK_SCRIPT_NAME}.sh"
-    body = (
-        "#!/bin/sh\n"
-        "# Installed by `pmb hooks install codex`.\n"
-        "# Reads the user message on stdin, prints PMB context on stdout.\n"
-        f"{cmd}\n"
-    )
-    script.write_text(body, encoding="utf-8")
+    """Codex's ONLY extension point is `notify` (fired on agent-turn-complete),
+    so that's the real integration - wire it to `pmb codex-notify` (the ambient
+    observer + auto-write that reads the rollout log). Codex has no per-turn /
+    session-start shell hook, so read-first / auto-recall is driven by the
+    AGENTS.md rules `pmb connect codex` writes, not by an injected hook.
+
+    Older PMB versions also wrote a ~/.codex/hooks/pmb-session-start.sh here.
+    Codex never executed it - it only made `pmb hooks list` look like codex had
+    a session-start hook when it didn't. Clean it up on (re)install."""
+    legacy = _codex_hooks_dir() / f"{_HOOK_SCRIPT_NAME}.sh"
+    legacy_removed = False
     try:
-        os.chmod(script, 0o755)
+        if legacy.exists():
+            legacy.unlink()
+            legacy_removed = True
     except Exception:
         pass
-    # Also wire the ambient observer + auto-write via Codex's notify.
     notify = _install_codex_notify()
-    return {"agent": "codex", "path": str(script), "action": "installed",
-            "command": cmd, "notify": notify}
+    return {"agent": "codex", "action": "installed",
+            "mechanism": "rollout-notify", "notify": notify,
+            "path": str(_codex_config_path()),
+            "legacy_script_removed": legacy_removed}
 
 
 def _uninstall_codex_hook() -> dict:
@@ -440,8 +448,22 @@ def list_installed() -> list[dict]:
             "agent": "claude-code", "event": event,
             "installed": present, "path": str(p),
         })
-    # codex
-    cs = _codex_hooks_dir() / f"{_HOOK_SCRIPT_NAME}.sh"
-    out.append({"agent": "codex", "event": "session-start",
-                "installed": cs.exists(), "path": str(cs)})
+    # codex: the REAL mechanism is `notify` in config.toml (post-turn ambient
+    # observer). Codex has no session-start / per-turn shell hook, so that's what
+    # we report - not the legacy pmb-session-start.sh (which Codex never ran).
+    notify_on = False
+    cp = _codex_config_path()
+    if cp.exists():
+        try:
+            try:
+                import tomllib as _tr
+            except Exception:
+                import tomli as _tr  # type: ignore
+            nv = _tr.loads(cp.read_text(encoding="utf-8")).get("notify")
+            notify_on = (isinstance(nv, list)
+                         and any("codex-notify" in str(x) for x in nv))
+        except Exception:
+            notify_on = False
+    out.append({"agent": "codex", "event": "notify (ambient auto-write)",
+                "installed": notify_on, "path": str(cp)})
     return out
