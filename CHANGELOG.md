@@ -103,7 +103,7 @@ behaviour is safe.
 
 ### Documentation
 - A proper docs set that renders on GitHub, all hyphen-style (no long dashes):
-  [index](docs/index.md) hub, [getting-started](docs/guide/getting-started.md),
+  [index](docs/README.md) hub, [getting-started](docs/guide/getting-started.md),
   [deleting-memories](docs/guide/deleting-memories.md),
   [architecture](docs/concepts/architecture.md) (components + read/write data
   flow), and [design-and-tech](docs/concepts/design-and-tech.md) (patterns,
