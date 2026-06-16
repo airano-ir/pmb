@@ -113,6 +113,11 @@ behaviour is safe.
   `docs/plans/`, keeping `logo.png` and one dashboard screenshot. Fixed a broken
   README image link (it pointed at a missing `02_dashboard.png`) and updated
   `MANIFEST.in` to match.
+- Reorganized the docs into a navigable tree (`guide/`, `concepts/`,
+  `reference/`, `contributing/`) and added a Material for MkDocs site published
+  to GitHub Pages via `.github/workflows/docs.yml` (Pages Source: GitHub
+  Actions). New deep-dive pages: `concepts/how-it-works.md` and
+  `reference/configuration.md`, plus `guide/dashboard.md`.
 
 ### Guard & fixes
 - **Command-aware PreToolUse guard.** A rule that NAMES a command ("never use

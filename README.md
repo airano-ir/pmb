@@ -56,7 +56,8 @@ That's it - your agent now remembers. No account, no keys, nothing leaves your m
 > Same tool - use whichever your install gave you. From npm, `npx pmb-ai setup`
 > runs the full cycle: it installs the Python package, then runs setup.
 
-> **Docs:** [Getting started](docs/guide/getting-started.md) ·
+> **Docs:** [oleksiijko.github.io/pmb](https://oleksiijko.github.io/pmb/) ·
+> [Getting started](docs/guide/getting-started.md) ·
 > [Deleting memories](docs/guide/deleting-memories.md) ·
 > [all documentation](docs/README.md).
 
