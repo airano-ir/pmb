@@ -211,3 +211,50 @@ def test_capability_report_shape():
     cur = next(r for r in rep if r["agent"] == "cursor")
     assert cur["ambient"] is True
     assert cur["ambient_mechanism"] == "project-observer"
+
+
+# ─── codex hook = notify only (NO dead session-start.sh) ─────────────────────
+# Regression: older PMB wrote ~/.codex/hooks/pmb-session-start.sh that Codex
+# never executed, so `pmb hooks list` falsely showed codex a session-start hook.
+# install_hook("codex") must wire the REAL mechanism (notify) and clean the
+# legacy script; list_installed must report the notify, not the dead script.
+
+def _isolate_codex(tmp_path, monkeypatch):
+    import pmb.cli.hooks as H
+    hooks_dir = tmp_path / ".codex" / "hooks"
+    cfg = tmp_path / ".codex" / "config.toml"
+    monkeypatch.setattr(H, "_codex_hooks_dir", lambda: hooks_dir)
+    monkeypatch.setattr(H, "_codex_config_path", lambda: cfg)
+    # keep list_installed's claude read off the real ~/.claude during the test
+    monkeypatch.setattr(H, "_claude_settings_path", lambda: tmp_path / "noclaude.json")
+    return H, hooks_dir, cfg
+
+
+def test_install_codex_wires_notify_and_cleans_legacy_script(tmp_path, monkeypatch):
+    pytest.importorskip("tomli_w")
+    H, hooks_dir, cfg = _isolate_codex(tmp_path, monkeypatch)
+    # a pre-existing legacy dead script must be cleaned up on install
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    legacy = hooks_dir / "pmb-session-start.sh"
+    legacy.write_text("#!/bin/sh\necho stale\n", encoding="utf-8")
+
+    r = H.install_hook("codex")
+    assert r["action"] == "installed"
+    assert r["mechanism"] == "rollout-notify"
+    assert r["notify"]["notify"] == "installed"
+    assert r["legacy_script_removed"] is True
+    assert not legacy.exists(), "the dead session-start.sh must be removed"
+    assert "codex-notify" in cfg.read_text(encoding="utf-8")
+
+
+def test_list_installed_reports_codex_notify_not_script(tmp_path, monkeypatch):
+    pytest.importorskip("tomli_w")
+    H, _hooks_dir, _cfg = _isolate_codex(tmp_path, monkeypatch)
+    # before install: a codex row exists, keyed on notify, not installed
+    codex = [r for r in H.list_installed() if r["agent"] == "codex"]
+    assert codex and codex[0]["event"].startswith("notify")
+    assert codex[0]["installed"] is False
+    # after wiring notify: reported installed
+    H._install_codex_notify()
+    codex = [r for r in H.list_installed() if r["agent"] == "codex"]
+    assert codex[0]["installed"] is True

@@ -707,9 +707,80 @@ def pin(ulid: str = typer.Argument(...)):
 
 @app.command()
 def forget(ulid: str = typer.Argument(...)):
-    """Archive an event. Not deleted permanently - restore with unforget."""
+    """Archive an event (reversible). Restore with `pmb restore <ulid>`.
+
+    `pmb delete` is the fuller front-door (multiple ulids, a preview, and
+    `--hard` to purge permanently); `forget` is the quick single-event archive.
+    """
     eng = Engine()
     eng.forget(ulid)
-    console.print(f"[yellow]Archived[/] {ulid}")
+    console.print(f"[yellow]Archived[/] {ulid}  "
+                  f"[dim]restore with [cyan]pmb restore {ulid}[/].[/]")
+
+
+@app.command()
+def delete(
+    ulids: list[str] = typer.Argument(..., help="Event ULID(s) to delete."),
+    hard: bool = typer.Option(
+        False, "--hard",
+        help="Purge PERMANENTLY (vector + row + graph links). Default archives, "
+             "which is reversible via `pmb restore <ulid>`."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation."),
+):
+    """Delete one or more memories - the clear front-door for removing things.
+
+    By default this ARCHIVES (reversible; restore with `pmb restore`). Use
+    `--hard` to purge permanently (cannot be undone). You always see a preview
+    and a confirmation first (unless `--yes`).
+
+      pmb delete 018f...                 # archive (reversible)
+      pmb delete 018f... 019a... --hard  # purge several, permanently
+    """
+    eng = Engine()
+    found, missing = [], []
+    for u in ulids:
+        ev = eng.events.get_by_ulid(u)
+        (found if ev is not None else missing).append((u, ev) if ev is not None else u)
+    if missing:
+        console.print(f"[yellow]Not found:[/] {', '.join(missing)}")
+    if not found:
+        console.print("[red]Nothing to delete.[/]")
+        raise typer.Exit(1)
+
+    verb = "permanently DELETE" if hard else "archive"
+    colour = "red" if hard else "yellow"
+    console.print(f"[{colour}]{len(found)}[/] memory(ies) to {verb}:")
+    for u, ev in found:
+        body = esc((ev.content or "")[:80]) + ("…" if len(ev.content or "") > 80 else "")
+        console.print(f"  [dim]{u[:12]}[/] [{ev.event_type}] {body}")
+
+    if not yes:
+        prompt = ("Permanently delete - this CANNOT be undone?" if hard
+                  else "Archive these (reversible)?")
+        if not typer.confirm(prompt, default=not hard):
+            console.print("[yellow]Cancelled.[/] Nothing changed.")
+            raise typer.Exit(0)
+
+    n_ok = 0
+    for u, _ev in found:
+        if eng.delete_event(u, hard=hard).get("ok"):
+            n_ok += 1
+    if hard:
+        console.print(f"[red]✗ Deleted[/] {n_ok} memory(ies) permanently.")
+    else:
+        console.print(f"[yellow]Archived[/] {n_ok} memory(ies).  "
+                      f"[dim]Restore with [cyan]pmb restore <ulid>[/].[/]")
+
+
+@app.command()
+def restore(ulid: str = typer.Argument(..., help="Event ULID to bring back.")):
+    """Restore an archived memory - undo a soft `pmb delete` / `pmb forget`.
+
+    (Only archived, reversible deletions can be restored. A `--hard` delete is
+    permanent and cannot be brought back.)
+    """
+    eng = Engine()
+    eng.unforget(ulid)
+    console.print(f"[green]Restored[/] {ulid}")
 
 

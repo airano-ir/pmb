@@ -97,5 +97,5 @@ pmb index pdf paper.pdf            # or a whole dir: pmb index pdf ~/docs --recu
 pmb index project .               # scan a codebase (symbols, imports, .gitignore-aware)
 ```
 
-Full command reference: [COMMANDS.md](COMMANDS.md). Sharing memory across a team:
-[TEAM.md](TEAM.md).
+Full command reference: [COMMANDS.md](../reference/COMMANDS.md). Sharing memory
+across a team: [TEAM.md](TEAM.md).

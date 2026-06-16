@@ -638,6 +638,30 @@ class EventStore:
                 (ulid,),
             )
 
+    def purge(self, ulid: str) -> bool:
+        """HARD delete - permanently remove the event row and its dangling
+        graph links. Irreversible (unlike `archive`, which is reversible via
+        `unarchive`). Returns True if a row was actually deleted.
+
+        Does NOT touch the vector index - the engine layer calls
+        `search.remove(ulid)` around this so the store stays self-contained
+        (and a caller can purge from SQLite even if the vector store errors)."""
+        with self._conn() as conn:
+            cur = conn.execute("DELETE FROM events WHERE ulid = ?", (ulid,))
+            deleted = (cur.rowcount or 0) > 0
+            # Drop graph rows that referenced this event so nothing points at a
+            # gone ulid. Best-effort per table (older DBs may lack one).
+            for sql, params in (
+                ("DELETE FROM graph_event_entities WHERE event_ulid = ?", (ulid,)),
+                ("DELETE FROM event_edges WHERE source_ulid = ? OR target_ulid = ?",
+                 (ulid, ulid)),
+            ):
+                try:
+                    conn.execute(sql, params)
+                except Exception:
+                    pass
+        return deleted
+
     def pin(self, ulid: str, importance: float = 1.0):
         """Pin - high importance, never auto-archived."""
         with self._conn() as conn:

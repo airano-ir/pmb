@@ -45,6 +45,75 @@ behaviour is safe.
   re-embed memory (`reindex`) + restart the daemon. `pmb model best`,
   `pmb model BAAI/bge-m3`, or the interactive menu.
 
+### Install flow (one warm daemon for every agent)
+- **`pmb setup` shares the warm daemon by default.** Following
+  `connect.default_daemon`, setup points the host at the ONE warm daemon and
+  starts it, so the first message is instant and N clients cost ~400 MB total,
+  not ×N. (`--stdio` / `connect.default_daemon false` keeps the old per-client
+  server.)
+- **`pmb mcp proxy` - stdio↔daemon bridge for codex.** codex is stdio-only and
+  can't take an HTTP entry, so it used to cold-load its own Engine+model every
+  session (the codex start-up lag). It now launches this lightweight bridge
+  (holds no model) that forwards to the shared daemon, autostarting it if
+  needed - so codex shares the one warm process too. `pmb connect codex` wires
+  it by default.
+- **`pmb setup --all`** wires every detected agent at once (Claude Code + Codex
+  + Cursor + …), all sharing the single daemon, with one combined summary.
+- **In-place setup menus.** The embedder / offline-brain choices are now arrow
+  menus that redraw in place (↑↓ pick · ⏎ choose · digit quick-pick · esc keep),
+  with a static table+prompt fallback off a TTY / in CI.
+- **`pmb daemon kill-all`** stops the daemon AND every registered PMB process,
+  then clears the registry - the escape hatch when stray/duplicate warm
+  processes pile up and starve a small box (tree-kill on Windows).
+- **`pmb-ai` command alias.** The CLI is `pmb`; installed via pip you also get
+  `pmb-ai`, and via npm (`npx pmb-ai`) the command is `pmb-ai`. Same tool.
+- **npm does a real install cycle.** The npm package no longer just forwards or
+  prints "ok": a postinstall (and the launcher, on first use) installs the
+  Python `pmb-ai` package persistently, preferring `uv tool install`, then
+  `pipx`, then `pip --user`, with visible progress. So `npx pmb-ai setup`
+  bootstraps Python PMB and runs setup end to end. Set `PMB_SKIP_POSTINSTALL=1`
+  to opt out (CI / Docker). An existing `pmb` on PATH is used as-is.
+- **Clearer "you're all set" card** after setup: confirms what was wired (agent
+  · hooks · daemon), points to `pmb model` to change the embedder later, and to
+  `pmb daemon kill-all` to reset stray processes.
+
+### Codex integration: honest about what's a hook
+- **Codex wires `notify` → `pmb codex-notify` (the real mechanism)** for ambient
+  auto-write after each turn; read-first / auto-recall is driven by the AGENTS.md
+  rules (Codex has no per-turn / session-start shell hook - only Claude Code
+  does). `pmb hooks install codex` / `pmb connect codex` now say exactly this
+  instead of implying per-turn injection.
+- **Removed the dead `~/.codex/hooks/pmb-session-start.sh`.** Codex never
+  executed it; it only made `pmb hooks list` look like codex had a session-start
+  hook. Install cleans up any leftover; `pmb hooks list` now reports the notify.
+
+### Deleting memories (dashboard + CLI)
+- **One clear delete, two levels.** A new `engine.delete_event(ulid, hard=)`:
+  soft archives (reversible), hard purges permanently. The hard path
+  (`EventStore.purge`) removes the SQLite row, the vector (`search.remove`), and
+  the event's graph links so nothing dangles and recall can never resurface it.
+- **`pmb delete <ulid...>`** is the front-door: a preview + confirm, archives by
+  default (restore with the new **`pmb restore`**), `--hard` to purge, `--yes`
+  to skip. The permanent prompt defaults to "no". `forget` / `forget-topic`
+  still work for quick archives.
+- **Dashboard delete UI.** The event panel now has Archive (reversible) and a
+  red Delete (permanent, with a confirm) alongside Pin, backed by
+  `POST /api/delete/<ulid>` (`{"hard": true|false}`). The active view refreshes
+  after a delete so the memory disappears immediately.
+
+### Documentation
+- A proper docs set that renders on GitHub, all hyphen-style (no long dashes):
+  [index](docs/index.md) hub, [getting-started](docs/guide/getting-started.md),
+  [deleting-memories](docs/guide/deleting-memories.md),
+  [architecture](docs/concepts/architecture.md) (components + read/write data
+  flow), and [design-and-tech](docs/concepts/design-and-tech.md) (patterns,
+  stack, decisions), linked from the README.
+- Decluttered `docs/`: removed the screenshot generators (`*.html`, `_save_png.py`,
+  `_capture_server.py`, `_template.css`) and the done planning notes under
+  `docs/plans/`, keeping `logo.png` and one dashboard screenshot. Fixed a broken
+  README image link (it pointed at a missing `02_dashboard.png`) and updated
+  `MANIFEST.in` to match.
+
 ### Guard & fixes
 - **Command-aware PreToolUse guard.** A rule that NAMES a command ("never use
   git") now fires before every invocation (`git push` / `git status` / chained),

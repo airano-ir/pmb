@@ -137,6 +137,105 @@ def mcp_serve_cmd(
     _server_main()
 
 
+@mcp_app.command("proxy")
+def mcp_proxy_cmd(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8765, "--port"),
+    path: str = typer.Option("/mcp", "--path"),
+    autostart: bool = typer.Option(
+        True, "--autostart/--no-autostart",
+        help="If no daemon is running, start one, then bridge to it."),
+    fallback: bool = typer.Option(
+        True, "--fallback/--no-fallback",
+        help="If the daemon stays unreachable, fall back to an in-process "
+             "stdio server so the host still has memory (heavier)."),
+):
+    """Lightweight stdio<->daemon bridge for stdio-only hosts (e.g. codex).
+
+    Speaks stdio MCP to the host and forwards every call to the ONE warm
+    daemon over HTTP. Holds NO embedding model, so it starts instantly: N
+    stdio hosts share a single ~400 MB daemon instead of loading a model
+    each. This is what `pmb connect codex` wires by default - it removes the
+    codex cold-start lag.
+
+    Protocol note: stdout is the MCP wire, so every diagnostic goes to stderr.
+    """
+    import os
+    import subprocess
+    import sys
+    import time
+
+    from pmb.mcp.registry import find_live_daemon
+
+    def _log(m: str) -> None:
+        sys.stderr.write(f"[pmb-proxy] {m}\n")
+        sys.stderr.flush()
+
+    def _spawn_daemon() -> None:
+        # Detached + windowless (CREATE_NO_WINDOW|NEW_GROUP on Windows); its own
+        # stdout/stderr go to DEVNULL so they can never reach the MCP wire here.
+        kwargs: dict = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = 0x08000000 | 0x00000200
+        else:
+            kwargs["start_new_session"] = True
+        subprocess.Popen(
+            [sys.executable, "-m", "pmb.cli", "daemon", "run",
+             "--port", str(port), "--host", host],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, **kwargs)
+
+    live = find_live_daemon()
+    if not live and autostart:
+        _log("no warm daemon found - starting one in the background…")
+        try:
+            _spawn_daemon()
+        except Exception as e:
+            _log(f"daemon start failed: {e}")
+        # The daemon registers + binds within ~1-2s (the model warms async in a
+        # background thread, so registration doesn't wait on it).
+        deadline = time.time() + 10.0
+        while time.time() < deadline:
+            time.sleep(0.2)
+            live = find_live_daemon()
+            if live:
+                break
+
+    if live:
+        host = live.get("host") or host
+        port = int(live.get("port") or port)
+        path = live.get("path") or path
+        url = f"http://{host}:{port}{path}"
+        try:
+            from fastmcp.client.transports import StreamableHttpTransport
+
+            from pmb.mcp.daemon import read_daemon_token
+            token = read_daemon_token()
+            headers = {"Authorization": f"Bearer {token}"} if token else None
+            transport = StreamableHttpTransport(url=url, headers=headers)
+            try:  # fastmcp >= 3.3: create_proxy (as_proxy is deprecated)
+                from fastmcp.server import create_proxy
+                proxy = create_proxy(transport, name="pmb")
+            except Exception:  # older fastmcp
+                from fastmcp import FastMCP
+                proxy = FastMCP.as_proxy(transport, name="pmb")
+            _log(f"bridging stdio <-> {url}")
+            proxy.run(show_banner=False)   # stdio; blocks until the host closes
+            return
+        except Exception as e:
+            _log(f"bridge to {url} failed: {e}")
+
+    # The daemon is unreachable. Rather than leave the host with no memory,
+    # fall back to the normal in-process stdio server (loads its own model).
+    if fallback:
+        _log("daemon unreachable - falling back to an in-process stdio server.")
+        from pmb.mcp.server import main as _server_main
+        _server_main()
+        return
+    _log("daemon unreachable and --no-fallback set; exiting.")
+    raise typer.Exit(1)
+
+
 @mcp_app.command("status")
 def mcp_status_cmd():
     """Show PMB MCP servers currently registered as running (issue #6).
@@ -318,6 +417,26 @@ def hooks_install_cmd(
             "  [dim](ambient off: pmb config set autowrite.enabled false ·\n"
             "   undo its writes: pmb forget-auto)[/]",
             title="PMB · hooks installed",
+        ))
+    elif result.get("agent") == "codex":
+        # Codex has only `notify` (post-turn) - NO per-turn / session-start hook.
+        # Be honest about what's automatic vs rules-driven.
+        notify = result.get("notify") or {}
+        nstate = notify.get("notify", "?")
+        legacy = ("\n  [dim](cleaned up a legacy pmb-session-start.sh that Codex "
+                  "never ran)[/]" if result.get("legacy_script_removed") else "")
+        console.print(Panel.fit(
+            f"[green]Codex ambient wired[/]  ·  notify → [cyan]pmb codex-notify[/]\n"
+            f"  config: {result.get('path','~/.codex/config.toml')}\n"
+            f"  notify: {nstate}{legacy}\n\n"
+            "Codex has no per-turn / session-start shell hook (only Claude Code\n"
+            "does), so:\n"
+            "  · [bold]ambient auto-write[/] runs after each turn (rollout + notify)\n"
+            "  · [bold]read-first / auto-recall[/] is driven by the AGENTS.md rules\n"
+            "    [cyan]pmb connect codex[/] writes - the agent calls prepare()/\n"
+            "    recall() itself; there's nothing to inject context pre-prompt.\n\n"
+            "Restart Codex to pick it up.",
+            title="PMB · codex hooks",
         ))
     else:
         colour = "green" if act in ("installed", "created", "updated") else "yellow"

@@ -496,6 +496,38 @@ def make_daemon_entry(
     return entry
 
 
+def make_proxy_entry(
+    workspace_cwd: Path,
+    workspace_id: str | None = None,
+    pmb_home: Path | None = None,
+) -> dict:
+    """S6 (codex): a stdio entry that launches the lightweight `pmb mcp proxy`
+    bridge instead of the full `pmb-mcp` server.
+
+    Codex is stdio-only (TOML, command-shaped) - it can't take the `type: http`
+    daemon entry the JSON hosts use. The proxy bridges that gap: it speaks stdio
+    MCP to codex and forwards to the ONE warm daemon over HTTP (autostarting it
+    if needed), holding NO model itself. So codex shares the single ~400 MB warm
+    process instead of cold-loading its own Engine+model every session - which is
+    exactly the codex start-up lag.
+
+    The daemon bearer token is read from disk by the proxy AT RUNTIME, so nothing
+    stale is baked into the config (survives daemon restarts / token rotation)."""
+    pmb_cli = shutil.which("pmb")
+    env: dict = {"PMB_CWD": str(workspace_cwd)}
+    if workspace_id:
+        env["PMB_WORKSPACE"] = workspace_id
+    if pmb_home:
+        env["PMB_HOME"] = str(pmb_home)
+    if pmb_cli:
+        return {"command": pmb_cli, "args": ["mcp", "proxy"], "env": env}
+    return {
+        "command": sys.executable,
+        "args": ["-m", "pmb.cli", "mcp", "proxy"],
+        "env": env,
+    }
+
+
 def merge_entry(existing: dict, name: str, entry: dict) -> tuple[dict, str]:
     """Add or replace the named entry. Returns (new_config, action_str)."""
     cfg = dict(existing) if existing else {}
@@ -977,21 +1009,32 @@ def connect(
     will_install_hooks = install_hooks and agent in _HOOK_HOSTS and not remote
     tool_profile = _lean_for(agent) if will_install_hooks else None
 
-    # S6: `--daemon` points the (JSON) host at the one warm local daemon over
-    # streamable-HTTP instead of its own stdio Engine+model. Only the JSON
-    # mcpServers hosts (claude-code / cursor) accept a `type: http` entry; codex
-    # (TOML, command-shaped) and remote keep stdio, so we fall through quietly.
+    # S6: `--daemon` points the host at the one warm local daemon instead of its
+    # own stdio Engine+model. Two shapes:
+    #   • JSON hosts (claude-code / cursor) take a `type: http` entry directly.
+    #   • codex (TOML, stdio-only) can't take HTTP, so it spawns the lightweight
+    #     `pmb mcp proxy` stdio<->daemon bridge - still ONE shared warm process.
+    # remote always keeps its own entry.
     daemon_http = bool(use_daemon and not remote and agent in ("claude-code", "cursor"))
     if daemon_http:
         # Gate on daemon.autostart + pin idle_exit_min=0 so the shared daemon
         # actually stays reachable for the MCP connection; falls back to stdio
         # when autostart is off.
         daemon_http = _prep_daemon_http(pmb_home, tool_profile)
+    daemon_proxy = bool(use_daemon and not remote and agent == "codex")
+    if daemon_proxy:
+        # Same gate as the HTTP path (autostart on + pin idle). tool_profile is
+        # left untouched (None) - codex needs the read tools, and even the
+        # 'lean' profile keeps prepare/recall/session_brief/find_lessons.
+        daemon_proxy = _prep_daemon_http(pmb_home, None)
     if remote:
         entry = make_remote_entry(remote, bearer_token=bearer_token)
         name = name_override or "pmb-remote"
     elif daemon_http:
         entry = make_daemon_entry()
+        name = name_override or ("pmb-shared" if workspace_id else "pmb")
+    elif daemon_proxy:
+        entry = make_proxy_entry(cwd, workspace_id=workspace_id, pmb_home=pmb_home)
         name = name_override or ("pmb-shared" if workspace_id else "pmb")
     else:
         entry = make_local_entry(
@@ -1053,8 +1096,12 @@ def connect(
         # S6: True when this host was pointed at the shared warm daemon over
         # HTTP. The CLI uses it to ensure the daemon is up and print RSS math.
         "daemon_http": daemon_http,
-        # Signalled when --daemon was asked for but the host can't take an HTTP
-        # entry (codex/extended/remote) - we kept stdio; surfaced so the CLI can
-        # tell the user instead of silently ignoring the flag.
-        "daemon_http_unavailable": bool(use_daemon and not daemon_http),
+        # S6 (codex): True when codex was wired to spawn the stdio<->daemon proxy
+        # so it shares the one warm process instead of its own Engine+model.
+        "daemon_proxy": daemon_proxy,
+        # Signalled when --daemon was asked for but the host can't share the
+        # daemon at all (extended/remote) - we kept stdio; surfaced so the CLI
+        # can tell the user instead of silently ignoring the flag.
+        "daemon_http_unavailable": bool(
+            use_daemon and not daemon_http and not daemon_proxy),
     }

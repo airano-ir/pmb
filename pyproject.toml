@@ -85,6 +85,7 @@ Changelog = "https://github.com/oleksiijko/pmb/blob/main/CHANGELOG.md"
 
 [project.scripts]
 pmb = "pmb.cli:app"
+pmb-ai = "pmb.cli:app"  # alias: the PyPI/npm package is `pmb-ai`, so `pmb-ai ...` works too
 pmb-mcp = "pmb.mcp.server:main"
 pmb-chat = "pmb.agent_wrapper.__main__:main"
 pmb-hook = "pmb.hookclient.__main__:main"

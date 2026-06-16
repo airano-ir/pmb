@@ -1406,6 +1406,36 @@ class RecallMixin:
     def unforget(self, ulid: str):
         self.events.unarchive(ulid)
 
+    def purge(self, ulid: str) -> bool:
+        """HARD delete (irreversible): drop the vector, the SQLite row, and the
+        event's graph links, then invalidate the recall cache. Returns True if a
+        row was actually removed. For reversible deletion use `forget`."""
+        try:
+            self.search.remove(ulid)
+        except Exception:
+            pass
+        deleted = self.events.purge(ulid)
+        try:
+            self.recall_cache.bump_generation()
+        except Exception:
+            pass
+        return deleted
+
+    def delete_event(self, ulid: str, hard: bool = False) -> dict:
+        """Unified delete used by the CLI + dashboard.
+
+        hard=False -> archive (reversible; restore with `unforget`).
+        hard=True  -> purge permanently (vector + row + graph links)."""
+        if hard:
+            ok = self.purge(ulid)
+            return {"ulid": ulid, "mode": "hard", "ok": bool(ok)}
+        self.events.archive(ulid)
+        try:
+            self.recall_cache.bump_generation()
+        except Exception:
+            pass
+        return {"ulid": ulid, "mode": "soft", "ok": True}
+
     def recall_smart(
         self,
         query: str,

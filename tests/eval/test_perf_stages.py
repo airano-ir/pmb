@@ -36,8 +36,11 @@ def test_record_call_persists_new_fields(tmp_path):
 
 def test_wrapper_captures_escalation_and_client_timeout(tmp_path, monkeypatch):
     db = tmp_path / "perf.sqlite"
-    # tiny client timeout → every call is flagged as "client already gave up"
-    monkeypatch.setenv("PMB_MCP_CLIENT_TIMEOUT_MS", "0.001")
+    # client timeout 0 ms → EVERY call is past it: the wrapper flags on
+    # `dt_ms >= _client_to_ms`, and dt_ms is always >= 0, so this is deterministic
+    # on any platform. (0.001 ms flaked on fast arm64 macOS, where the trivial
+    # call finished in under a microsecond, so dt_ms >= 0.001 was False.)
+    monkeypatch.setenv("PMB_MCP_CLIENT_TIMEOUT_MS", "0")
     timed = perf.make_timing_wrapper(db, "ws")
 
     @timed

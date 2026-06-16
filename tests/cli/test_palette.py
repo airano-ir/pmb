@@ -137,3 +137,52 @@ def test_loop_esc_returns_none(catalog, monkeypatch):
 
 def test_loop_enter_on_no_match_returns_none(catalog, monkeypatch):
     assert _drive(catalog, [*"zzzq", "enter"], monkeypatch) is None
+
+
+# ── live_select: the in-place arrow menu reused by `pmb setup` (embedder /
+# offline-brain choice). Same headless drive: mock _read_key, non-TTY console. ──
+from pmb.cli.palette import live_select  # noqa: E402
+
+_SEL_ROWS = [("Light", "~0.5 GB", "+ tiny\n- weak"),
+             ("Balanced", "~1.1 GB", "+ better\n- 2x RAM"),
+             ("Best", "~2 GB", "+ sharpest\n- heavy")]
+_SEL_H = ["Option", "RAM", "Plus / minus"]
+
+
+def _drive_select(keys, monkeypatch, default=0):
+    seq = iter(keys)
+    monkeypatch.setattr(palette_mod, "_read_key", lambda: next(seq, "esc"))
+    console = Console(file=io.StringIO(), force_terminal=False, width=100)
+    return live_select(console, title="memory model", subtitle="pick",
+                       headers=_SEL_H, rows=_SEL_ROWS, default=default)
+
+
+def test_select_arrows_then_enter(monkeypatch):
+    assert _drive_select(["down", "down", "enter"], monkeypatch) == 2
+
+
+def test_select_up_clamps_at_top(monkeypatch):
+    assert _drive_select(["up", "up", "enter"], monkeypatch) == 0
+
+
+def test_select_down_clamps_at_bottom(monkeypatch):
+    assert _drive_select(["down", "down", "down", "down", "enter"], monkeypatch) == 2
+
+
+def test_select_number_quick_picks(monkeypatch):
+    assert _drive_select(["3"], monkeypatch) == 2
+
+
+def test_select_esc_returns_none(monkeypatch):
+    assert _drive_select(["esc"], monkeypatch) is None
+
+
+def test_select_honors_default_start(monkeypatch):
+    # default=1, immediate Enter -> 1 (no movement)
+    assert _drive_select(["enter"], monkeypatch, default=1) == 1
+
+
+def test_select_empty_rows_returns_none(monkeypatch):
+    console = Console(file=io.StringIO(), force_terminal=False, width=100)
+    assert live_select(console, title="t", subtitle="s",
+                       headers=_SEL_H, rows=[], default=0) is None
