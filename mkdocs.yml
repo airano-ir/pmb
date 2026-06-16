@@ -1,0 +1,80 @@
+# Material for MkDocs config. The docs live in docs/ and deploy to GitHub Pages
+# via .github/workflows/docs.yml. Enable it once: repo Settings -> Pages ->
+# Source: "GitHub Actions". After that, every push to main rebuilds the site at
+# https://oleksiijko.github.io/pmb/ .
+site_name: PMB
+site_description: Local-first persistent memory for AI coding agents. No cloud, no keys.
+site_url: https://oleksiijko.github.io/pmb/
+repo_url: https://github.com/oleksiijko/pmb
+repo_name: oleksiijko/pmb
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+# Internal notes stay in the repo but are not part of the published site.
+exclude_docs: |
+  _config.yml
+  HARDENING_NOTES.md
+  assistant-integration-notes.md
+
+nav:
+  - Home: README.md
+  - Guide:
+      - Getting started: guide/getting-started.md
+      - Usage: guide/usage.md
+      - The dashboard: guide/dashboard.md
+      - Deleting memories: guide/deleting-memories.md
+      - Team and remote: guide/TEAM.md
+      - Ollama: guide/SETUP_OLLAMA.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+      - How it works: concepts/how-it-works.md
+      - Design and technology: concepts/design-and-tech.md
+  - Reference:
+      - Commands: reference/COMMANDS.md
+      - Configuration: reference/configuration.md
+  - Contributing:
+      - Adding a language: contributing/adding-a-language.md
+  - Roadmap: ROADMAP.md
