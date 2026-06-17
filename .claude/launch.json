@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8765", "--directory", "docs/assets"],
       "port": 8765
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "mkdocs", "serve", "-a", "127.0.0.1:8000"],
+      "port": 8000
     }
   ]
 }

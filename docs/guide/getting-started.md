@@ -37,8 +37,8 @@ To skip the automatic Python bootstrap in CI or Docker, set
 ## 2. Run setup
 
 `pmb setup` is the guided, one command path. It detects your agent, lets you
-pick the memory model, wires the MCP config and the lifecycle hooks, warms the
-engine, and starts the shared daemon.
+pick the memory model, wires the MCP config, installs the agent rules, adds
+supported lifecycle hooks, warms the engine, and starts the shared daemon.
 
 ```bash
 pmb setup            # detect one agent and wire it
@@ -86,7 +86,8 @@ can start fresh with `pmb daemon start`.
 ## 4. Use it
 
 1. Restart your agent so it picks up the new configuration.
-2. Just talk to it. PMB captures and recalls memory automatically.
+2. Just talk to it. PMB captures and recalls memory through the installed
+   rules, MCP tools, and hooks supported by that host.
 
 There are no commands to memorize for everyday use. The agent reads relevant
 memory before it answers and records new memory as you work.

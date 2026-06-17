@@ -1,4 +1,4 @@
-# PMB + Ollama - fully-local setup
+# Ollama
 
 This guide is for anyone who wants PMB to run **completely offline**: no Anthropic key, no OpenAI key, nothing sent to the cloud. The vector embedder is local (sentence-transformers). The optional LLM operations (consolidation, dedup verification, `pmb-chat`) go through Ollama running on the same machine.
 
@@ -78,7 +78,7 @@ Verify everything is wired correctly:
 pmb ollama status
 ```
 
-You should see "Status: online ✓", the model in the installed list, and a ✓ next to each PMB operation that will use Ollama.
+You should see "Status: online", the model in the installed list, and a check mark next to each PMB operation that will use Ollama.
 
 Optional 1-shot smoke test:
 

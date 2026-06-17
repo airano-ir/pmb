@@ -2,13 +2,14 @@
 
 This page covers the design patterns PMB leans on, the technology stack, and the
 key decisions behind them. For how the pieces fit at runtime, see
-[architecture.md](architecture.md).
+[Architecture](architecture.md).
 
 ## Design patterns
 
-- **Zero-LLM read path.** Memory is injected by deterministic lifecycle hooks,
-  not by asking a model what to recall. Reading costs no agent tokens, so the
-  agent actually uses memory instead of avoiding it.
+- **Zero-LLM read path.** Memory is supplied by deterministic lifecycle hooks
+  or explicit MCP `prepare` calls, not by asking a model what to recall. Reading
+  costs no agent tokens, so the agent actually uses memory instead of avoiding
+  it.
 - **One warm shared process.** The cost of memory is loading the embedding
   model. A single warm daemon holds it, and every connected agent reuses it, so
   N agents cost about one model in RAM rather than N.
@@ -72,7 +73,7 @@ no toolchain to maintain.
   offline. The dashboard binds to localhost, and only the explicit sync commands
   ever touch the network.
 - **Reads must be free.** If memory costs tokens on every turn, agents skip it.
-  Deterministic hook injection keeps reading effectively free.
+  Deterministic hooks and MCP prepare calls keep reading effectively free.
 - **Share one warm model.** Loading the model is the expensive step, so it is
   loaded once and shared, not paid per agent.
 - **Multilingual by default.** The default embedder handles many languages, and
