@@ -52,7 +52,7 @@ def list_packs():
 
 
 @lang_app.command()
-def enable(code: str = typer.Argument(..., help="Language code, e.g. de, es")):
+def enable(code: str = typer.Argument(..., help="Language code, e.g. de, es, fr")):
     """Enable a language pack (copies the template into $PMB_HOME/lang/)."""
     dest_dir = _lang.user_dir()
     dest = dest_dir / f"{code}.yaml"
