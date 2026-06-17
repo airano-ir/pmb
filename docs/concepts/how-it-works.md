@@ -1,12 +1,24 @@
-# How it works, step by step
+# How it works
 
 This page follows real requests end to end. For the component map and where
-things live in the code, see [architecture.md](architecture.md). For the reasons
-behind the design, see [design-and-tech.md](design-and-tech.md).
+things live in the code, see [Architecture](architecture.md). For the Engine
+schema and queue internals, see [Core engine](core-engine.md). For the
+reasons behind the design, see [Design and technology](design-and-tech.md).
 
 ## Follow one message (the read path)
 
 This is the path that makes memory feel free.
+
+``` mermaid
+flowchart LR
+  Message["Message"] --> Prepare["Prepare"]
+  Prepare --> Recall["Recall"]
+  Recall --> Gate{"Relevant?"}
+  Gate -->|Yes| Context["Context"]
+  Gate -->|No| Silent["Quiet"]
+  Context --> Answer["Answer"]
+  Silent --> Answer
+```
 
 1. You send a message to your agent. The host fires the UserPromptSubmit hook
    with your text.
@@ -29,6 +41,24 @@ This is the path that makes memory feel free.
 
 ## Follow one record (the write path)
 
+``` mermaid
+sequenceDiagram
+  autonumber
+  participant Agent
+  participant MCP as PMB MCP tool
+  participant Engine
+  participant Store as SQLite + LanceDB + BM25
+  participant Graph as Entity graph
+
+  Agent->>MCP: record_batch / record_fact / record_goal
+  MCP->>Engine: validate and normalize event
+  Engine->>Store: write event and indexes
+  Engine->>Graph: extract and link entities
+  Store-->>Engine: committed
+  Graph-->>Engine: linked
+  Engine-->>Agent: memory is durable and searchable
+```
+
 1. The agent calls a `record_*` tool (or ambient auto write fires at the end of
    a turn).
 2. The event is written to SQLite with its content, type, importance, metadata,
@@ -45,6 +75,18 @@ dropped rather than journaled.
 ## What the daemon does
 
 The daemon is the one warm process behind fast recall.
+
+``` mermaid
+flowchart LR
+  Start["start"] --> Warm["warm"]
+  Warm --> Register["register"]
+  Register --> Serve["serve"]
+  Serve --> Idle{"idle?"}
+  Idle -->|No| Serve
+  Idle -->|Yes| Exit["exit"]
+  Serve --> Tick["maintenance"]
+  Tick --> Serve
+```
 
 - On start it builds the MCP server, begins warming the embedding model in a
   background thread (so it can serve immediately while the model finishes

@@ -1,4 +1,4 @@
-# Using PMB with your agent
+# Usage
 
 Concrete, copy-paste recipes. PMB is local-first: one SQLite file on your disk,
 no cloud, no API keys.
@@ -23,7 +23,7 @@ Nine agents are supported; the id for Claude Code is **`claude-code`**:
 ```bash
 pmb connect claude-code     # Claude Code   (also gets per-turn auto-recall hooks)
 pmb connect cursor          # Cursor
-pmb connect codex           # OpenAI Codex CLI (also hook-capable)
+pmb connect codex           # OpenAI Codex CLI (MCP proxy + AGENTS.md rules + notify)
 pmb connect windsurf        # Codeium Windsurf
 pmb connect gemini          # Google Gemini CLI
 pmb connect vscode          # VS Code (MCP)
@@ -44,8 +44,13 @@ pmb stats            # workspace counts and storage location
 ```
 
 Then ask your agent something that needs memory - e.g. *"what did we decide about
-auth last week?"* On a hook-enabled agent (Claude Code, Codex) the answer is
-fetched and injected automatically; on the others the agent calls `recall` itself.
+auth last week?"*
+
+| Host type | How memory arrives |
+|---|---|
+| Claude Code | Lifecycle hooks can inject the read-first context before the model thinks. |
+| Codex | `pmb connect codex` installs MCP plus `AGENTS.md` rules, so Codex calls `prepare` / `recall` when the task needs memory; `notify` powers ambient logging after a turn. |
+| Cursor, Zed, VS Code, Windsurf, Gemini, Continue | The agent sees PMB as MCP tools and calls them when its installed rules say memory is relevant. |
 
 ## Use it from any directory
 
@@ -97,5 +102,5 @@ pmb index pdf paper.pdf            # or a whole dir: pmb index pdf ~/docs --recu
 pmb index project .               # scan a codebase (symbols, imports, .gitignore-aware)
 ```
 
-Full command reference: [COMMANDS.md](../reference/COMMANDS.md). Sharing memory
-across a team: [TEAM.md](TEAM.md).
+Full command reference: [Commands](../reference/COMMANDS.md). Sharing memory
+across a team: [Team and remote](TEAM.md).

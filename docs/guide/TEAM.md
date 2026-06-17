@@ -1,14 +1,23 @@
-# Team / multi-machine mode (optional)
+# Team and remote
 
 > **You don't need this for local use.** The default `pmb connect <agent>`
-> runs the MCP server as a child process of your agent over **stdio** - no
-> network, no port, no token. This page is only for sharing one memory
-> across several machines or people.
+> keeps PMB local. Supported local clients use one warm daemon on
+> `127.0.0.1`; stdio-only clients such as Codex reach it through
+> `pmb mcp proxy`. This page is only for sharing one memory across several
+> machines or people.
 
 PMB's memory is a SQLite file plus a vector index. By default it lives next
 to you and only your local agent talks to it. If you want **one shared
 memory** - a team on the same workspace, or your own laptop + desktop -
 you run the MCP server once over HTTP and point every agent at its URL.
+
+## Local versus shared
+
+| Mode | Use it when | Transport |
+|---|---|---|
+| Local default | One developer on one machine, even with several agents | Local daemon on `127.0.0.1`; Codex uses `pmb mcp proxy` to bridge stdio to the daemon. |
+| Local stdio fallback | A host cannot use the daemon/proxy path | One MCP server process per client. |
+| Team / multi-machine | Several machines or people need one memory | One `pmb mcp serve` process over streamable HTTP with a bearer token. |
 
 ## When you'd want it
 
@@ -18,7 +27,7 @@ you run the MCP server once over HTTP and point every agent at its URL.
 | Your own multiple machines | Work laptop + home desktop on one memory |
 | Memory on a server / NAS | One persistent process; agents connect from anywhere |
 
-If none of these apply, stop here and use the local stdio default.
+If none of these apply, stop here and use the normal local daemon/proxy setup.
 
 ## Run the shared server
 
@@ -26,7 +35,7 @@ One persistent process, living next to the SQLite file (a homelab box, a
 Tailscale node, a small VM):
 
 ```bash
-pmb mcp serve --transport http --host 0.0.0.0 --port 8765 \
+pmb mcp serve --transport streamable-http --host 0.0.0.0 --port 8765 \
               --bearer-token "$(openssl rand -hex 32)"
 ```
 
@@ -41,8 +50,8 @@ Same MCP, same tools, one shared memory.
 
 ## Why the bearer token is required
 
-Over **stdio** there's no auth because there's no network surface - the
-channel is a pipe between parent and child process, and the OS isolates it.
+Over local stdio there is no network surface. Over the local daemon, PMB keeps
+the server bound to `127.0.0.1` and uses its own local token/proxy wiring.
 
 Over **HTTP** the moment you open a port, anyone who can reach it can read
 and write your memory. The bearer token is the only thing separating "my
@@ -56,12 +65,13 @@ else needs `Authorization: Bearer <token>`.
 
 ## Config via environment
 
-`pmb mcp serve` is a thin wrapper over env vars, if you'd rather set them in
-a systemd unit / Docker:
+`pmb mcp serve` sets these env vars before handing off to the MCP server. If
+you run `pmb-mcp` directly from a systemd unit or Docker image, set them
+yourself:
 
 | Env | Default | Meaning |
 |---|---|---|
-| `PMB_MCP_TRANSPORT` | `stdio` | `streamable-http` for the shared server |
+| `PMB_MCP_TRANSPORT` | `stdio` in `pmb-mcp`; `pmb mcp serve` sets `streamable-http` by default | `streamable-http` for the shared server |
 | `PMB_MCP_HOST` | `127.0.0.1` | `0.0.0.0` to accept LAN / mesh |
 | `PMB_MCP_PORT` | `8765` | bind port (don't collide with `pmb dashboard`) |
 | `PMB_MCP_PATH` | `/mcp` | mount path |
@@ -72,6 +82,7 @@ a systemd unit / Docker:
 
 ## Tests
 
-The auth contract is pinned in `tests/integration/test_http_bearer_auth.py` (no token →
-401, wrong token → 401, correct token → 200, preflight/health pass through,
-empty token disables the gate).
+The auth contract is pinned in `tests/integration/test_http_bearer_auth.py`: no
+token returns 401 when auth is configured, a wrong token returns 401, the
+correct token returns 200, preflight and health pass through, and an empty token
+disables the gate.

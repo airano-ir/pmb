@@ -1,78 +1,141 @@
-# PMB documentation
+<div class="hero" markdown>
+<div class="hero__eyebrow">Local-first memory for coding agents</div>
 
-PMB (Personal Memory Brain) is local-first persistent memory for AI coding
-agents. It runs fully on your machine, with no API keys, and works with Claude
-Code, Codex, Cursor, and other agents over MCP.
+# PMB gives coding agents local memory
 
-New here? Start with the [Guide](#guide), then read
-[How it works](concepts/how-it-works.md) when you want the details.
+PMB gives Claude Code, Codex, Cursor, and other MCP agents a shared private
+memory. It captures project decisions and lessons as you work, ranks relevant
+context locally, and injects it before the next answer.
 
-## Guide
+<div class="hero__actions" markdown>
+[Start with setup](guide/getting-started.md){ .md-button .md-button--primary }
+[See how it works](concepts/how-it-works.md){ .md-button }
+</div>
+</div>
 
-Task-oriented pages to get things done.
+<div class="hero__metrics" markdown>
+<div class="hero__metric" markdown>
+<strong>Local by default</strong>
+<span>SQLite, LanceDB, and config live on your machine.</span>
+</div>
+<div class="hero__metric" markdown>
+<strong>Fast recall</strong>
+<span>One warm daemon serves every connected agent.</span>
+</div>
+<div class="hero__metric" markdown>
+<strong>Agent-native</strong>
+<span>MCP tools plus hooks fit into existing workflows.</span>
+</div>
+</div>
 
-- [Getting started](guide/getting-started.md): install with pip or npm, run
-  setup, and understand the shared warm daemon.
-- [Usage](guide/usage.md): day to day notes, per agent.
-- [The dashboard](guide/dashboard.md): browse your memory, and delete from the UI.
-- [Deleting memories](guide/deleting-memories.md): archive or permanently delete,
-  from the dashboard or the command line.
-- [Team and remote use](guide/TEAM.md): share one memory across machines.
-- [Ollama setup](guide/SETUP_OLLAMA.md): use a local LLM for the background tier.
+## How PMB fits into your workflow
 
-## Concepts
+``` mermaid
+flowchart LR
+  Work["Work"] --> Capture["Capture"]
+  Capture --> Store["Store"]
+  Store --> Recall["Recall"]
+  Recall --> Context["Context"]
+  Context --> Answer["Answer"]
+  Answer --> Work
+```
 
-How PMB is built and why.
+## Choose your path
 
-- [Architecture](concepts/architecture.md): the components and where they live in
-  the code.
-- [How it works](concepts/how-it-works.md): a step by step walk through the read
-  path, the write path, the daemon, and the hooks.
-- [Design and technology](concepts/design-and-tech.md): the design patterns, the
-  stack, and the decisions behind them.
+<div class="grid cards" markdown>
 
-## Reference
+-   **Getting started**
 
-Look things up.
+    Go from zero to a wired agent with `pip`, `uv`, `pipx`, or `npx`.
 
-- [Commands](reference/COMMANDS.md): every command, grouped by task.
-- [Configuration](reference/configuration.md): the settings you are likely to
-  touch, and how config layering works.
+    [Install PMB →](guide/getting-started.md)
 
-## Contributing
+-   **Usage**
 
-- [Adding a language](contributing/adding-a-language.md): extend the language
-  packs (a good first contribution).
+    Connect Claude Code, Codex, Cursor, Windsurf, Gemini, Zed, and more.
+
+    [Connect an agent →](guide/usage.md)
+
+-   **Architecture**
+
+    See the daemon, hook, MCP, storage, and retrieval paths as diagrams.
+
+    [Understand the system →](concepts/architecture.md)
+
+-   **Core engine**
+
+    Read the Engine map, schema, queues, and code paths behind recall.
+
+    [Inspect the core →](concepts/core-engine.md)
+
+-   **Commands**
+
+    Look up setup, recall, dashboard, delete, sync, and maintenance commands.
+
+    [Open the reference →](reference/COMMANDS.md)
+
+</div>
+
+## Why teams use it
+
+<div class="pmb-feature-grid" markdown>
+<div markdown>
+<strong>Durable memory</strong>
+<span>Facts, decisions, goals, lessons, and session summaries persist between sessions.</span>
+</div>
+<div markdown>
+<strong>Free reads</strong>
+<span>Local pre-message recall through hooks and MCP, so remembering costs no tokens.</span>
+</div>
+<div markdown>
+<strong>One shared brain</strong>
+<span>Several agents on one project share a warm daemon and one workspace memory.</span>
+</div>
+<div markdown>
+<strong>Private by default</strong>
+<span>Local storage; the network is touched only by the explicit sync commands you run.</span>
+</div>
+<div markdown>
+<strong>Learns from drift</strong>
+<span>Lessons and failures surface before the work they apply to, so mistakes do not repeat.</span>
+</div>
+</div>
+
+## The core loop
+
+``` mermaid
+flowchart TB
+  User["Request"] --> Prepare["Prepare"]
+  Prepare --> Context{"Found?"}
+  Context -->|Yes| Relevant["Relevant memory"]
+  Context -->|No| Quiet["Stay quiet"]
+  Relevant --> Agent["Act"]
+  Quiet --> Agent
+  Agent --> Record{"Worth saving?"}
+  Record -->|Yes| Memory["Record"]
+  Record -->|No| Skip["Skip"]
+  Memory --> Next["Better next turn"]
+  Skip --> Next
+```
 
 ## Common tasks
 
 | I want to... | Do this |
 |---|---|
 | Set up one agent | `pmb setup` |
-| Set up every agent I have | `pmb setup --all` |
+| Set up every detected agent | `pmb setup --all` |
 | Install from npm in one step | `npx pmb-ai setup` |
-| See if memory is warm | `pmb daemon status` |
+| See whether memory is warm | `pmb daemon status` |
 | Change the embedding model | `pmb model` |
-| Archive a memory (reversible) | `pmb delete <ulid>` |
+| Archive a memory | `pmb delete <ulid>` |
 | Delete a memory permanently | `pmb delete <ulid> --hard` |
 | Bring an archived memory back | `pmb restore <ulid>` |
-| Open the web dashboard | `pmb dashboard` |
-| Reset stray processes | `pmb daemon kill-all` |
+| Open the local dashboard | `pmb dashboard` |
+| Reset stray PMB processes | `pmb daemon kill-all` |
 
-## What makes it different
+## What to read next
 
-- **Zero token reads.** Memory is injected by local hooks before the model
-  thinks, so recall does not cost agent tokens.
-- **One warm daemon.** A single background process holds the embedding model and
-  the index, and every connected agent reuses it.
-- **Any language.** The default model is multilingual, and recall is tuned to
-  find cross language answers.
-- **Your data stays yours.** Everything is local. The dashboard binds to
-  `127.0.0.1` only, and the sync commands are the only ones that touch the
-  network, and only when you run them.
-
-## Project
-
-- [Roadmap](ROADMAP.md): what is planned next.
-- [Changelog](https://github.com/oleksiijko/pmb/blob/main/CHANGELOG.md): what
-  changed in each release.
+- [Guide](guide/index.md): install PMB, connect agents, and operate the dashboard.
+- [Concepts](concepts/index.md): understand the architecture and retrieval model.
+- [Reference](reference/index.md): look up commands and configuration.
+- [Contributing](contributing/index.md): extend language packs or improve the docs.

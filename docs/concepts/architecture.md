@@ -1,7 +1,9 @@
 # Architecture
 
 This page explains what PMB is made of and how a request flows through it. For
-the why behind the choices, see [design-and-tech.md](design-and-tech.md).
+the implementation-level Engine and storage schema, see
+[Core engine](core-engine.md). For the why behind the choices, see
+[Design and technology](design-and-tech.md).
 
 ## The one idea
 
@@ -11,23 +13,36 @@ therefore free in tokens and fast, and it works the same in any language.
 
 ## Big picture
 
-```
-  your agent  (Claude Code / Codex / Cursor / ...)
-      |
-      |  MCP tools (deliberate)   +   lifecycle hooks (automatic)
-      v
-  pmb-hook  (stdlib fast lane, per message)
-      |
-      |  local HTTP (bearer auth)
-      v
-  warm daemon  ── holds ──>  one Engine + embedding model
-      |                          |
-      |                          +── SQLite     (events, graph, metrics)
-      |                          +── LanceDB     (vectors)
-      |                          +── BM25         (in memory, cached)
-      |
-      └─ if no daemon is up: fall back to a cold per-process Engine,
-         and start a daemon in the background for the next message.
+<div class="pmb-signal-grid" markdown>
+<div markdown>
+<strong>Read path</strong>
+<span>No LLM call. The Engine ranks local memory before the model answers.</span>
+</div>
+<div markdown>
+<strong>Runtime</strong>
+<span>One warm daemon keeps the embedder and indexes loaded for all agents.</span>
+</div>
+<div markdown>
+<strong>Storage</strong>
+<span>SQLite is the source of truth; LanceDB and BM25 are searchable side indexes.</span>
+</div>
+<div markdown>
+<strong>Lifecycle</strong>
+<span>Soft delete by default, durable queues for async writes, hard purge only on request.</span>
+</div>
+</div>
+
+``` mermaid
+flowchart LR
+  Agent["Agents"] --> Bridge["MCP bridge"]
+  Bridge --> Engine["Engine"]
+  Engine --> Events[("SQLite")]
+  Engine --> Search["Indexes"]
+  Engine --> Graph[("Graph")]
+  Events --> Context["Context"]
+  Search --> Context
+  Graph --> Context
+  Context --> Agent
 ```
 
 Everything runs on your machine. Nothing is sent to the cloud, and the only
@@ -77,6 +92,25 @@ agent calls `prepare` and `recall` itself.
 
 ## The read path, per message
 
+``` mermaid
+sequenceDiagram
+  autonumber
+  participant User
+  participant Host as Agent host
+  participant Hook as pmb-hook
+  participant Daemon as Warm daemon
+  participant Engine
+
+  User->>Host: Send message
+  Host->>Hook: UserPromptSubmit
+  Hook->>Daemon: prepare-context
+  Daemon->>Engine: classify + hybrid recall + gates
+  Engine-->>Daemon: compact context block
+  Daemon-->>Hook: relevant memory
+  Hook-->>Host: print injected context
+  Host-->>User: model answers with memory
+```
+
 1. The host fires UserPromptSubmit with the user message.
 2. `pmb-hook` posts it to the daemon route `/internal/hook/prepare-context`.
 3. The Engine classifies the message, runs hybrid recall, gathers lessons,
@@ -90,6 +124,20 @@ hook answers from a cold per process Engine (which skips heavy semantic recall)
 and asks a daemon to start, so the next message is warm.
 
 ## The write path
+
+``` mermaid
+flowchart LR
+  Record["record_*"] --> Event[("event")]
+  Record --> Embed["embed"]
+  Record --> Lexical["BM25"]
+  Record --> Entities["entities"]
+  Embed --> LanceDB[("vectors")]
+  Entities --> Graph[("graph")]
+  Event --> Recall["recall-ready"]
+  LanceDB --> Recall
+  Lexical --> Recall
+  Graph --> Recall
+```
 
 The `record_*` tools, and ambient auto write, append an event to SQLite, embed
 it into LanceDB, update the BM25 index, and link it into the entity graph.
@@ -116,6 +164,8 @@ is genuinely relevant, which is what stops small talk from pulling in noise.
   table for vectors.
 - Compacted, archived events move to a cold store so the active database stays
   small.
+- See [Core engine](core-engine.md) for the table-by-table schema map and the
+  queue files that make async writes recoverable.
 
 ## Where to look in the code
 

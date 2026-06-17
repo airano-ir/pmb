@@ -1,4 +1,4 @@
-# PMB roadmap
+# Roadmap
 
 Honest and local-first. PMB is a personal tool: every item below keeps memory on
 your disk, offline by default, with no call-home. Dates are intentionally absent -
@@ -18,7 +18,7 @@ were **deleted**; many languages now ride one mechanism instead of a pack each:
 - **Measured** - V1 RU/UK recall top-1 = 1.00 (byte-identical to the pack era);
   101-query multilingual eval overall top-3 ≈ 0.91; anchor classify p95 ≈ 81 ms.
   A blocking CI gate runs the eval with packs off so recall can't silently
-  regress. See [adding-a-language.md](contributing/adding-a-language.md).
+  regress. See [Adding a language](contributing/adding-a-language.md).
 
 ## Next
 

@@ -16,6 +16,7 @@ build/
 .coverage
 .coverage.*
 htmlcov/
+site/
 .tox/
 .nox/
 .hypothesis/

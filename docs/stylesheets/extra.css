@@ -1,0 +1,718 @@
+/* ==========================================================================
+   PMB documentation theme
+   Design tokens are defined per color scheme so light and dark stay in sync.
+   The accent is the indigo/cyan of the PMB logo mark.
+   ========================================================================== */
+
+/* ---- Light (default) ---------------------------------------------------- */
+[data-md-color-scheme="default"] {
+  --pmb-bg: #ffffff;
+  --pmb-panel: #ffffff;
+  --pmb-panel-soft: #f6f8fc;
+  --pmb-ink: #131a2a;
+  --pmb-muted: #5b6776;
+  --pmb-line: #e3e8ef;
+  --pmb-line-soft: #eef1f6;
+  --pmb-accent: #4f46e5;
+  --pmb-accent-strong: #4338ca;
+  --pmb-accent-contrast: #ffffff;
+  --pmb-accent-soft: #eef2ff;
+  --pmb-cyan: #0e9bbd;
+  --pmb-green: #0f9d76;
+  --pmb-amber: #c2770b;
+  --pmb-shadow: 0 1px 2px rgba(19, 26, 42, 0.04), 0 12px 28px rgba(19, 26, 42, 0.06);
+  --pmb-shadow-soft: 0 1px 2px rgba(19, 26, 42, 0.04), 0 8px 20px rgba(19, 26, 42, 0.05);
+  --pmb-hero-grad: linear-gradient(180deg, #ffffff 0%, #f6f8fc 100%);
+
+  --md-default-bg-color: var(--pmb-bg);
+  --md-default-fg-color: var(--pmb-ink);
+  --md-default-fg-color--light: var(--pmb-muted);
+  --md-default-fg-color--lighter: #93a0b1;
+  --md-typeset-color: var(--pmb-ink);
+  --md-typeset-a-color: var(--pmb-accent);
+  --md-accent-fg-color: var(--pmb-accent-strong);
+  --md-code-bg-color: #f1f5f9;
+  --md-code-fg-color: #1f2937;
+  --md-primary-fg-color: #ffffff;
+  --md-primary-bg-color: var(--pmb-ink);
+  --md-footer-bg-color: #f6f8fc;
+  --md-footer-bg-color--dark: #eef1f6;
+  --md-footer-fg-color: #131a2a;
+  --md-footer-fg-color--light: #5b6776;
+  --md-footer-fg-color--lighter: #93a0b1;
+}
+
+/* ---- Dark (slate) ------------------------------------------------------- */
+[data-md-color-scheme="slate"] {
+  --pmb-bg: #0b0e16;
+  --pmb-panel: #141a27;
+  --pmb-panel-soft: #10151f;
+  --pmb-ink: #e7edf6;
+  --pmb-muted: #9aa6b8;
+  --pmb-line: #232c3d;
+  --pmb-line-soft: #1b2231;
+  --pmb-accent: #8b8cf7;
+  --pmb-accent-strong: #a5b4fc;
+  --pmb-accent-contrast: #0b0e16;
+  --pmb-accent-soft: rgba(129, 140, 248, 0.14);
+  --pmb-cyan: #34d3ee;
+  --pmb-green: #34d399;
+  --pmb-amber: #fbbf24;
+  --pmb-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 14px 34px rgba(0, 0, 0, 0.45);
+  --pmb-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 24px rgba(0, 0, 0, 0.35);
+  --pmb-hero-grad: linear-gradient(180deg, #111726 0%, #0b0e16 100%);
+
+  --md-default-bg-color: var(--pmb-bg);
+  --md-default-fg-color: var(--pmb-ink);
+  --md-default-fg-color--light: var(--pmb-muted);
+  --md-default-fg-color--lighter: #6b7789;
+  --md-typeset-color: var(--pmb-ink);
+  --md-typeset-a-color: var(--pmb-accent);
+  --md-accent-fg-color: var(--pmb-accent-strong);
+  --md-code-bg-color: #0f1521;
+  --md-code-fg-color: #d7e0ec;
+  --md-primary-fg-color: #0c111b;
+  --md-primary-bg-color: var(--pmb-ink);
+  --md-footer-bg-color: #0c111b;
+  --md-footer-bg-color--dark: #090d14;
+}
+
+/* ---- Document ----------------------------------------------------------- */
+/* Keep anchored headings clear of the sticky header when jumping via the TOC. */
+html {
+  scroll-padding-top: 3.4rem;
+}
+
+/* ---- Header ------------------------------------------------------------- */
+.md-header {
+  border-bottom: 1px solid var(--pmb-line);
+  box-shadow: none;
+}
+
+[data-md-color-scheme="slate"] .md-header {
+  background-color: var(--md-primary-fg-color);
+}
+
+.md-header__title {
+  font-weight: 700;
+}
+
+.md-search__form {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+[data-md-color-scheme="slate"] .md-search__input {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ---- Layout ------------------------------------------------------------- */
+.md-main__inner {
+  max-width: 88rem;
+  margin-top: 1.15rem;
+}
+
+.md-content__inner {
+  padding-bottom: 2.6rem;
+}
+
+.md-content__inner::before {
+  height: 0;
+}
+
+/* ---- Primary navigation (left rail) ------------------------------------- */
+.md-sidebar--primary .md-sidebar__scrollwrap {
+  border-right: 1px solid var(--pmb-line-soft);
+  scrollbar-width: thin;
+  scrollbar-color: var(--pmb-line) transparent;
+}
+
+.md-sidebar--primary .md-sidebar__scrollwrap::-webkit-scrollbar {
+  width: 6px;
+}
+
+.md-sidebar--primary .md-sidebar__scrollwrap::-webkit-scrollbar-thumb {
+  background: var(--pmb-line);
+  border-radius: 999px;
+}
+
+.md-sidebar--primary .md-sidebar__scrollwrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.md-nav__title {
+  color: var(--pmb-ink);
+}
+
+/* Group the top-level entries: a hairline + breathing room before each
+   section, so Guide / Concepts / Reference / Contributing read as blocks. */
+.md-sidebar--primary .md-nav--primary > .md-nav__list > .md-nav__item + .md-nav__item {
+  margin-top: 0.4rem;
+}
+
+.md-sidebar--primary .md-nav--primary > .md-nav__list > .md-nav__item--section {
+  margin-top: 1.05rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid var(--pmb-line);
+}
+
+/* Section headers read as labels, not buttons (still clickable via indexes). */
+.md-sidebar--primary .md-nav__item--section > .md-nav__link,
+.md-sidebar--primary .md-nav__title {
+  margin-bottom: 0.2rem;
+  color: var(--pmb-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.md-sidebar--primary .md-nav__item--section > .md-nav__link:is(:focus, :hover) {
+  background: transparent;
+  color: var(--pmb-accent);
+}
+
+/* Leaf links: compact rows with a pill hover/active state. */
+.md-sidebar--primary .md-nav__item .md-nav__link {
+  border-radius: 7px;
+  margin-top: 0.05rem;
+  padding: 0.32rem 0.55rem;
+  line-height: 1.3;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.md-sidebar--primary .md-nav__link--active,
+.md-sidebar--primary .md-nav__item:not(.md-nav__item--section) > .md-nav__link:is(:focus, :hover) {
+  background: var(--pmb-accent-soft);
+  color: var(--pmb-accent);
+}
+
+.md-sidebar--primary .md-nav__link--active {
+  font-weight: 700;
+}
+
+/* Hide heading anchors from the left rail; the right TOC carries them. */
+.md-sidebar--primary .md-nav--secondary {
+  display: none !important;
+}
+
+.md-sidebar--primary .md-nav__link[href^="#"],
+.md-sidebar--primary .md-nav__link[href*="#"] {
+  display: none !important;
+}
+
+/* ---- Secondary navigation (right TOC) ----------------------------------- */
+.md-sidebar--secondary .md-nav__title {
+  color: var(--pmb-muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.md-sidebar--secondary .md-nav__link--active {
+  color: var(--pmb-accent);
+  font-weight: 600;
+}
+
+/* ---- Typography --------------------------------------------------------- */
+.md-typeset {
+  font-size: 0.82rem;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-weight: 750;
+  letter-spacing: -0.012em;
+}
+
+.md-typeset h1 {
+  color: var(--pmb-ink);
+  margin-bottom: 0.5rem;
+  font-size: 1.95rem;
+}
+
+.md-typeset h1 + p {
+  max-width: 50rem;
+  margin-top: 0;
+  color: var(--pmb-muted);
+  font-size: 1.02rem;
+  line-height: 1.65;
+}
+
+.md-typeset h2 {
+  margin-top: 2.4rem;
+  padding-top: 1.05rem;
+  border-top: 1px solid var(--pmb-line-soft);
+  font-size: 1.35rem;
+}
+
+.md-typeset h2:first-of-type {
+  margin-top: 1.4rem;
+}
+
+.md-typeset h3 {
+  margin-top: 1.7rem;
+  font-size: 1.05rem;
+}
+
+.md-typeset a {
+  text-underline-offset: 2px;
+}
+
+.md-typeset hr {
+  border-bottom: 1px solid var(--pmb-line-soft);
+}
+
+/* ---- Hero (home) -------------------------------------------------------- */
+.md-typeset .hero {
+  display: grid;
+  gap: 1rem;
+  margin: 0 0 1.6rem;
+  padding: clamp(1.2rem, 3vw, 2.2rem) clamp(1.2rem, 3vw, 2.2rem) 1.9rem;
+  border: 1px solid var(--pmb-line);
+  border-radius: 14px;
+  background: var(--pmb-hero-grad);
+  box-shadow: var(--pmb-shadow-soft);
+}
+
+.md-typeset .hero h1 {
+  max-width: 20ch;
+  margin: 0;
+  font-size: clamp(1.95rem, 4.1vw, 2.75rem);
+  line-height: 1.05;
+}
+
+.md-typeset .hero p {
+  max-width: 46rem;
+  margin: 0;
+  color: var(--pmb-muted);
+  font-size: 1.02rem;
+  line-height: 1.6;
+}
+
+.md-typeset .hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: max-content;
+  padding: 0.28rem 0.7rem;
+  border: 1px solid var(--pmb-line);
+  border-radius: 999px;
+  background: var(--pmb-panel);
+  color: var(--pmb-accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.md-typeset .hero__eyebrow::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--pmb-accent);
+}
+
+.md-typeset .hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+/* ---- Metric / stat strip ------------------------------------------------ */
+.md-typeset .hero__metrics,
+.md-typeset .pmb-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.7rem;
+  margin: 1.4rem 0 0.4rem;
+}
+
+.md-typeset .hero__metric,
+.md-typeset .pmb-stats > div {
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--pmb-line);
+  border-radius: 10px;
+  background: var(--pmb-panel);
+  box-shadow: var(--pmb-shadow-soft);
+}
+
+.md-typeset .hero__metric strong,
+.md-typeset .pmb-stats strong {
+  display: block;
+  color: var(--pmb-ink);
+  font-size: 1.05rem;
+}
+
+.md-typeset .hero__metric span,
+.md-typeset .pmb-stats span {
+  color: var(--pmb-muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+/* ---- Buttons ------------------------------------------------------------ */
+.md-typeset .md-button {
+  border-radius: 8px;
+  padding: 0.5rem 1.1rem;
+  font-weight: 700;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.md-typeset .md-button:not(.md-button--primary) {
+  border-color: var(--pmb-line);
+  color: var(--pmb-ink);
+  background: var(--pmb-panel);
+}
+
+.md-typeset .md-button:not(.md-button--primary):hover {
+  border-color: var(--pmb-accent);
+  color: var(--pmb-accent);
+  transform: translateY(-1px);
+}
+
+.md-typeset .md-button--primary {
+  background-color: var(--pmb-accent);
+  border-color: var(--pmb-accent);
+  color: var(--pmb-accent-contrast);
+  box-shadow: var(--pmb-shadow-soft);
+}
+
+.md-typeset .md-button--primary:hover {
+  background-color: var(--pmb-accent-strong);
+  border-color: var(--pmb-accent-strong);
+  color: var(--pmb-accent-contrast);
+  transform: translateY(-1px);
+}
+
+/* ---- Card grids (Material .grid.cards and the path grid) ---------------- */
+.md-typeset .grid.cards {
+  grid-gap: 0.9rem;
+  gap: 0.9rem;
+}
+
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card,
+.md-typeset .pmb-cards > .pmb-card {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 1.1rem 1.15rem;
+  border: 1px solid var(--pmb-line);
+  border-radius: 12px;
+  background: var(--pmb-panel);
+  box-shadow: var(--pmb-shadow-soft);
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover,
+.md-typeset .pmb-cards > .pmb-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--pmb-accent);
+  box-shadow: var(--pmb-shadow);
+}
+
+.md-typeset .grid.cards > ul > li > hr {
+  margin: 0.6rem 0;
+}
+
+/* Card title */
+.md-typeset .grid.cards > ul > li > p:first-child > strong,
+.md-typeset .pmb-card strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--pmb-ink);
+  font-size: 0.98rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.md-typeset .grid.cards > ul > li > p {
+  color: var(--pmb-muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+/* Card call-to-action link */
+.md-typeset .grid.cards > ul > li > p:last-child > a,
+.md-typeset .pmb-card .pmb-card__cta {
+  margin-top: auto;
+  color: var(--pmb-accent);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+/* ---- Fully clickable path cards (home) ---------------------------------- */
+.md-typeset .pmb-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.9rem;
+  margin: 1.1rem 0 1.4rem;
+}
+
+.md-typeset a.pmb-card {
+  color: inherit;
+  text-decoration: none;
+}
+
+.md-typeset .pmb-card__eyebrow {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--pmb-accent);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.md-typeset .pmb-card__desc {
+  color: var(--pmb-muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.md-typeset .pmb-card .pmb-card__cta {
+  display: inline-block;
+  margin-top: 0.7rem;
+}
+
+.md-typeset .pmb-card .pmb-card__cta::after {
+  content: " \2192";
+}
+
+/* ---- Feature / signal / note widget grids ------------------------------- */
+.md-typeset .pmb-signal-grid,
+.md-typeset .pmb-widget-grid,
+.md-typeset .pmb-note-grid,
+.md-typeset .pmb-feature-grid {
+  display: grid;
+  gap: 0.8rem;
+  margin: 1.1rem 0 1.4rem;
+}
+
+.md-typeset .pmb-signal-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.md-typeset .pmb-widget-grid {
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.md-typeset .pmb-note-grid {
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.md-typeset .pmb-feature-grid {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.md-typeset .pmb-signal-grid > div,
+.md-typeset .pmb-widget-grid > div,
+.md-typeset .pmb-note-grid > div,
+.md-typeset .pmb-feature-grid > div {
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--pmb-line);
+  border-radius: 11px;
+  background: var(--pmb-panel);
+  box-shadow: var(--pmb-shadow-soft);
+}
+
+.md-typeset .pmb-signal-grid > div {
+  min-height: 6rem;
+}
+
+.md-typeset .pmb-widget-grid > div {
+  min-height: 6.5rem;
+}
+
+.md-typeset .pmb-signal-grid strong,
+.md-typeset .pmb-widget-grid strong,
+.md-typeset .pmb-note-grid strong,
+.md-typeset .pmb-feature-grid strong {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--pmb-ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.md-typeset .pmb-signal-grid span,
+.md-typeset .pmb-widget-grid span,
+.md-typeset .pmb-note-grid span,
+.md-typeset .pmb-feature-grid span {
+  color: var(--pmb-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+/* Small accent tab on feature cards */
+.md-typeset .pmb-feature-grid > div {
+  position: relative;
+  padding-left: 1.1rem;
+}
+
+.md-typeset .pmb-feature-grid > div::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.95rem;
+  bottom: 0.95rem;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--pmb-accent);
+}
+
+/* ---- Mermaid diagrams --------------------------------------------------- */
+.md-typeset .pmb-mermaid {
+  overflow-x: auto;
+  margin: 1.2rem 0 1.5rem;
+  padding: 1.4rem 1.25rem;
+  border: 1px solid var(--pmb-line);
+  border-radius: 12px;
+  background: var(--pmb-panel-soft);
+  box-shadow: var(--pmb-shadow-soft);
+}
+
+.md-typeset .pmb-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.md-typeset .pmb-mermaid .nodeLabel,
+.md-typeset .pmb-mermaid .edgeLabel,
+.md-typeset .pmb-mermaid text {
+  font-family: Inter, sans-serif !important;
+  line-height: 1.35;
+}
+
+.md-typeset .pmb-mermaid--error {
+  white-space: pre-wrap;
+  color: var(--pmb-muted);
+  font-size: 0.78rem;
+}
+
+/* ---- Tables ------------------------------------------------------------- */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--pmb-line);
+  border-radius: 11px;
+  overflow: hidden;
+  box-shadow: var(--pmb-shadow-soft);
+  font-size: 0.78rem;
+}
+
+.md-typeset table:not([class]) th {
+  background: var(--pmb-panel-soft);
+  color: var(--pmb-ink);
+  font-weight: 700;
+}
+
+.md-typeset table:not([class]) td {
+  border-top: 1px solid var(--pmb-line-soft);
+}
+
+.md-typeset table:not([class]) tr:hover {
+  background: var(--pmb-accent-soft);
+}
+
+/* Inline command pills inside tables stay legible in both themes */
+.md-typeset table:not([class]) code {
+  background: var(--md-code-bg-color);
+}
+
+/* ---- Status tag (replaces command-legend emoji) ------------------------- */
+.md-typeset .pmb-tag {
+  display: inline-block;
+  margin-left: 0.15rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--pmb-line);
+  background: var(--pmb-panel-soft);
+  color: var(--pmb-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.md-typeset .pmb-tag--llm {
+  border-color: color-mix(in srgb, var(--pmb-amber) 45%, var(--pmb-line));
+  background: color-mix(in srgb, var(--pmb-amber) 14%, transparent);
+  color: var(--pmb-amber);
+}
+
+/* ---- Admonitions / details --------------------------------------------- */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 11px;
+  border-left-width: 3px;
+}
+
+/* ---- Code blocks -------------------------------------------------------- */
+.md-typeset pre > code {
+  border-radius: 10px;
+}
+
+.md-typeset .highlight {
+  border-radius: 10px;
+}
+
+/* ---- Footer ------------------------------------------------------------- */
+.md-footer {
+  border-top: 1px solid var(--pmb-line);
+}
+
+.md-footer__inner {
+  gap: 1rem;
+}
+
+.md-footer__link:hover {
+  opacity: 1;
+}
+
+.md-footer-meta {
+  border-top: 1px solid color-mix(in srgb, var(--md-footer-fg-color, #ffffff) 12%, transparent);
+}
+
+/* ---- Responsive --------------------------------------------------------- */
+@media screen and (min-width: 45em) and (max-width: 76.1875em) {
+  .md-typeset .pmb-signal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-typeset .hero {
+    padding: 1.1rem 1.1rem 1.4rem;
+  }
+
+  .md-typeset .hero h1 {
+    max-width: 100%;
+    font-size: 1.78rem;
+    overflow-wrap: anywhere;
+  }
+
+  .md-typeset .hero p {
+    max-width: 100%;
+    font-size: 0.95rem;
+  }
+
+  .md-typeset .hero__actions .md-button {
+    width: 100%;
+    text-align: center;
+  }
+
+  .md-typeset .hero__metrics,
+  .md-typeset .pmb-stats,
+  .md-typeset .pmb-signal-grid,
+  .md-typeset .pmb-cards,
+  .md-typeset .grid.cards > ul {
+    grid-template-columns: 1fr;
+  }
+}

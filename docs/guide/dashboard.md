@@ -1,4 +1,4 @@
-# The dashboard
+# Dashboard
 
 `pmb dashboard` opens a local web UI for browsing your memory. It is read mostly,
 runs on your machine, and binds to `127.0.0.1` only, so nothing is exposed to the
@@ -41,4 +41,4 @@ Click any memory to open its detail panel. At the bottom you have:
 
 After you act, the panel closes and the current view refreshes. For the full
 picture of soft versus hard deletion, see
-[deleting-memories.md](deleting-memories.md).
+[Deleting memories](deleting-memories.md).

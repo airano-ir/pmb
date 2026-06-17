@@ -1,57 +1,92 @@
-# Material for MkDocs config. The docs live in docs/ and deploy to GitHub Pages
-# via .github/workflows/docs.yml. Enable it once: repo Settings -> Pages ->
-# Source: "GitHub Actions". After that, every push to main rebuilds the site at
-# https://oleksiijko.github.io/pmb/ .
+# Material for MkDocs config. Docs live in docs/ and deploy to GitHub Pages via
+# .github/workflows/docs.yml. Enable once: Settings -> Pages -> Source: GitHub
+# Actions. Site: https://oleksiijko.github.io/pmb/
 site_name: PMB
-site_description: Local-first persistent memory for AI coding agents. No cloud, no keys.
+site_description: Local-first memory infrastructure for AI coding agents, with fast recall, local storage, and agent-native workflows.
 site_url: https://oleksiijko.github.io/pmb/
 repo_url: https://github.com/oleksiijko/pmb
 repo_name: oleksiijko/pmb
 edit_uri: edit/main/docs/
+copyright: Apache-2.0 licensed. Local-first. You own every byte.
 
 theme:
   name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  font:
+    text: Inter
+    code: JetBrains Mono
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: white
+      accent: blue
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: black
+      accent: blue
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
   features:
-    - navigation.tabs
-    - navigation.sections
-    - navigation.top
     - navigation.instant
+    - navigation.instant.progress
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
     - navigation.tracking
+    - toc.follow
     - search.suggest
     - search.highlight
+    - search.share
+    - content.tabs.link
     - content.code.copy
-    - toc.follow
+    - content.code.annotate
+    - content.code.select
+    - content.tooltips
   icon:
     repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/oleksiijko/pmb
+      name: PMB on GitHub
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js
+  - javascripts/mermaid-init.js
 
 markdown_extensions:
   - admonition
   - attr_list
   - md_in_html
   - tables
+  - footnotes
   - toc:
       permalink: true
+  - pymdownx.details
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.superfences
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: pmb-mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 # Internal notes stay in the repo but are not part of the published site.
 exclude_docs: |
@@ -62,19 +97,28 @@ exclude_docs: |
 nav:
   - Home: README.md
   - Guide:
+      - guide/index.md
       - Getting started: guide/getting-started.md
       - Usage: guide/usage.md
-      - The dashboard: guide/dashboard.md
+      - Dashboard: guide/dashboard.md
       - Deleting memories: guide/deleting-memories.md
       - Team and remote: guide/TEAM.md
       - Ollama: guide/SETUP_OLLAMA.md
+      - Troubleshooting: guide/troubleshooting.md
   - Concepts:
+      - concepts/index.md
       - Architecture: concepts/architecture.md
       - How it works: concepts/how-it-works.md
+      - Memory model: concepts/memory-model.md
+      - Core engine: concepts/core-engine.md
       - Design and technology: concepts/design-and-tech.md
+      - Privacy and security: concepts/privacy-and-security.md
   - Reference:
+      - reference/index.md
       - Commands: reference/COMMANDS.md
+      - MCP tools: reference/mcp-tools.md
       - Configuration: reference/configuration.md
   - Contributing:
+      - contributing/index.md
       - Adding a language: contributing/adding-a-language.md
   - Roadmap: ROADMAP.md
