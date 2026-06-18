@@ -2,6 +2,55 @@
 
 All notable changes to PMB are documented here.
 
+## [1.0.0] - 2026-06-17 - Stability contract, daemon hardening, observability
+
+PMB's 1.0: a written stability contract, one bulletproof warm daemon, and a
+doctor that shows the whole runtime at a glance. Everything below is additive or
+a reliability fix - no breaking changes to stored memory or the default MCP tools.
+
+### Stability contract
+- **1.0 guarantees page** (`docs/reference/guarantees.md`): privacy / offline by
+  default, on-disk layout, delete semantics (archive + `unforget`, explicit hard
+  delete, maintenance never hard-deletes), automatic forward schema migrations,
+  the stable default MCP tool surface (30 tools), and an explicit experimental
+  list (semantic lesson tier, warm keyed-anchor extraction, predictive cache,
+  multimodal). From 1.0 these hold across all 1.x releases.
+
+### Daemon hardening
+- **Bulletproof singleton.** `run_daemon` claims a per-PMB_HOME OS lock before
+  the heavy model load. The old find_live_daemon() check was check-then-spawn:
+  two concurrent starts both passed it and produced duplicate daemons (8765 +
+  8766). The lock lets exactly one win and auto-releases on a crash, so the slot
+  never wedges.
+- **Revive at session start.** The SessionStart hook (`session-restore`) now
+  autostarts the daemon too, not only the per-turn `prepare-context`, so a
+  daemon-wired MCP client finds a live endpoint at agent boot instead of a dead
+  port after a reboot.
+
+### Observability
+- **`pmb doctor` runtime panel.** New rows: on-disk schema version vs code,
+  warm-daemon liveness (the same discovery the hooks use), async write/embed
+  backlog (embed queue + dead-letters + undrained write-outbox), the active MCP
+  tool profile, and ALD coverage.
+- **ALD field metrics.** `pmb lang ald-stats` (and a doctor row) report the
+  self-compiling cold-path lexicon: compiled entries/categories, anchor-fire
+  volume + learning window, cold-vs-warm precision and false-positive rate
+  (shadow T1), and pruning signals. Read-only; loads no model.
+
+### CLI + docs
+- **Cleaner CLI.** Hook-internal commands (prepare-context, session-restore,
+  lesson-followcheck, track-action, codex-notify) are hidden from `pmb --help`
+  (still callable); help panels regrouped (everyday vs admin/migration).
+- **Docs.** README links point at the published docs site, with a docs hub up
+  top. An optional `docker compose --profile daemon` runs the warm daemon in a
+  container while the host stays thin. Keyed-anchor extraction stays experimental
+  for 1.0.
+
+### Verified
+- Full suite green (1420 passed) on Windows; clean install validated end-to-end
+  via `pip install pmb-ai` and `npx pmb-ai`; LoCoMo evidence_recall@10 ~95%
+  (2-conversation sample); warm recall p50 ~0.1 ms, cold-query p50 ~50-130 ms.
+
 ## [0.9.3] - 2026-06-14 - Injection precision, cross-lingual recall, model picker
 
 Sharper auto-context: the hook injects the right memory and stays quiet on small
