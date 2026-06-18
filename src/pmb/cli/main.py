@@ -70,24 +70,31 @@ app.add_typer(lang_app, name="lang")
 # listed falls to "More" rather than being dropped.
 _HELP_COMMAND_PANELS: list[tuple[str, list[str]]] = [
     ("✦ Setup & agents", [
-        "setup", "connect", "doctor", "ambient-watch", "codex-notify"]),
+        "setup", "connect", "doctor", "warmup"]),
     ("Capture", [
         "remember", "fact", "note", "learn", "distill", "lessons", "watch",
         "sync", "import", "tag", "untag", "tags", "tagged", "ttl"]),
     ("Recall & explore", [
         "recall", "why", "overview", "audit", "timeline", "insights", "digest",
-        "history", "correlate", "reminders", "goals", "session"]),
+        "history", "correlate", "reminders", "goals", "session", "arcs",
+        "auto-context"]),
     ("Maintain memory", [
-        "pin", "forget", "forget-topic", "forget-auto", "decay", "declutter",
-        "dedupe", "prune-expired", "prune-graph", "compact", "reindex",
-        "regraph", "repair-keyed", "rehearse", "consolidate", "reflect",
-        "arcs", "feedback", "migrate-workspaces", "schedule"]),
+        "pin", "forget", "forget-topic", "forget-auto", "declutter", "dedupe",
+        "decay", "compact", "reindex", "prune-expired"]),
     ("Workspaces & data", [
         "init", "workspaces", "stats", "list", "export", "dashboard", "tui",
-        "tune", "warmup"]),
-    ("Agent internals", [
-        "prepare-context", "auto-context", "session-restore",
-        "lesson-followcheck", "track-action", "autowrite"]),
+        "tune"]),
+    # Rare admin / migration / one-time ops - pulled out of the everyday panels
+    # above so `pmb --help` reads as a clear map, not a wall of 20 maintenance
+    # verbs.
+    ("Admin & migration", [
+        "consolidate", "reflect", "rehearse", "regraph", "prune-graph",
+        "repair-keyed", "migrate-workspaces", "schedule", "feedback",
+        "autowrite", "ambient-watch"]),
+    # The hook-lifecycle commands (prepare-context, session-restore,
+    # lesson-followcheck, track-action, codex-notify) are registered with
+    # hidden=True: `pmb hooks install` invokes them, a human never types them,
+    # so they stay out of --help. They remain fully callable.
 ]
 _HELP_GROUP_PANELS: dict[str, str] = {
     "hooks": "✦ Setup & agents", "mcp": "✦ Setup & agents",

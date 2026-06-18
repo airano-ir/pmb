@@ -56,10 +56,13 @@ That's it - your agent now remembers. No account, no keys, nothing leaves your m
 > Same tool - use whichever your install gave you. From npm, `npx pmb-ai setup`
 > runs the full cycle: it installs the Python package, then runs setup.
 
-> **Docs:** [oleksiijko.github.io/pmb](https://oleksiijko.github.io/pmb/) ·
-> [Getting started](docs/guide/getting-started.md) ·
-> [Deleting memories](docs/guide/deleting-memories.md) ·
-> [all documentation](docs/README.md).
+> **Documentation:** [oleksiijko.github.io/pmb](https://oleksiijko.github.io/pmb/) ·
+> [Getting started](https://oleksiijko.github.io/pmb/guide/getting-started/) ·
+> [Usage](https://oleksiijko.github.io/pmb/guide/usage/) ·
+> [Concepts](https://oleksiijko.github.io/pmb/concepts/) ·
+> [Command reference](https://oleksiijko.github.io/pmb/reference/COMMANDS/) ·
+> [Troubleshooting](https://oleksiijko.github.io/pmb/guide/troubleshooting/) ·
+> [Deleting memories](https://oleksiijko.github.io/pmb/guide/deleting-memories/)
 
 ---
 
@@ -137,7 +140,7 @@ the right level of detail, in 4-16 ms:
 | `active_arcs` | Narrative arcs the project is currently living in |
 
 For everything else there's `recall(query)` (hybrid search, 35 ms warm)
-and 27 other tools listed in [docs/reference/COMMANDS.md](docs/reference/COMMANDS.md).
+and 27 other tools listed in the [command reference](https://oleksiijko.github.io/pmb/reference/COMMANDS/).
 
 ---
 
@@ -183,7 +186,7 @@ instead of a hand-written pack per language. The cold lexical path then
 language you actually use gets faster over time with zero configuration.
 Recall stays strong across ~11 languages (overall top-3 ≈ 0.9 on a
 101-query eval; top-1 = 1.00 for en/fr/pt/ru, CJK weaker on exact top-1).
-See [docs/contributing/adding-a-language.md](docs/contributing/adding-a-language.md).
+See [Adding a language](https://oleksiijko.github.io/pmb/contributing/adding-a-language/).
 
 ---
 
@@ -236,7 +239,7 @@ agent. No network, no port, no token. That's the whole story for one person
 on one machine.
 
 > Sharing one memory across machines or a team? That's an optional HTTP
-> mode with bearer-token auth - see [docs/guide/TEAM.md](docs/guide/TEAM.md). You don't
+> mode with bearer-token auth - see [Team and remote](https://oleksiijko.github.io/pmb/guide/TEAM/). You don't
 > need it for local use.
 
 Inspect:
@@ -292,8 +295,8 @@ pmb config set recall.ppr_enabled true      toggle a feature
 pmb connect --rules-only                    refresh CLAUDE.md only
 ```
 
-Step-by-step per agent: [docs/guide/usage.md](docs/guide/usage.md). Full command
-reference: [docs/reference/COMMANDS.md](docs/reference/COMMANDS.md).
+Step-by-step per agent: [Usage](https://oleksiijko.github.io/pmb/guide/usage/). Full command
+reference: [Commands](https://oleksiijko.github.io/pmb/reference/COMMANDS/).
 
 ## Settings - 25 you care about, 80 you don't
 
@@ -523,7 +526,7 @@ First recall after a fresh boot loads the embedding model (~3 s). Run
 its job in the background.
 
 **Roadmap?**
-See [docs/ROADMAP.md](docs/ROADMAP.md). Highlights: hosted backup via
+See the [Roadmap](https://oleksiijko.github.io/pmb/ROADMAP/). Highlights: hosted backup via
 litestream, optional cloud-sync (BYO bucket), tree-sitter for Rust/TS
 project indexing, image OCR.
 

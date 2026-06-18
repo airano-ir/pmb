@@ -167,7 +167,7 @@ def _maybe_autostart_daemon(eng) -> None:
         pass
 
 
-@app.command("prepare-context")
+@app.command("prepare-context", hidden=True)
 def prepare_context_cmd(
     message: str | None = typer.Argument(
         None,
@@ -446,7 +446,7 @@ def auto_context_cmd(
 
 # ─── pmb session-restore - rebuild context after a compaction ─────────
 
-@app.command("session-restore")
+@app.command("session-restore", hidden=True)
 def session_restore_cmd(
     minutes: int | None = typer.Option(
         None, "--minutes", "-m",
@@ -484,6 +484,11 @@ def session_restore_cmd(
         if not quiet:
             _sys.stdout.write(f"[pmb hook] engine init failed: {e}\n")
         return
+    # Boot revival: the SessionStart hook fires at agent start - before the first
+    # user message, and around when a daemon-wired MCP client connects. Ensure the
+    # warm daemon is up HERE too (not only on prepare-context), closing the
+    # post-reboot window where the HTTP MCP entry would hit a dead port.
+    _maybe_autostart_daemon(eng)
     try:
         text = build_session_restore(
             eng,
@@ -506,7 +511,7 @@ def session_restore_cmd(
 
 # ─── pmb lesson-followcheck - infer follow-through, no model cooperation ──
 
-@app.command("lesson-followcheck")
+@app.command("lesson-followcheck", hidden=True)
 def lesson_followcheck_cmd(
     window: int = typer.Option(
         30, "--window", "-w",
@@ -590,7 +595,7 @@ def lesson_followcheck_cmd(
 
 # ─── pmb track-action - ambient: log one agent action (PostToolUse) ──────
 
-@app.command("track-action")
+@app.command("track-action", hidden=True)
 def track_action_cmd(
     quiet: bool = typer.Option(
         True, "--quiet/--verbose", "-q",
@@ -957,7 +962,7 @@ def ambient_watch_cmd(
 
 # ─── pmb codex-notify - ambient observer + auto-write for OpenAI Codex ────
 
-@app.command("codex-notify")
+@app.command("codex-notify", hidden=True)
 def codex_notify_cmd(
     payload: str | None = typer.Argument(
         None, help="The notify JSON Codex passes (agent-turn-complete). "

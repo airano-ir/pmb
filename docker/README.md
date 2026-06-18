@@ -142,6 +142,24 @@ Point your agent's MCP config at:
 
 (Use an absolute path to `compose.yaml`; agents don't run from the repo root.)
 
+## Warm daemon (share one model across agents)
+
+The `mcp` profile above spawns a fresh server per `compose run`, so each call
+pays the model cold-start. To keep ONE warm process that every agent and the
+host CLI share, run the `daemon` profile instead - it serves MCP over HTTP on
+`127.0.0.1:8765`:
+
+```bash
+docker compose --profile daemon up -d
+pmb connect claude-code --remote http://127.0.0.1:8765/mcp
+```
+
+The container holds the Engine + embedding model; agents on the host stay thin
+and just talk to that URL. It is bound to localhost; for LAN/Tailscale add a
+real bind plus `--bearer-token <secret>` on `pmb mcp serve` and the matching
+`--bearer-token` on `pmb connect`. The daemon shares port 8765 with the
+`dashboard` profile, so run one of the two at a time.
+
 ## Notes
 
 - The repo is bind-mounted at `/app`, and the package is installed editable,

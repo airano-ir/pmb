@@ -57,5 +57,21 @@ services:
     tty: false
     command: ["pmb-mcp"]
 
+  # Long-lived WARM daemon: one container holds the Engine + embedding model and
+  # serves MCP over streamable-HTTP, so N agents (and the host CLI) share a
+  # single warm process instead of cold-loading a model on every `compose run`.
+  # This is the "daemon in a container, host talks to it over a socket" shape:
+  # agents on the host stay thin and just point at the URL below.
+  #   docker compose --profile daemon up -d
+  #   pmb connect claude-code --remote http://127.0.0.1:8765/mcp
+  # Localhost-only here; for LAN/Tailscale add --bearer-token to the command.
+  daemon:
+    <<: *pmb-common
+    profiles: ["daemon"]
+    command: ["pmb", "mcp", "serve", "--transport", "streamable-http",
+              "--host", "0.0.0.0", "--port", "8765"]
+    ports:
+      - "127.0.0.1:8765:8765"   # shares the port with `dashboard`; run one at a time
+
 volumes:
   pmb_hf_cache:
