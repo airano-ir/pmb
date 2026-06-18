@@ -396,6 +396,45 @@ def _daemon_bearer_middleware(token: str):
     return _Mw
 
 
+def _acquire_singleton_lock():
+    """Atomically claim the per-PMB_HOME daemon singleton.
+
+    Returns (handle, state, home):
+      handle - an OPEN file handle to keep alive for the process lifetime (the
+               OS lock holds only while the fd stays open), or None;
+      state  - "acquired" (we are the singleton), "held" (another live daemon
+               owns it -> caller exits), or "error" (could not lock for a
+               non-contention reason -> caller falls back to the registry check).
+
+    OS-level + crash-safe: the lock auto-releases when this process exits, so a
+    crashed daemon never wedges the slot. Replaces the old check-then-spawn race
+    where two concurrent starts both passed find_live_daemon() and produced
+    duplicate daemons on 8765/8766."""
+    import os as _os
+    from pathlib import Path as _P
+    home = _os.environ.get("PMB_HOME") or str(_P.home() / ".pmb")
+    try:
+        _P(home).mkdir(parents=True, exist_ok=True)
+        fh = open(_P(home) / "daemon.lock", "a+")  # noqa: SIM115 (held for life)
+    except Exception:
+        return None, "error", home
+    try:
+        fh.seek(0)
+        if _os.name == "nt":
+            import msvcrt
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        try:
+            fh.close()
+        except Exception:
+            pass
+        return None, "held", home
+    return fh, "acquired", home
+
+
 def run_daemon(
     host: str = "127.0.0.1",
     port: int = 8765,
@@ -414,6 +453,21 @@ def run_daemon(
         unregister_server,
     )
     from pmb.mcp.server import build_server
+
+    # Bulletproof singleton: an atomic per-PMB_HOME OS lock, taken BEFORE the
+    # heavy build_server. find_live_daemon() alone is check-then-spawn - two
+    # concurrent starts both pass it, giving duplicate daemons (8765 + 8766 via
+    # _free_port). The lock lets exactly one win and auto-releases on crash, so
+    # the slot never wedges. The registry check below stays as a friendly
+    # fast-path and covers a daemon started before this lock existed.
+    _singleton, _lock_state, _home = _acquire_singleton_lock()
+    if _lock_state == "held":
+        _ex = find_live_daemon()
+        sys.stderr.write(
+            f"[pmb-daemon] another daemon already owns {_home} "
+            f"(pid {_ex.get('pid') if _ex else '?'}). Not starting a second.\n"
+        )
+        return 0
 
     existing = find_live_daemon()
     if existing:
@@ -436,6 +490,9 @@ def run_daemon(
     if engine is None:
         sys.stderr.write("[pmb-daemon] could not access engine from server.\n")
         return 2
+    # Keep the singleton lock handle alive for the daemon's whole lifetime (the
+    # OS lock holds only while the fd is open); auto-released on exit/crash.
+    engine._daemon_singleton_lock = _singleton
 
     _register_internal_routes(server, engine)
 
