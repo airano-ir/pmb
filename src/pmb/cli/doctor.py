@@ -384,6 +384,153 @@ def check_channel_weights() -> dict:
         return {"status": "ok", "msg": "channel-weights check skipped"}
 
 
+def check_schema() -> dict:
+    """Report the on-disk schema version vs the code's SCHEMA_VERSION, so an
+    out-of-date or newer-than-code db is visible (upgrade/downgrade safety)."""
+    try:
+        import sqlite3
+
+        from pmb.core.events import SCHEMA_VERSION
+        from pmb.core.workspace import detect_workspace
+        ws = detect_workspace()
+        if not ws.db_path.exists():
+            return _ok("no workspace db yet")
+        with sqlite3.connect(str(ws.db_path)) as conn:
+            row = conn.execute("SELECT MAX(version) FROM migrations").fetchone()
+        cur = int((row[0] if row else 0) or 0)
+    except Exception as e:
+        return _ok(f"schema check skipped: {e}")
+    if cur == SCHEMA_VERSION:
+        return _ok(f"schema v{cur} (current)")
+    if cur < SCHEMA_VERSION:
+        return _warn(f"schema v{cur} < code v{SCHEMA_VERSION} - auto-migrates on next open")
+    return _warn(
+        f"schema v{cur} > code v{SCHEMA_VERSION} - db written by a NEWER PMB; "
+        "downgrade is not supported, upgrade PMB"
+    )
+
+
+def check_daemon() -> dict:
+    """Is a warm PMB daemon live? Uses the same discovery the hooks use. Cold =
+    each per-turn hook pays a model load and skips semantic/cross-lingual recall."""
+    try:
+        from pmb.mcp.registry import find_live_daemon
+        d = find_live_daemon()
+    except Exception as e:
+        return _ok(f"daemon probe skipped: {e}")
+    if d:
+        return _ok(
+            f"warm daemon live (pid {d.get('pid','?')}, port {d.get('port','?')}) "
+            "- hooks served warm; semantic + cross-lingual recall active"
+        )
+    return _warn(
+        "no warm daemon - per-turn hooks run COLD (model not loaded, so semantic "
+        "and cross-lingual recall are skipped that turn). Start one with "
+        "`pmb warmup` or `pmb daemon start`."
+    )
+
+
+def check_write_backlog() -> dict:
+    """Async write/embed backlog: pending embeds, dead-letters, and undrained
+    write-outbox rows. A growing backlog means recent writes are not searchable
+    yet (the index is behind)."""
+    try:
+        from pmb.core.workspace import detect_workspace
+        ws = detect_workspace()
+        if not ws.db_path.exists():
+            return _ok("no workspace db yet")
+    except Exception as e:
+        return _ok(f"backlog check skipped: {e}")
+    parts: list[str] = []
+    sev = "ok"
+    try:
+        from pmb.core.embed_queue import PersistentEmbedQueue
+        q = PersistentEmbedQueue(ws.db_path)
+        pend = q.pending_count()
+        dead = q.dead_letter_count()
+        if pend:
+            parts.append(f"{pend} embed(s) pending")
+            sev = "warn" if pend > 50 else sev
+        if dead:
+            parts.append(f"{dead} embed dead-letter(s)")
+            sev = "warn"
+    except Exception:
+        pass
+    try:
+        import sqlite3
+        with sqlite3.connect(str(ws.db_path)) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM write_outbox "
+                "WHERE status IN ('pending','processing')"
+            ).fetchone()
+        ob = int((row[0] if row else 0) or 0)
+        if ob:
+            parts.append(f"{ob} outbox row(s) undrained")
+            sev = "warn" if ob > 50 else sev
+    except Exception:
+        pass  # write_outbox is v7+; older dbs simply have no backlog here
+    if not parts:
+        return _ok("write/embed queues drained (no backlog)")
+    msg = "; ".join(parts) + " - normally drains in the background"
+    return _warn(msg) if sev == "warn" else _ok(msg)
+
+
+def check_tool_profile() -> dict:
+    """Report which MCP tool surface an agent sees (PMB_TOOL_PROFILE)."""
+    prof = (os.environ.get("PMB_TOOL_PROFILE") or "default").lower().strip()
+    counts = {"minimal": "13", "lean": "26", "default": "30", "full": "all"}
+    if prof not in counts:
+        return _warn(
+            f"unknown PMB_TOOL_PROFILE={prof!r} - server falls back to default (30)"
+        )
+    note = {
+        "minimal": "essentials only",
+        "lean": "set by `pmb connect claude-code` (hooks cover the read-status tools)",
+        "default": "day-to-day surface",
+        "full": "every tool incl. admin (debug/dev)",
+    }[prof]
+    return _ok(f"MCP tool profile `{prof}` ({counts[prof]} tools) - {note}")
+
+
+def check_ald() -> dict:
+    """ALD (Anchor->Lexicon Distillation) field coverage: the self-compiling
+    cold-path lexicon built from this machine's own traffic. Lightweight - reads
+    config + the anchor/shadow tables, never loads the embedding model."""
+    try:
+        from pmb.config import Config
+        from pmb.core.workspace import detect_workspace
+        from pmb.maintenance.distill import ald_field_report
+        ws = detect_workspace()
+        ws.ensure_dirs()
+        cfg = Config(workspace_dir=ws.storage_dir, pmb_home=ws.pmb_home)
+
+        class _Shim:
+            pass
+
+        sh = _Shim()
+        sh.workspace = ws
+        sh.config = cfg
+        r = ald_field_report(sh)
+    except Exception as e:
+        return _ok(f"ALD report skipped: {e}")
+    if not r.get("enabled"):
+        return _warn(
+            "ALD fire-logging OFF (lang.anchor_log) - the cold-path lexicon will "
+            "not self-compile from your traffic. Turn it on to let PMB learn your "
+            "languages: `pmb config set lang.anchor_log true`."
+        )
+    lex, fires = r["lexicon"], r["fires"]
+    fp = r.get("false_positive_rate") or {}
+    worst = max(fp.values()) if fp else 0.0
+    msg = (f"lexicon {lex['entries']} entries / {lex['categories']} categories; "
+           f"{fires['total']} fires over {fires['span_days']}d; "
+           f"worst intent FP {worst:.0%}")
+    drop = r["pruning"]["shadow_would_drop"]
+    if drop:
+        return _warn(msg + f"; shadow gate would prune: {', '.join(drop)}")
+    return _ok(msg)
+
+
 def run_doctor(remote: str | None = None) -> list[tuple[str, dict]]:
     """Run all checks. Returns list of (label, result_dict)."""
     checks: list[tuple[str, dict]] = [
@@ -396,6 +543,11 @@ def run_doctor(remote: str | None = None) -> list[tuple[str, dict]]:
         ("Git", check_git()),
         ("Consolidation backend", check_consolidation_backend()),
         ("Current workspace", check_current_workspace()),
+        ("Schema version", check_schema()),
+        ("Warm daemon", check_daemon()),
+        ("Write/embed backlog", check_write_backlog()),
+        ("MCP tool profile", check_tool_profile()),
+        ("ALD coverage", check_ald()),
         ("Recent errors (24h)", check_recent_errors()),
         ("Quality gate (30d)", check_quality_flags()),
         ("Channel weights (F3)", check_channel_weights()),

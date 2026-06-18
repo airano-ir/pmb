@@ -287,3 +287,97 @@ def _write_auto_pack(pack: dict, provenance: list[dict],
         _lang.clear_cache()
     except Exception:
         pass
+
+
+def ald_field_report(engine) -> dict:
+    """Point-in-time ALD (Anchor->Lexicon Distillation) FIELD metrics.
+
+    ALD is proven by unit tests, but its value is on REAL traffic. This is the
+    instrumentation for that: a read-only snapshot the longitudinal view accrues
+    on top of. Maps to the four field questions:
+
+      - cold-path coverage: how much of the cold lexical path has self-compiled
+        (auto.yaml categories/entries) and how much traffic fed it (fire count);
+      - false-positive rate: per-intent disagreement between the COLD lexical
+        tier and the WARM anchor tier, from the shadow_t1 log (FP = 1 - agreement);
+      - time-to-learn: the span of the fire log (learning window) plus the
+        lexicon's last generation time;
+      - pruning quality: fire rows past retention (recency self-heal) and any
+        category the shadow gate would drop for low live precision.
+
+    Never writes (unlike `distill_lexicon`); safe on an empty/disabled log."""
+    import sqlite3 as _sql
+    import time as _t
+
+    try:
+        enabled = bool(engine.config.get("lang.anchor_log"))
+    except Exception:
+        enabled = False
+    try:
+        retention = float(engine.config.get("lang.anchor_log_retention_days") or 30)
+    except Exception:
+        retention = 30.0
+
+    rep: dict = {
+        "enabled": enabled,
+        "lexicon": {"categories": 0, "entries": 0, "generated_ts": None},
+        "fires": {"total": 0, "anchors": 0, "by_anchor": {}, "span_days": 0.0},
+        "precision": {}, "false_positive_rate": {},
+        "pruning": {"retention_days": retention, "stale_rows": 0,
+                    "shadow_would_drop": []},
+    }
+
+    # Coverage: the compiled cold-path lexicon (auto.yaml + its _ald_meta).
+    try:
+        import yaml
+
+        from pmb import lang as _lang
+        p = _lang.user_dir() / "auto.yaml"
+        if p.exists():
+            doc = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            meta = doc.get("_ald_meta") or {}
+            cats = [k for k in doc
+                    if k != "_ald_meta" and isinstance(doc.get(k), list)]
+            rep["lexicon"]["categories"] = len(cats)
+            rep["lexicon"]["entries"] = sum(len(doc[k]) for k in cats)
+            rep["lexicon"]["generated_ts"] = meta.get("generated_ts")
+    except Exception:
+        pass
+
+    # Fire-log volume + learning window + recency-prune candidates.
+    try:
+        ws = getattr(engine.workspace, "id", None)
+        with _sql.connect(str(engine.workspace.db_path)) as conn:
+            _table_ready(conn)
+            n, lo, hi = conn.execute(
+                "SELECT COUNT(*), MIN(ts), MAX(ts) FROM anchor_fires "
+                "WHERE workspace_id IS ?", (ws,)).fetchone()
+            rep["fires"]["total"] = int(n or 0)
+            if lo and hi:
+                rep["fires"]["span_days"] = round((float(hi) - float(lo)) / 86400.0, 2)
+            by = conn.execute(
+                "SELECT anchor, COUNT(*) FROM anchor_fires WHERE workspace_id IS ? "
+                "GROUP BY anchor ORDER BY COUNT(*) DESC", (ws,)).fetchall()
+            rep["fires"]["by_anchor"] = {str(a): int(c) for a, c in by}
+            rep["fires"]["anchors"] = len(by)
+            cutoff = _t.time() - retention * 86400.0
+            stale = conn.execute(
+                "SELECT COUNT(*) FROM anchor_fires WHERE workspace_id IS ? AND ts < ?",
+                (ws, cutoff)).fetchone()[0]
+            rep["pruning"]["stale_rows"] = int(stale or 0)
+    except Exception:
+        pass
+
+    # Precision / false-positive from the shadow T0-vs-T1 log.
+    try:
+        for intent, (agreed, tot) in load_shadow_precision(engine).items():
+            if tot:
+                acc = agreed / tot
+                rep["precision"][intent] = round(acc, 3)
+                rep["false_positive_rate"][intent] = round(1.0 - acc, 3)
+                if tot >= 10 and acc < 0.9:   # mirrors distill_lexicon's gate
+                    rep["pruning"]["shadow_would_drop"].append(intent)
+    except Exception:
+        pass
+
+    return rep

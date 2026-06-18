@@ -148,3 +148,64 @@ def detect(
                       f"sampled tokens, {n} distinct stopwords matched")
     console.print(f"\n[dim]Enable with: pmb lang enable "
                   f"{suggested[0][0]}   (opt-in - nothing changed yet)[/]")
+
+
+@lang_app.command("ald-stats")
+def ald_stats():
+    """ALD (Anchor->Lexicon Distillation) FIELD metrics for this workspace.
+
+    Shows how much of the cold lexical path has self-compiled from your own
+    traffic (coverage), the live cold-vs-warm precision and false-positive rate
+    (shadow T1), and the pruning signals. Read-only; loads no model."""
+    from rich.table import Table
+
+    from pmb.config import Config
+    from pmb.core.workspace import detect_workspace
+    from pmb.maintenance.distill import ald_field_report
+
+    ws = detect_workspace()
+    ws.ensure_dirs()
+    cfg = Config(workspace_dir=ws.storage_dir, pmb_home=ws.pmb_home)
+
+    class _Shim:
+        pass
+
+    sh = _Shim()
+    sh.workspace = ws
+    sh.config = cfg
+    r = ald_field_report(sh)
+
+    if not r["enabled"]:
+        console.print(
+            "[yellow]ALD fire-logging is OFF[/] (lang.anchor_log) - the cold "
+            "path will not self-compile from your traffic.\n"
+            "[dim]Turn it on: pmb config set lang.anchor_log true[/]\n")
+
+    lex, fires, pr = r["lexicon"], r["fires"], r["pruning"]
+    console.print(f"[bold]ALD coverage[/]  ·  workspace '{ws.name}'")
+    console.print(f"  cold-path lexicon : {lex['entries']} entries / "
+                  f"{lex['categories']} categories")
+    console.print(f"  anchor fires      : {fires['total']} over "
+                  f"{fires['span_days']} day(s), {fires['anchors']} anchor(s)")
+    if fires["by_anchor"]:
+        top = ", ".join(f"{a}={c}" for a, c in list(fires["by_anchor"].items())[:6])
+        console.print(f"  top anchors       : {top}")
+
+    if r["false_positive_rate"]:
+        t = Table(show_header=True, header_style="bold magenta",
+                  title="cold-vs-warm precision (shadow T1)")
+        t.add_column("intent")
+        t.add_column("precision", justify="right")
+        t.add_column("FP rate", justify="right")
+        for intent in sorted(r["precision"]):
+            t.add_row(intent, f"{r['precision'][intent]:.0%}",
+                      f"{r['false_positive_rate'][intent]:.0%}")
+        console.print(t)
+    else:
+        console.print("  precision (shadow): no T0-vs-T1 samples logged yet")
+
+    drop = pr["shadow_would_drop"]
+    console.print(
+        f"  pruning           : {pr['stale_rows']} fire row(s) past "
+        f"{pr['retention_days']:.0f}d retention"
+        + (f"; shadow gate would drop: {', '.join(drop)}" if drop else ""))
