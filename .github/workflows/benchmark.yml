@@ -1,0 +1,71 @@
+name: Benchmarks (recall ablation + LoCoMo quality)
+
+# Heavy benchmarks - deliberately NOT a per-PR gate. Run manually from the
+# Actions tab ("Run workflow"). These need a real runner: the per-component
+# ablation rebuilds the engine ~19x (one embedding-model load each), which OOMs
+# a small dev box but is fine on a GitHub-hosted runner (~16 GB).
+on:
+  workflow_dispatch:
+    inputs:
+      n_conversations:
+        description: "LoCoMo conversations to evaluate (1-10; higher = slower, more robust)"
+        default: "3"
+        required: false
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Recall ablation + LoCoMo quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      PYTHONFAULTHANDLER: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-bench-${{ hashFiles('scripts/prewarm_models.py') }}
+          restore-keys: hf-bench-
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Prime embedding model
+        run: python scripts/prewarm_models.py
+
+      # Fetches the public LoCoMo dataset on-demand into scripts/data/ (gitignored)
+      # via the existing scripts/_bench_data.py:download_locomo(). No download URL
+      # is added here, and the dataset is never committed - CI pulls it fresh.
+      - name: Fetch LoCoMo dataset (on-demand, not committed)
+        run: python scripts/_bench_data.py
+
+      - name: Per-component recall ablation (Recall@10 + latency deltas)
+        run: python scripts/benchmarks/ablation_full.py --n-conversations "${{ github.event.inputs.n_conversations || '3' }}"
+
+      - name: LoCoMo retrieval quality (evidence_recall@k)
+        run: python scripts/benchmarks/benchmark_locomo.py --n-conversations "${{ github.event.inputs.n_conversations || '3' }}"
+
+      - name: Upload benchmark results (JSON)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: scripts/data/*.json
+          if-no-files-found: warn
