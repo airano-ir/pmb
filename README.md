@@ -85,7 +85,10 @@ That's it - your agent now remembers. No account, no keys, nothing leaves your m
 
 ### Watch: 2-minute setup
 
-<!-- Install walkthrough video: open this README in the github.com editor and DRAG the narrated MP4 onto the line below - GitHub uploads, hosts it, and inserts a player. Or upload to YouTube and paste the link here. Source: the 2-min "Setup PMB in ~2 min" screen recording. -->
+<div align="center">
+<video src="https://github.com/oleksiijko/pmb/raw/main/docs/assets/setup.mp4" controls width="820"></video>
+</div>
+
 Prefer text? The [Quickstart](#quickstart) above is the same flow in seven commands.
 
 ---
