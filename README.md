@@ -81,10 +81,6 @@ That's it - your agent now remembers. No account, no keys, nothing leaves your m
 
 *Timeline - your memory as a journal, newest first.*
 
-<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-overview.png" width="820" alt="PMB dashboard - Overview (stats)">
-
-*Overview - the scale of one developer's memory, at a glance.*
-
 </div>
 
 ### Watch: 2-minute setup
@@ -179,7 +175,7 @@ flowchart LR
     A[Your agent] -->|MCP stdio| B[PMB MCP server]
     B --> C[Engine]
     C -->|read 35 ms| R[Hybrid recall<br/>BM25 + vector + graph + rerank]
-    C -->|write &lt; 1 ms| W[Async embed queue<br/>SQLite first, vectors later]
+    C -->|write under 1 ms| W[Async embed queue<br/>SQLite first, vectors later]
     R --> D[(SQLite)]
     R --> E[(LanceDB)]
     W --> D
@@ -372,10 +368,6 @@ with `pmb config set <key>` - they're hidden from `list`, not gated.
 
 `pmb dashboard` opens a local web UI on port 8765. Nothing leaves
 your machine.
-
-<div align="center">
-<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/08_dashboard.png" width="780" alt="PMB dashboard">
-</div>
 
 Nine tabs: **Map** (entity graph, live), **Timeline** (git-graph by
 project), **Overview**, **Entities**, **Arcs** (narrative threads),
