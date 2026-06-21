@@ -16,7 +16,11 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-native-purple.svg)](https://modelcontextprotocol.io)
 
-[Quickstart](#quickstart) · [Why pmb-ai?](#why-pmb-ai) · [Demo](#what-it-feels-like) · [How it works](#how-it-works) · [FAQ](#faq)
+<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-map.gif" width="720" alt="PMB - your project's memory as a live graph">
+
+*Local-first memory, visualized. 3,800+ entities and 41,000+ connections, captured automatically as you work.*
+
+[Quickstart](#quickstart) · [Dashboard](#see-your-memory) · [Why pmb-ai?](#why-pmb-ai) · [Demo](#what-it-feels-like) · [How it works](#how-it-works) · [FAQ](#faq)
 
 **Persistent memory for AI coding agents - local, offline, no API keys.**
 For developers on Claude Code / Cursor / Codex who are tired of re-explaining
@@ -60,6 +64,33 @@ That's it - your agent now remembers. No account, no keys, nothing leaves your m
 > [Getting started](docs/guide/getting-started.md) ·
 > [Deleting memories](docs/guide/deleting-memories.md) ·
 > [all documentation](docs/README.md).
+
+---
+
+## See your memory
+
+`pmb dashboard` opens a local, liquid-glass UI over everything PMB captured - written automatically, just by working. It binds to `127.0.0.1` only, so nothing leaves your machine.
+
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-map.png" width="820" alt="PMB dashboard - Map (entity graph)">
+
+*Map - every entity and connection in your project, as a live graph.*
+
+<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-timeline.png" width="820" alt="PMB dashboard - Timeline (journal)">
+
+*Timeline - your memory as a journal, newest first.*
+
+<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-overview.png" width="820" alt="PMB dashboard - Overview (stats)">
+
+*Overview - the scale of one developer's memory, at a glance.*
+
+</div>
+
+### Watch: 2-minute setup
+
+<!-- Install walkthrough video: open this README in the github.com editor and DRAG the narrated MP4 onto the line below - GitHub uploads, hosts it, and inserts a player. Or upload to YouTube and paste the link here. Source: the 2-min "Setup PMB in ~2 min" screen recording. -->
+Prefer text? The [Quickstart](#quickstart) above is the same flow in seven commands.
 
 ---
 
