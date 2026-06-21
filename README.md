@@ -89,6 +89,8 @@ That's it - your agent now remembers. No account, no keys, nothing leaves your m
 <video src="https://github.com/oleksiijko/pmb/raw/main/docs/assets/setup.mp4" controls width="820"></video>
 </div>
 
+https://github.com/user-attachments/assets/c0f454c5-84b3-42d6-b1dc-f694978cd802
+
 Prefer text? The [Quickstart](#quickstart) above is the same flow in seven commands.
 
 ---
