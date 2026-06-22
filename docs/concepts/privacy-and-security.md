@@ -31,6 +31,30 @@ recognizes common shapes, including:
 Redaction is pattern-based, so a bare high-entropy string with no recognizable
 prefix can still slip through. Treat it as a strong safety net, not a guarantee.
 
+## Memory poisoning and procedural lessons
+
+Local-first storage keeps PMB private, but it does not make every remembered
+fact equally authoritative. PMB can surface lessons and failures as rules before
+an agent acts, so a bad or low-trust memory can become a future instruction if it
+is recorded without review.
+
+A few practical boundaries help:
+
+- Treat recalled lessons as **evidence with provenance**, not invisible policy.
+  Check the source, confidence, freshness, and `surface_id` when a recalled
+  lesson would affect a risky edit, command, or credential-adjacent action.
+- Review durable rules periodically with `pmb lessons` and the broader memory
+  view with `pmb audit`.
+- Be more conservative with automatic writes than explicit `remember` / `lesson`
+  entries. If an untrusted session, imported transcript, issue body, or noisy
+  agent run may have polluted memory, archive those automatic writes with
+  `pmb forget-auto` before relying on them.
+- Keep imported third-party histories in a separate workspace until you trust the
+  resulting facts and lessons.
+
+The goal is not to stop remembering; it is to keep remembered context from
+silently becoming command authority.
+
 ## Team mode: the bearer token is the boundary
 
 Locally there is no network surface: clients use stdio or a daemon bound to
