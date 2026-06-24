@@ -203,6 +203,11 @@ class ClaudeCLIClient:
             "--no-session-persistence",
             "--allowed-tools", "",
             "--disable-slash-commands",
+            # Don't load the user's MCP servers for these headless one-shot
+            # calls: they need no tools, and loading the full MCP set adds
+            # seconds of startup per call (measured ~17-28s/commit in the track
+            # A/B). --strict-mcp-config with no --mcp-config = zero servers.
+            "--strict-mcp-config",
             *self.extra_args,
             prompt,
         ]

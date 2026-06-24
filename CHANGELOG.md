@@ -2,6 +2,116 @@
 
 All notable changes to PMB are documented here.
 
+## [1.1.0] - 2026-06-24 - Semantic tracking, memory feedback, and token-saving guards
+
+A semantic layer on top of `pmb index project`. The structural index says which
+symbols exist; this says WHY a file exists and WHY it changed. All local, Haiku
+by default (or fully offline via Ollama), and idempotent.
+
+### Added
+- **`pmb track changes`** - reads new git commits, asks a small LLM (Haiku) to
+  summarise each commit's INTENT (the "why", which a raw diff does not carry),
+  and stores it as a `git-change` memory record linked to the files it touched.
+  Idempotent via a per-repo cursor kept next to the workspace DB (not in the
+  event store, so it never pollutes memory). Flags: `--since`, `--max-commits`,
+  `--backend` (auto/claude/anthropic/ollama).
+- **`pmb track modules`** - a one-line "what this file does" summary per indexed
+  file. Run `pmb index project` first; files already summarised are skipped
+  (`--force` to redo), `--limit` caps LLM calls per run.
+- **`pmb track install`** - a git `post-commit` hook so `track changes` runs
+  automatically after each commit (background, non-blocking, never clobbers an
+  existing hook).
+- **`project_structure(name)` MCP tool** - the agent pulls a project's
+  file/module map straight from memory (languages, files grouped by directory
+  with their purpose + symbol count, key modules, recent change intents) with no
+  filesystem scan. Assembles what `index_project` + `track modules` +
+  `track changes` already stored.
+- **`recall_exploration` / `record_exploration` MCP tools (incremental cognition)** -
+  memoize the conclusion an agent reaches after exploring the codebase, keyed to
+  the content hash of each source file. A future session calls `recall_exploration`
+  and gets the conclusion back with a freshness check: `fresh` when every source
+  is byte-identical (reuse it, skip the re-reading), otherwise `stale_files` lists
+  what changed so only those are re-checked. Caches the agent's research OUTPUT
+  (an incremental build for reasoning), targeting repeated exploration - the real
+  token/turn cost - rather than context size.
+- **Auto-capture of exploration memos (`pmb capture-exploration`, Stop hook).**
+  Off by default (`memo.autocapture_enabled`); when on, a turn that read >= N
+  files and ended with an answer is memoized from the transcript automatically.
+  `recall_exploration` also reports `repo_changed_since` (the repo moved beyond
+  the listed sources, so verify even if the listed ones are fresh), closing the
+  false-fresh gap.
+- **Read-Guard (`readguard.enabled`, PreToolUse on Read).** Off by default;
+  denies re-reading a file already read this session that is unchanged (sha) and
+  recent (within `readguard.recency_window`), so it is not dumped into the context
+  window again. Measured on 601 real sessions: ~33% of reads are recent re-reads.
+  Daemon-served, conservative (changed / new / long-ago files always pass).
+- **Memory Delta Protocol (`memory_delta.enabled`, default off).** A per-session
+  ledger of items PMB has already shown the agent. When auto-context re-injects
+  the same lesson, the renderer collapses it to a one-line handle reference
+  (`! [M07] still active`) instead of restating the full text. New items get a
+  fresh `[Mxx]` tag, updated items are flagged, and items that left the active
+  set surface as `Expired since last turn: M03`. SessionStart fires a Context
+  Rebase that clears the ledger so the next render restates full text - critical
+  after `/compact` because the model loses the handle->text mapping. Measured
+  -72% block size on repeat injections of 3 typical lessons; default off until
+  measured on your own workflow. CLI: `pmb memory ledger`, `pmb memory rehydrate`.
+- **Resume note (`pmb resume save / show / install`).** Writes
+  `.pmb/resume.md` - a structured, committable markdown snapshot of "where we
+  are now": open goals, recent decisions, lessons, recent activity, files
+  touched, latest exploration conclusions, and project structure. Sourced from
+  PMB's typed memory (not extractive), so the sections have real structure.
+  Content below the `PMB-RESUME-MARKER` line in an existing file is preserved
+  across regenerations - hand-edited additions survive. `pmb resume install`
+  flips `resume.auto_save_enabled` so the Stop hook refreshes the file at every
+  turn end; commit it to share session continuity with your team.
+- **Earned Memory (`pmb health lessons-impact`, `lesson_impact` MCP tool).** Joins
+  each surfaced lesson to the OUTCOME of the turn it was active in (tests pass/fail,
+  red->green, build, deploy - no LLM) and reports per-lesson success-rate, lift vs
+  the no-lesson baseline, and churn - so PMB can show which rules pull weight vs
+  which are dead-weight or harmful. Measurement only; ranking/decay feedback is
+  deferred until the outcome signal is dense enough to trust.
+- **Capture-on-correction.** When a user message reads as pushback / frustration
+  / a repeat complaint (RU/UK/EN profanity, ALL-CAPS, "те же грабли",
+  repeat-word + a negated action), PMB records a DRAFT lesson on the FIRST
+  occurrence and nudges the agent to refine it - so the rule exists in memory
+  when it is needed, not after the seventh complaint. Tagged
+  `source=correction-capture`, deduped within a 90-min window. Knobs:
+  `auto_recall.correction_capture`, `correction_record_draft`,
+  `correction_importance`.
+- **Repeat guard (message-time).** When a new message strongly overlaps an
+  existing rule, it is promoted to a LOUD banner at the top of the auto-context
+  block ("YOU'VE HIT THIS BEFORE") instead of one line in a wall. Knob:
+  `auto_recall.repeat_guard`.
+- **Repeat guard (action-time).** The PreToolUse guard now also fires the
+  "do NOT repeat this" corpus - failures + correction drafts - at the MOMENT
+  the agent is about to act ("⛔ STOP - you were corrected on this before"),
+  so the warning reaches inside autonomous tool loops that have no user
+  message. New `find_negative_memories()`; extends the existing R11 lesson
+  guard. Replay on a real transcript: the recurring failure became catchable
+  at the 2nd occurrence vs the 8th in reality.
+
+### Changed
+- **Lesson/decision decay floor.** Lessons and decisions no longer decay below
+  importance 0.6, so a critical-but-rarely-recalled rule cannot silently fade
+  out of `find_lessons` ranking. Pinned (>=0.99) and ordinary qa/activity
+  events are unaffected. Retire a rule with `archive`/`forget`, not by waiting.
+- **Surface-ids reach the agent after `/compact`.** `session_restore` now logs
+  lesson surfaces BEFORE rendering and embeds `[id:N]` in the text, plus a
+  "pending confirmations" block - so `mark_lesson_followed` works on the
+  post-compact path (previously the id never reached the agent).
+
+### Fixed
+- **`track changes` on merge and root commits.** File list + diff now use
+  `git diff-tree --first-parent --root` / `git show --first-parent`, so merge
+  commits report their first-parent changes and the initial commit still lists
+  its files (previously empty, which made the LLM guess the intent).
+- **Faster offline LLM calls.** The Claude-CLI backend passes
+  `--strict-mcp-config`, so headless one-shot calls (track summaries,
+  consolidation) no longer load the user's full MCP server set on every call.
+
+Reuses the existing LLM client (Claude CLI / Anthropic / Ollama) and runs the
+model with no tools, so feeding it untrusted diffs is safe.
+
 ## [0.9.3] - 2026-06-14 - Injection precision, cross-lingual recall, model picker
 
 Sharper auto-context: the hook injects the right memory and stays quiet on small

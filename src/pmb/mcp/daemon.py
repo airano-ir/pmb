@@ -76,6 +76,11 @@ _LAST_MAINTENANCE: dict = {"summary": None}
 # so a rule interrupts at most once per session (not on every tool call).
 _PRETOOL_SEEN: dict[str, set] = {}
 
+# Read-Guard: per-session ledger of files read this session {session: {"seq",
+# "files": {path: {sha, seq}}}}, used to deny redundant re-reads of unchanged
+# files. In-memory (warm daemon); resets on restart, which is fine.
+_READ_LEDGER: dict = {}
+
 
 def pretool_lessons(engine, excerpt: str, seen: set) -> list:
     """R11 core: lessons that should FIRE for a tool-call excerpt - a STRONG
@@ -131,6 +136,49 @@ def pretool_lessons(engine, excerpt: str, seen: set) -> list:
         # tokens, OR one identifier-grade one (record_batch, qwen2.5 - is_strong).
         # The guard interrupts the agent, so the generic bar is high - but a rule
         # naming the exact command we're about to run always qualifies.
+        if cmd_hit or len(ov) >= 2 or any(is_strong(t) for t in ov):
+            seen.add(u)
+            fired.append(L)
+        if len(fired) >= 2:
+            break
+    return fired
+
+
+def pretool_negatives(engine, excerpt: str, seen: set) -> list:
+    """Action-time REPEAT guard: of the "do NOT repeat this" corpus (failures +
+    auto-captured correction drafts), the ones that STRONGLY match what the
+    agent is about to do - i.e. "you're walking into something you were
+    corrected/burned on before". Same strong bar as pretool_lessons (a named
+    command, OR >=2 distinctive overlapping tokens, OR one identifier-grade
+    one), once per (session, item). This is the close on 'guard fired != agent
+    obeyed': it fires at the MOMENT of the action, not on the message."""
+    if not excerpt or not excerpt.strip():
+        return []
+    try:
+        import re as _re
+
+        from pmb.core.text_match import (
+            distinctive_tokens,
+            is_strong,
+            shell_command_names,
+        )
+    except Exception:
+        return []
+    cmds = shell_command_names(excerpt)
+    q = distinctive_tokens(excerpt)
+    try:
+        cands = engine.find_negative_memories(excerpt, limit=6) or []
+    except Exception:
+        return []
+    fired = []
+    for L in cands:
+        u = L.get("ulid")
+        if not u or u in seen:
+            continue
+        text = L.get("match_text") or L.get("content") or ""
+        ov = q & distinctive_tokens(text)
+        words = set(_re.findall(r"[a-z0-9_.\-/]+", text.lower()))
+        cmd_hit = bool(cmds & words)
         if cmd_hit or len(ov) >= 2 or any(is_strong(t) for t in ov):
             seen.add(u)
             fired.append(L)
@@ -264,16 +312,33 @@ def _register_internal_routes(mcp, engine) -> None:
                 pass
             try:
                 seen = _PRETOOL_SEEN.setdefault(session, set())
-                fired = pretool_lessons(engine, excerpt, seen)
-                if not fired:
+                # REPEAT guard first (loud): things the user already corrected /
+                # that already failed. This is the "stop before you repeat it"
+                # signal - it gets the top slot and the strongest wording.
+                negs = pretool_negatives(engine, excerpt, seen)
+                lessons = pretool_lessons(engine, excerpt, seen)
+                if not negs and not lessons:
                     return ""
                 try:
-                    engine._log_lesson_surfaces(fired, query="pretool",
-                                                source="pretool_guard")
+                    if negs:
+                        engine._log_lesson_surfaces(
+                            negs, query="pretool", source="pretool_guard.repeat")
+                    if lessons:
+                        engine._log_lesson_surfaces(
+                            lessons, query="pretool", source="pretool_guard")
                 except Exception:
                     pass
-                lines = ["[pmb] Relevant rule(s) before this action:"]
-                lines += [f"  ! {(L.get('content') or '')[:240]}" for L in fired]
+                lines: list[str] = []
+                if negs:
+                    lines.append(
+                        "[pmb] ⛔ STOP - you were corrected on this before. "
+                        "Do NOT repeat it:")
+                    for L in negs:
+                        txt = (L.get("match_text") or L.get("content") or "")[:240]
+                        lines.append(f"  ✗ {txt}")
+                if lessons:
+                    lines.append("[pmb] Relevant rule(s) before this action:")
+                    lines += [f"  ! {(L.get('content') or '')[:240]}" for L in lessons]
                 return "\n".join(lines)
             except Exception:
                 return ""
@@ -281,6 +346,38 @@ def _register_internal_routes(mcp, engine) -> None:
         text = await anyio.to_thread.run_sync(_work)
         return JSONResponse({"context": text, "version": pmb.__version__,
                              "source": "daemon"})
+
+    @mcp.custom_route("/internal/hook/readguard", methods=["POST"])
+    async def _readguard(request):  # noqa: ANN001
+        """Read-Guard: deny a redundant re-read of an unchanged, recently-read
+        file so it is not dumped into context again. Daemon-served only;
+        returns 'allow' (no-op) unless readguard.enabled is true."""
+        _LAST_REQUEST["ts"] = time.time()
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not _workspace_matches(engine, (body or {}).get("workspace")):
+            return JSONResponse({"error": "workspace_mismatch",
+                                 "version": pmb.__version__}, status_code=409)
+        file_path = str((body or {}).get("file_path") or "")
+        sha = (body or {}).get("sha1")
+        session = str((body or {}).get("session_id") or "")
+
+        def _work() -> dict:
+            if not file_path:
+                return {"decision": "allow", "reason": ""}
+            try:
+                if not engine.config.get("readguard.enabled"):
+                    return {"decision": "allow", "reason": ""}
+                window = int(engine.config.get("readguard.recency_window") or 40)
+            except Exception:
+                return {"decision": "allow", "reason": ""}
+            from pmb.hooks.read_guard import evaluate
+            return evaluate(_READ_LEDGER, session, file_path, sha, window)
+
+        out = await anyio.to_thread.run_sync(_work)
+        return JSONResponse({**out, "version": pmb.__version__, "source": "daemon"})
 
     @mcp.custom_route("/internal/shutdown", methods=["POST"])
     async def _shutdown(request):  # noqa: ANN001

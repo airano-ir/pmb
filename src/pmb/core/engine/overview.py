@@ -186,6 +186,159 @@ class OverviewMixin:
             cache.popitem(last=False)
         return result
 
+    def project_structure(self, name: str, max_files: int = 400) -> dict:
+        """Assemble a project's STRUCTURE from memory - no filesystem scan.
+
+        Reads the file-index rows written by `index_project` (per-file symbols,
+        imports, language), the one-line purposes written by `pmb track
+        modules`, and the latest `pmb track changes` intents, then returns a
+        compact map: languages, files grouped by top-level directory (each with
+        its purpose + symbol count), key modules, and recent change intents.
+
+        This is the "what does this project look like" view - complementary to
+        `project_overview`, which answers "what do I know / decided about it".
+        Returns {empty: True, ...} when the project was never indexed.
+        """
+        import json
+        import sqlite3
+        from pathlib import Path
+
+        nm = (name or "").strip().lower()
+        if not nm:
+            return {"empty": True, "error": "empty name"}
+        ws = self.workspace.id
+
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            # Resolve the project_path: whichever indexed project matches `nm`
+            # by name OR path substring and has the most file rows.
+            cand = conn.execute(
+                """
+                SELECT json_extract(metadata_json,'$.project_path') AS pp,
+                       COUNT(*) AS n
+                FROM events
+                WHERE workspace_id=? AND archived_at IS NULL
+                  AND json_extract(metadata_json,'$.source')='project'
+                  AND json_extract(metadata_json,'$.index_artifact')=1
+                  AND (
+                    LOWER(COALESCE(json_extract(metadata_json,'$.project_name'),''))=?
+                    OR LOWER(COALESCE(json_extract(metadata_json,'$.project_path'),'')) LIKE ?
+                  )
+                GROUP BY pp ORDER BY n DESC LIMIT 1
+                """,
+                (ws, nm, f"%{nm}%"),
+            ).fetchone()
+            if not cand or not cand["pp"]:
+                return {
+                    "empty": True, "name": name,
+                    "hint": f"No indexed structure for '{name}'. "
+                            f"Run `pmb index project` first.",
+                }
+            project_path = cand["pp"]
+
+            file_rows = conn.execute(
+                """
+                SELECT metadata_json FROM events
+                WHERE workspace_id=? AND archived_at IS NULL
+                  AND json_extract(metadata_json,'$.source')='project'
+                  AND json_extract(metadata_json,'$.index_artifact')=1
+                  AND json_extract(metadata_json,'$.project_path')=?
+                ORDER BY rowid DESC
+                """,
+                (ws, project_path),
+            ).fetchall()
+            sum_rows = conn.execute(
+                """
+                SELECT json_extract(metadata_json,'$.file_path') AS fp, content
+                FROM events
+                WHERE workspace_id=? AND archived_at IS NULL
+                  AND json_extract(metadata_json,'$.source')='module-summary'
+                  AND json_extract(metadata_json,'$.project_path')=?
+                ORDER BY rowid DESC
+                """,
+                (ws, project_path),
+            ).fetchall()
+            chg_rows = conn.execute(
+                """
+                SELECT json_extract(metadata_json,'$.commit_short') AS c, content
+                FROM events
+                WHERE workspace_id=? AND archived_at IS NULL
+                  AND json_extract(metadata_json,'$.source')='git-change'
+                  AND json_extract(metadata_json,'$.project_path')=?
+                ORDER BY rowid DESC LIMIT 5
+                """,
+                (ws, project_path),
+            ).fetchall()
+
+        # file_path -> one-line purpose (content is "Module <fp>: <summary>")
+        purpose: dict[str, str] = {}
+        for r in sum_rows:
+            fp = r["fp"]
+            if fp and fp not in purpose:
+                c = r["content"] or ""
+                purpose[fp] = c.split(":", 1)[1].strip() if ":" in c else c.strip()
+
+        seen: set[str] = set()
+        files: list[dict] = []
+        langs: dict[str, int] = {}
+        for r in file_rows:
+            try:
+                md = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
+            except Exception:
+                md = {}
+            fp = md.get("file_path")
+            if not fp or fp in seen:
+                continue
+            seen.add(fp)
+            lang = md.get("language", "other")
+            langs[lang] = langs.get(lang, 0) + 1
+            files.append({
+                "path": fp,
+                "language": lang,
+                "loc": md.get("loc"),
+                "n_symbols": len(md.get("symbols") or []),
+                "imports": (md.get("imports") or [])[:8],
+                "purpose": purpose.get(fp, ""),
+            })
+            if len(files) >= max_files:
+                break
+
+        tree: dict[str, list] = {}
+        for f in files:
+            norm = f["path"].replace("\\", "/")
+            top = norm.split("/", 1)[0] if "/" in norm else "."
+            tree.setdefault(top, []).append({
+                "file": f["path"], "purpose": f["purpose"],
+                "symbols": f["n_symbols"], "loc": f["loc"],
+            })
+
+        # Key modules: prefer files that have a purpose, then by symbol count.
+        key = sorted(files, key=lambda f: (bool(f["purpose"]), f["n_symbols"]),
+                     reverse=True)[:12]
+        key_modules = [
+            {"file": f["path"], "purpose": f["purpose"], "symbols": f["n_symbols"]}
+            for f in key
+        ]
+
+        recent_changes = []
+        for r in chg_rows:
+            c = r["content"] or ""
+            recent_changes.append({
+                "commit": r["c"],
+                "summary": c.splitlines()[0] if c else "",
+            })
+
+        return {
+            "project": Path(project_path).name,
+            "path": project_path,
+            "n_files": len(files),
+            "languages": dict(sorted(langs.items(), key=lambda x: -x[1])),
+            "n_with_purpose": sum(1 for f in files if f["purpose"]),
+            "tree": tree,
+            "key_modules": key_modules,
+            "recent_changes": recent_changes,
+        }
+
     def _project_overview_uncached(self, nm: str, name: str,
                                    max_per_section: int = 8) -> dict:
         import sqlite3
@@ -573,6 +726,11 @@ class OverviewMixin:
         def _it(e) -> dict:
             meta = e.metadata or {}
             return {
+                # ulid is required by `_log_lesson_surfaces` to mint a
+                # `surface_id` the agent can pass to `mark_lesson_followed`.
+                # Without it, session-restore lessons stayed invisible to the
+                # adherence loop (the filter `if L.get("ulid")` dropped them all).
+                "ulid": e.ulid,
                 "when": _t.strftime("%m-%d %H:%M", _t.gmtime(e.timestamp)),
                 "content": (e.content or "")[:200],
                 "kind": _kind(meta) or e.event_type,

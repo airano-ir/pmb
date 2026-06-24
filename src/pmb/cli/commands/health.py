@@ -45,6 +45,60 @@ def health_feedback():
         console.print(t)
 
 
+@health_app.command("lessons-impact")
+def health_lessons_impact(
+    window_days: int = typer.Option(
+        30, "--window-days", "-w", help="Look back this many days of agent actions.",
+    ),
+    limit: int = typer.Option(20, "--limit", help="Max lessons to show."),
+):
+    """Earned Memory: which lessons actually HELP outcomes (surface -> outcome).
+
+    Joins each surfaced lesson to the OUTCOME of the turn it was active in
+    (tests pass/fail, red->green, build, deploy - no LLM) and shows per-lesson
+    success-rate, lift vs the no-lesson baseline, and churn. Worst lift first,
+    so dead-weight / harmful rules surface at the top.
+    """
+    from pmb.health.earned_memory import lesson_impact
+    eng = Engine()
+    r = lesson_impact(eng, window_days=window_days)
+    if r.get("error"):
+        console.print(f"[red]Error:[/] {r['error']}")
+        raise typer.Exit(1)
+    base = r["baseline_success_rate"]
+    base_s = f"{base:.0%}" if base is not None else "-"
+    console.print(Panel.fit(
+        f"window: {r['window_days']}d   outcome-bearing turns: {r['n_outcome_turns']}\n"
+        f"baseline success (no lesson active): {base_s} over {r['n_baseline_turns']} turns",
+        title="Earned Memory · lesson impact",
+    ))
+    if not r["lessons"]:
+        console.print("[yellow]No lesson had an outcome-bearing turn in this window - "
+                      "signal too sparse for the feedback loop yet.[/]")
+        return
+    t = Table(show_header=True, header_style="bold magenta")
+    t.add_column("n", justify="right")
+    t.add_column("success", justify="right")
+    t.add_column("lift", justify="right")
+    t.add_column("churnD", justify="right")
+    t.add_column("lesson")
+    for L in r["lessons"][:limit]:
+        lift = L["lift"]
+        if lift is None:
+            lift_s = "-"
+        elif lift > 0:
+            lift_s = f"[green]+{lift:.0%}[/]"
+        elif lift < 0:
+            lift_s = f"[red]{lift:.0%}[/]"
+        else:
+            lift_s = "0%"
+        cd = L["churn_delta"]
+        cd_s = f"{cd:+.1f}" if cd is not None else "-"
+        t.add_row(str(L["n"]), f"{L['success_rate']:.0%}", lift_s, cd_s,
+                  (L["content"] or L["lesson_ulid"])[:60])
+    console.print(t)
+
+
 @health_app.command("run")
 def health_run(
     n: int = typer.Option(20, "-n", "--n-samples"),

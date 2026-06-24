@@ -53,10 +53,18 @@ Switching the model by hand needs a reindex, so prefer `pmb model <light\|balanc
 |---|---|---|
 | `auto_recall.enabled` | true | inject relevant memory before the model thinks. |
 | `auto_recall.budget_chars` | 4000 | the size cap on the injected block. |
+| `auto_recall.correction_capture` | true | when a message reads as pushback/frustration, record a DRAFT lesson on the first complaint and nudge the agent to refine it. |
+| `auto_recall.repeat_guard` | true | surface an existing rule LOUD when a message strongly overlaps it ("you've hit this before"). |
 
 The precision gates that keep the read path quiet (an absolute evidence floor, a
 specificity check, a conversational filter) are pro knobs under `auto_recall.*`.
 The defaults are tuned, so you rarely need to touch them.
+
+The action-time repeat guard (`hooks.pretool_guard`, on by default) fires the
+"do NOT repeat this" corpus - failures + captured corrections - at the moment a
+tool call would walk into a past mistake, even with no user message in the loop.
+Lessons and decisions also keep a decay floor (0.6) so a critical rule cannot
+fade out of ranking; retire one with `archive`/`forget`.
 
 ## Shared daemon and connect
 

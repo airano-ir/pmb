@@ -46,6 +46,15 @@ app.add_typer(workspace_app, name="workspace")
 from pmb.cli.commands.index import index_app
 
 app.add_typer(index_app, name="index")
+from pmb.cli.commands.track import track_app
+
+app.add_typer(track_app, name="track")
+from pmb.cli.commands.resume import resume_app
+
+app.add_typer(resume_app, name="resume")
+from pmb.cli.commands.memo import memory_app
+
+app.add_typer(memory_app, name="memory")
 from pmb.cli.commands.snapshot import snapshot_app
 
 app.add_typer(snapshot_app, name="snapshot")
@@ -93,7 +102,8 @@ _HELP_GROUP_PANELS: dict[str, str] = {
     "hooks": "✦ Setup & agents", "mcp": "✦ Setup & agents",
     "daemon": "✦ Setup & agents",
     "workspace": "Workspaces & data", "index": "Workspaces & data",
-    "snapshot": "Workspaces & data",
+    "track": "Workspaces & data", "resume": "Workspaces & data",
+    "memory": "Workspaces & data", "snapshot": "Workspaces & data",
     "graph": "More", "health": "More", "config": "More",
     "ollama": "More", "lang": "More",
 }
