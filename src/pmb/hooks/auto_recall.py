@@ -251,6 +251,9 @@ class AutoContextResult:
     open_goals: list[dict] = field(default_factory=list)
     lessons: list[dict] = field(default_factory=list)
     decisions: list[dict] = field(default_factory=list)
+    # Correction capture + repeat guard (stage-1 of the lesson funnel).
+    correction: dict | None = None       # {severity, surface_id, reused, markers}
+    loud_lessons: list[dict] = field(default_factory=list)  # rules to show LOUD
     latency_ms: int = 0
     skipped: bool = False
     skip_reason: str | None = None
@@ -265,6 +268,8 @@ class AutoContextResult:
             self.open_goals,
             self.lessons,
             self.decisions,
+            self.correction,
+            self.loud_lessons,
         ])
 
 
@@ -458,6 +463,10 @@ def run_auto_context(
     recent_limit: int = 8,
     goals_limit: int = 5,
     log_surfaces: bool = True,
+    correction_capture: bool = True,
+    correction_record_draft: bool = True,
+    correction_importance: float = 0.85,
+    repeat_guard: bool = True,
 ) -> AutoContextResult:
     """Classify the message and dispatch the matching PMB queries.
 
@@ -499,6 +508,34 @@ def run_auto_context(
         res.skip_reason = "trivial"
         res.latency_ms = int((time.perf_counter() - t0) * 1000)
         return res
+
+    # Correction capture runs on EVERY non-trivial message, BEFORE intent
+    # classification. An angry correction ("снова блять не заполнило") is
+    # usually NOT a question, so it would classify as SKIP and inject nothing -
+    # which is exactly the moment the rule needs to be captured (the RR
+    # failure: the locate-me lesson was written only after the 7th complaint).
+    correction_sig = None
+    if correction_capture:
+        try:
+            from pmb.hooks.correction_capture import detect_correction
+            correction_sig = detect_correction(msg)
+        except Exception:
+            correction_sig = None
+    if correction_sig:
+        info = {"severity": correction_sig.severity, "surface_id": None,
+                "reused": False, "markers": correction_sig.markers}
+        if correction_record_draft:
+            try:
+                cap = engine.capture_correction(
+                    msg, severity=correction_sig.severity,
+                    markers=correction_sig.markers,
+                    importance=correction_importance,
+                )
+                info["surface_id"] = cap.get("surface_id")
+                info["reused"] = cap.get("reused", False)
+            except Exception:
+                pass
+        res.correction = info
 
     # Step 1: classify (non-trivial: load known projects from the graph).
     try:
@@ -559,7 +596,39 @@ def run_auto_context(
         if sem:
             intents = [sem]
             res.intents = intents + ["SEMANTIC_INTENT"]
+        elif res.correction is not None:
+            # A correction with no other intent must STILL inject (the draft +
+            # the loud guard). Carry on with no intent branches; the always-on
+            # lessons block + repeat guard below still run.
+            intents = []
+            res.intents = ["CORRECTION"]
         else:
+            # Non-trivial but no intent matched. Still give the REPEAT GUARD a
+            # chance: a re-raised complaint ("почему опять X") often strongly
+            # overlaps an existing rule even when it's not a question and trips
+            # no intent. Surface that rule LOUD - but ONLY if it strongly
+            # matches; otherwise inject nothing (don't add generic-lesson noise
+            # to plain statements). One indexed find_lessons on an otherwise-
+            # skipped message.
+            if repeat_guard:
+                try:
+                    from pmb.hooks.correction_capture import strong_lesson_matches
+                    cand = engine.find_lessons(query=msg, limit=8)
+                    loud = strong_lesson_matches(msg, cand or [], limit=3)
+                    if loud:
+                        res.loud_lessons = loud
+                        res.intents = ["REPEAT_GUARD"]
+                        if log_surfaces:
+                            try:
+                                engine._log_lesson_surfaces(
+                                    [L for L in loud if L.get("ulid")],
+                                    query=msg, source="hook.repeat_guard")
+                            except Exception:
+                                pass
+                        res.latency_ms = int((time.perf_counter() - t0) * 1000)
+                        return res
+                except Exception:
+                    pass
             # Safety net - detect_intents shouldn't return SKIP for non-trivial
             # input, but if it does, treat the same as trivial.
             res.skipped = True
@@ -724,6 +793,30 @@ def run_auto_context(
         except Exception:
             pass
 
+    # Repeat guard: if the message strongly overlaps a lesson that ALREADY
+    # exists, promote it to a LOUD banner at the top of the block instead of
+    # leaving it as one line in a wall the agent habituates to. Reuses the
+    # lessons already fetched (no extra query). Surface-log the loud ones too
+    # so follow-through is tracked.
+    if repeat_guard:
+        try:
+            from pmb.hooks.correction_capture import strong_lesson_matches
+            pool = list(res.lessons or [])
+            pool += (res.project or {}).get("lessons") or []
+            loud = strong_lesson_matches(msg, pool, limit=3)
+            if loud:
+                res.loud_lessons = loud
+                if log_surfaces:
+                    try:
+                        engine._log_lesson_surfaces(
+                            [L for L in loud if L.get("ulid")],
+                            query=msg, source="hook.repeat_guard",
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     res.latency_ms = int((time.perf_counter() - t0) * 1000)
     return res
 
@@ -762,6 +855,39 @@ def format_context(
     buf.append(header)
     buf.append(f"(matched on message: {_trim(res.message, 100)!r})")
 
+    # ── LOUD top banner: correction capture + repeat guard ──────────────────
+    # These go FIRST and shouty on purpose - they are the antidote to the
+    # agent habituating to the wall of auto-context and repeating a mistake.
+    loud_ulids: set[str] = set()
+    if res.correction:
+        sid = res.correction.get("surface_id")
+        sev = res.correction.get("severity", "weak")
+        buf.append("")
+        buf.append("⚠️ CORRECTION DETECTED — the user is pushing back on something just done.")
+        if sid:
+            verb = "Re-using" if res.correction.get("reused") else "Saved"
+            buf.append(f"   {verb} a DRAFT lesson [surface_id={sid}] ({sev} signal). BEFORE continuing:")
+        else:
+            buf.append("   BEFORE continuing:")
+        buf.append("   1. STOP repeating the thing they're objecting to — fix THAT first.")
+        buf.append("   2. Refine the draft into a concrete rule via record_batch "
+                   "(one line: what to ALWAYS/NEVER do).")
+        if sid:
+            buf.append(f"   3. Then mark_lesson_followed(surface_id={sid}, "
+                       "followed=True, note=\"<what you changed>\").")
+
+    if res.loud_lessons:
+        buf.append("")
+        buf.append("⚠️ YOU'VE HIT THIS BEFORE — a recorded rule strongly matches this message:")
+        for L in res.loud_lessons[:3]:
+            u = L.get("ulid")
+            if u:
+                loud_ulids.add(u)
+            sid = L.get("surface_id")
+            tag = f" [surface_id={sid}]" if sid else ""
+            buf.append(f"  ‼ {_trim(L.get('content',''), 220)}{tag}")
+        buf.append("   Apply it NOW — do not rediscover it by trial and error.")
+
     if res.project and not res.project.get("empty"):
         pc = res.project
         ent = pc.get("entity") or {}
@@ -774,7 +900,8 @@ def format_context(
             buf.append("Key facts:")
             for f in kf[:5]:
                 buf.append(f"  - {_trim(f.get('content',''), 160)}")
-        proj_lessons = pc.get("lessons") or []
+        proj_lessons = [L for L in (pc.get("lessons") or [])
+                        if L.get("ulid") not in loud_ulids]
         if proj_lessons:
             buf.append("Project lessons (RULES - FOLLOW):")
             for L in proj_lessons[:5]:
@@ -828,11 +955,13 @@ def format_context(
     # Surface lessons separately ONLY if no project context already had them.
     proj_lessons = (res.project or {}).get("lessons") or []
     if res.lessons and not proj_lessons:
-        buf.append("\nLessons matching this message:")
-        for L in res.lessons[:5]:
-            sid = L.get("surface_id")
-            tag = f" [surface_id={sid}]" if sid else ""
-            buf.append(f"  ! {_trim(L.get('content',''), 200)}{tag}")
+        shown = [L for L in res.lessons if L.get("ulid") not in loud_ulids]
+        if shown:
+            buf.append("\nLessons matching this message:")
+            for L in shown[:5]:
+                sid = L.get("surface_id")
+                tag = f" [surface_id={sid}]" if sid else ""
+                buf.append(f"  ! {_trim(L.get('content',''), 200)}{tag}")
 
     # Past decisions (rationale) - so the agent doesn't re-decide a settled
     # call. Surfaced only if project_overview didn't already include them.
@@ -851,7 +980,7 @@ def format_context(
             )
 
     # Footer: explicit instruction to use lessons + close the feedback loop.
-    if res.lessons or proj_lessons:
+    if res.lessons or proj_lessons or res.loud_lessons:
         buf.append("")
         buf.append(
             "If a lesson with [surface_id=N] applies, FOLLOW it. After acting,"
@@ -903,6 +1032,20 @@ def compute_prepare_context_text(engine, message: str,
         query_worthiness_tau=float(
             engine.config.get("auto_recall.query_worthiness_tau") or 0.0),
         surface_decisions=bool(engine.config.get("auto_recall.surface_decisions")),
+        correction_capture=bool(
+            engine.config.get("auto_recall.correction_capture")
+            if engine.config.get("auto_recall.correction_capture") is not None
+            else True),
+        correction_record_draft=bool(
+            engine.config.get("auto_recall.correction_record_draft")
+            if engine.config.get("auto_recall.correction_record_draft") is not None
+            else True),
+        correction_importance=float(
+            engine.config.get("auto_recall.correction_importance") or 0.85),
+        repeat_guard=bool(
+            engine.config.get("auto_recall.repeat_guard")
+            if engine.config.get("auto_recall.repeat_guard") is not None
+            else True),
     )
     if res.skipped or res.is_empty():
         return None
@@ -912,4 +1055,17 @@ def compute_prepare_context_text(engine, message: str,
         res, max_chars=cap,
         include_trace=bool(engine.config.get("auto_recall.include_trace")),
     )
+    # Memory Delta Protocol: collapse items already shown this session into
+    # one-liner handle references. Opt-in via config; silent no-op on error so
+    # an inert ledger can never break the hook.
+    try:
+        if text and bool(engine.config.get("memory_delta.enabled")):
+            from pmb.memo.delta_render import apply_delta
+            sid = None
+            for attr in ("session_id", "_session_id"):
+                sid = sid or getattr(engine, attr, None)
+            sid = sid or ""
+            text = apply_delta(engine, str(sid), res, text)
+    except Exception:
+        pass
     return text or None

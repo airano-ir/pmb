@@ -43,6 +43,10 @@ _DEFAULT_TOOLS = _MINIMAL_TOOLS | {
     "mark_lesson_followed", # agent self-reports lesson follow-through
     "index_pdf",            # 📄 ingest PDF into memory
     "index_project",        # 📂 ingest code-project structure
+    "project_structure",    # 🗺️ read a project's file/module map from memory
+    "recall_exploration",   # 💡 reuse a past session's research conclusion (hash-gated)
+    "record_exploration",   # 💡 memoize a research conclusion keyed to file hashes
+    "lesson_impact",        # 📊 which lessons actually help outcomes (surface->outcome)
     "record_goal",          # one-off goal
     "record_activity",      # one-off activity
     "record_milestone",     # one-off milestone
@@ -86,6 +90,34 @@ _SHORT_DESC: dict[str, str] = {
         "goal{title,status,due_at} | plan{title} (future intent) | "
         "activity{content,kind} | milestone{chain_name,title,state}. ONE "
         "record_batch per turn; use ABSOLUTE dates."
+    ),
+    "project_structure": (
+        "🗺️ Read a project's file/module map from memory (no filesystem scan): "
+        "languages, files grouped by top-level dir with their purpose + symbol "
+        "count, key modules, and recent change intents. Run `index_project` "
+        "first if empty; pair with `track modules` for per-file purpose. "
+        "Args: name, max_files."
+    ),
+    "recall_exploration": (
+        "💡 BEFORE re-exploring the codebase, reuse a PAST session's research. "
+        "Returns memoized conclusions matching `intent`, each with a freshness "
+        "check: fresh=true means all source files unchanged (trust it, skip "
+        "re-reading); else stale_files lists what changed (re-check only those). "
+        "Saves re-deriving from scratch. Args: intent, project, top_k."
+    ),
+    "record_exploration": (
+        "💡 AFTER reading/grepping several files to reach a conclusion, memoize "
+        "it so a future session reuses it instead of re-deriving. Stores intent "
+        "+ conclusion + each source file's content hash (recall_exploration "
+        "replays it with a freshness check). Record only grounded conclusions. "
+        "Args: intent, conclusion, files, project."
+    ),
+    "lesson_impact": (
+        "📊 Earned Memory: which lessons actually HELP outcomes, not just which "
+        "were read/followed. Joins each surfaced lesson to the turn's outcome "
+        "(tests pass/fail, red->green, build, deploy - no LLM) and returns "
+        "per-lesson success_rate, lift vs the no-lesson baseline, and churn. "
+        "Spot dead-weight or harmful rules (negative lift). Arg: window_days."
     ),
     "prepare": (
         "READ-FIRST bundle at the start of work on a known project. "

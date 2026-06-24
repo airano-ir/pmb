@@ -142,6 +142,115 @@ class LessonsMixin:
         return {"ok": cur.rowcount > 0, "surface_id": surface_id,
                 "followed": -1, "not_applicable": True}
 
+    def capture_correction(
+        self,
+        message: str,
+        *,
+        severity: str = "weak",
+        markers: list[str] | None = None,
+        importance: float = 0.85,
+        dedup_minutes: float = 90.0,
+        session_id: str | None = None,
+    ) -> dict:
+        """Record a DRAFT lesson the moment the user pushes back, so the rule
+        exists in memory at correction #1 instead of #7 (the RR failure).
+
+        Hybrid mode: PMB saves the signal immediately (nothing lost), tagged
+        source='correction-capture', draft=True - the agent is then nudged to
+        refine it into a durable rule. Returns
+        {lesson_ulid, surface_id, reused, severity}.
+
+        Dedup: if a correction draft with strong token overlap was recorded in
+        the last `dedup_minutes`, REUSE it (one angry topic = one draft, even
+        across three angry messages) - we just mint a fresh surface on the
+        existing draft so the agent still gets an id to confirm.
+        """
+        import sqlite3
+        import time as _t
+        from pmb.core.text_match import distinctive_tokens, is_strong
+
+        msg = (message or "").strip()
+        if not msg:
+            return {"lesson_ulid": None, "surface_id": None,
+                    "reused": False, "severity": severity, "skipped": "empty"}
+
+        ws = self.workspace.id
+        msg_tokens = distinctive_tokens(msg)
+
+        # 1. Dedup against recent correction drafts.
+        reuse_ulid = None
+        try:
+            cutoff = _t.time() - dedup_minutes * 60.0
+            with sqlite3.connect(self.workspace.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """
+                    SELECT ulid, content FROM events
+                    WHERE workspace_id = ? AND archived_at IS NULL
+                      AND timestamp >= ?
+                      AND json_extract(metadata_json, '$.source') = 'correction-capture'
+                    ORDER BY timestamp DESC LIMIT 20
+                    """,
+                    (ws, cutoff),
+                ).fetchall()
+            for r in rows:
+                prev = distinctive_tokens(r["content"] or "")
+                overlap = msg_tokens & prev
+                if len(overlap) >= 3 and sum(1 for t in overlap if is_strong(t)) >= 2:
+                    reuse_ulid = r["ulid"]
+                    break
+        except Exception:
+            reuse_ulid = None
+
+        # 2. Record (or reuse).
+        reused = reuse_ulid is not None
+        if reused:
+            lesson_ulid = reuse_ulid
+        else:
+            content = (
+                "[DRAFT lesson - auto-captured from a user correction] "
+                f"User pushed back: \"{msg[:280]}\". "
+                "Turn this into a durable rule: state plainly what to ALWAYS / "
+                "NEVER do so this stops repeating, then it will surface next time."
+            )
+            try:
+                lesson_ulid = self.record_fact(
+                    content,
+                    importance=importance,
+                    metadata={
+                        "kind": "lesson",
+                        "source": "correction-capture",
+                        "draft": True,
+                        "severity": severity,
+                        "markers": list(markers or []),
+                        # Raw complaint, stored separately so the action-time
+                        # guard matches on what the USER objected to - not on the
+                        # draft's boilerplate ("durable rule", "repeating", ...)
+                        # which would cause spurious fires.
+                        "correction_text": msg[:280],
+                    },
+                    session_id=session_id,
+                )
+            except Exception as e:
+                return {"lesson_ulid": None, "surface_id": None,
+                        "reused": False, "severity": severity,
+                        "skipped": f"record failed: {e}"}
+
+        # 3. Surface it so the agent gets an id to confirm / refine.
+        surface_id = None
+        try:
+            surfaced = self._log_lesson_surfaces(
+                [{"ulid": lesson_ulid, "content": msg[:200]}],
+                query=msg, source="correction-capture", session_id=session_id,
+            )
+            if surfaced:
+                surface_id = surfaced[0].get("surface_id")
+        except Exception:
+            pass
+
+        return {"lesson_ulid": lesson_ulid, "surface_id": surface_id,
+                "reused": reused, "severity": severity}
+
     def adherence_stats(self, days: float = 7.0) -> dict:
         """How well is the AI agent FOLLOWING the READ-FIRST workflow?
 
@@ -401,6 +510,64 @@ class LessonsMixin:
             ],
         }
 
+    def find_negative_memories(self, query: str = "", limit: int = 6) -> list[dict]:
+        """The "do NOT repeat this" corpus: failures + auto-captured correction
+        drafts. Deliberately SEPARATE from find_lessons (which excludes
+        correction drafts): this feeds the ACTION-TIME guard, which fires when
+        the agent is about to do something it was corrected/burned on before.
+
+        Matchable text is the raw complaint (`metadata.correction_text`) when
+        present, else the content - so matching keys on what the USER objected
+        to, not on draft boilerplate. Lean token-overlap ranking; the caller
+        (pretool guard) re-applies a strong-match bar, so we don't need the full
+        IDF machinery here. Returns [{ulid, content, kind, source, match_text}].
+        """
+        import sqlite3
+        from pmb.core.text_match import distinctive_tokens
+        ws = self.workspace.id
+        with sqlite3.connect(self.workspace.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT ulid, content, metadata_json, timestamp
+                FROM events
+                WHERE workspace_id = ? AND archived_at IS NULL
+                  AND (
+                    json_extract(metadata_json, '$.source') = 'correction-capture'
+                    OR COALESCE(json_extract(metadata_json, '$.kind'),
+                                json_extract(metadata_json, '$.activity_kind'))
+                       = 'failure'
+                  )
+                ORDER BY timestamp DESC LIMIT 300
+                """,
+                (ws,),
+            ).fetchall()
+        items: list[dict] = []
+        for r in rows:
+            try:
+                md = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
+            except Exception:
+                md = {}
+            match_text = md.get("correction_text") or (r["content"] or "")
+            items.append({
+                "ulid": r["ulid"],
+                "content": r["content"] or "",
+                "match_text": match_text,
+                "kind": "failure" if (md.get("kind") == "failure"
+                                      or md.get("activity_kind") == "failure")
+                        else "correction",
+                "source": md.get("source") or "",
+                "timestamp": r["timestamp"],
+            })
+        q = distinctive_tokens(query or "")
+        if not q:
+            return items[:limit]
+        for it in items:
+            ov = q & distinctive_tokens(it["match_text"])
+            it["_ov"] = len(ov)
+        ranked = sorted(items, key=lambda it: -it.get("_ov", 0))
+        return [it for it in ranked if it.get("_ov", 0) > 0][:limit]
+
     def find_lessons(self, query: str = "", limit: int = 5) -> list[dict]:
         """Return procedural lessons relevant to a query (or all recent
         lessons if query is empty). A "lesson" is an event with
@@ -453,6 +620,13 @@ class LessonsMixin:
                 md = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
             except Exception:
                 md = {}
+            # Correction-capture DRAFTS are scaffolding (the echoed complaint),
+            # not rules yet. They're surfaced via the dedicated CORRECTION banner
+            # with their own surface_id; keeping them out of general lesson
+            # surfacing stops the raw echo from crowding out the real rule it's
+            # about. Dedup still finds them (direct SQL, not this path).
+            if md.get("source") == "correction-capture":
+                continue
             items.append({
                 "ulid": r["ulid"],
                 "content": (r["content"] or ""),   # R2: FULL content for scoring

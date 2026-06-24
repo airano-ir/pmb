@@ -345,6 +345,80 @@ def register_all(mcp, engine):
         return _do_index(engine, Path(path), force=force, max_files=max_files)
 
     @mcp.tool()
+    def project_structure(name: str, max_files: int = 400) -> dict:
+        """🗺️ Pull a project's STRUCTURE straight from memory - no filesystem scan.
+
+        Returns the file/module map captured by `index_project`, enriched with
+        the one-line purpose per file from `track modules` and the latest change
+        intents from `track changes`:
+          • languages - file count per language
+          • tree - files grouped by top-level directory, each with its purpose
+            + symbol count
+          • key_modules - the most significant files (purpose + symbol count)
+          • recent_changes - latest commit intents
+
+        Use this to learn how a project is laid out / where things live BEFORE
+        reading files. Complements project_overview (facts / lessons / decisions)
+        with the structural picture. If it returns empty, run `index_project`.
+
+        Args:
+            name: project name or a path substring (case-insensitive).
+            max_files: cap on files returned (default 400).
+        """
+        return engine.project_structure(name, max_files=max_files)
+
+    @mcp.tool()
+    def recall_exploration(intent: str, project: str = "", top_k: int = 3) -> dict:
+        """💡 BEFORE re-exploring the codebase, check if a PAST session already
+        figured this out. Returns memoized conclusions matching `intent`, each
+        with a freshness check:
+          • `fresh: true`  -> every source file is unchanged, trust the
+            conclusion and skip the re-reading entirely.
+          • `fresh: false` -> `stale_files` lists what changed since; re-check
+            ONLY those, reuse the rest.
+
+        This reuses an earlier exploration's OUTPUT instead of re-deriving it
+        from scratch, which is where the tokens/turns actually go. Call it at
+        the start of a task like "how does X work / where is Y handled".
+        """
+        from pmb.memo.exploration import recall_exploration as _rec
+        return _rec(engine, intent, project_path=project or None, top_k=top_k)
+
+    @mcp.tool()
+    def record_exploration(
+        intent: str, conclusion: str, files: list[str], project: str = "",
+    ) -> dict:
+        """💡 AFTER researching something in the codebase (reading/grepping
+        several files to reach a conclusion), memoize it so a FUTURE session can
+        reuse the conclusion instead of re-deriving it.
+
+        Stores the intent, the conclusion, and each source file's current
+        content hash. `recall_exploration` later replays it and tells you which
+        sources are unchanged vs changed. Record only GROUNDED conclusions you
+        actually reached from the listed files.
+
+        Args:
+            intent: the question/goal you researched ("where is auth handled").
+            conclusion: what you concluded, concise and self-contained.
+            files: the source files the conclusion rests on (relative or abs).
+            project: optional project path (default: cwd).
+        """
+        from pmb.memo.exploration import record_exploration as _rec
+        return _rec(engine, intent, conclusion, files, project_path=project or None)
+
+    @mcp.tool()
+    def lesson_impact(window_days: int = 30) -> dict:
+        """📊 Earned Memory: which lessons actually HELP outcomes (not just which
+        were read or followed). Joins each surfaced lesson to the OUTCOME of the
+        turn it was active in - tests pass/fail, red->green, build, deploy (no
+        LLM) - and returns per-lesson success_rate, lift vs the no-lesson
+        baseline, and churn. Use to spot dead-weight or HARMFUL rules (negative
+        lift). Worst lift first.
+        """
+        from pmb.health.earned_memory import lesson_impact as _li
+        return _li(engine, window_days=window_days)
+
+    @mcp.tool()
     def find_lessons(query: str = "", limit: int = 5) -> list[dict]:
         """Pull procedural lessons (project rules / gotchas) relevant to a
         topic. Use this BEFORE making a project-shaping choice - picking a

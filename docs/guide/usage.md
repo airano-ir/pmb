@@ -100,6 +100,25 @@ pmb export           # dump everything to Markdown/JSON - your data, in the open
 pmb import chatgpt ~/Downloads/conversations.json
 pmb index pdf paper.pdf            # or a whole dir: pmb index pdf ~/docs --recurse
 pmb index project .               # scan a codebase (symbols, imports, .gitignore-aware)
+pmb track modules                 # one-line "what this file does" per indexed file
+pmb track changes                 # new commits: what changed and WHY (Haiku, local)
+```
+
+## Session continuity & efficiency (opt-in)
+
+A committable resume note for cross-session handoff, plus self-measurement and
+context-budget guards:
+
+```bash
+pmb resume save                   # write .pmb/resume.md - commit it, share with the team
+pmb resume install                # auto-refresh resume.md at every turn end
+
+pmb health lessons-impact         # which lessons actually help outcomes (lift, churn)
+
+# Opt-in token-saving guards
+pmb config set readguard.enabled true        # block redundant in-context re-reads
+pmb config set memory_delta.enabled true     # collapse repeat lesson injections to [Mxx]
+pmb memory ledger                            # inspect Memory Delta handles this session
 ```
 
 Full command reference: [Commands](../reference/COMMANDS.md). Sharing memory

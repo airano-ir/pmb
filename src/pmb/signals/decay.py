@@ -31,6 +31,27 @@ RECALL_BOOST_RATE = 0.10
 ARCHIVE_THRESHOLD_IMPORTANCE = 0.05
 ARCHIVE_MIN_AGE_DAYS = 90
 
+# Floor for lesson / decision events. Without it, a critical-but-rarely-
+# recalled rule drifts below `find_lessons` ranking and stops surfacing
+# on auto-recall - the agent then repeats the same mistake because the
+# rule went invisible, not because it was wrong. The floor sits well above
+# the archive threshold (0.05) but below "pinned" (0.99) so explicitly
+# pinned events still rank higher. To intentionally retire a rule use
+# `archive()` / `forget()`; auto-decay alone will not drop it.
+LESSON_DECISION_IMPORTANCE_FLOOR = 0.6
+
+
+def _is_lesson_or_decision(ev) -> bool:
+    """A lesson is `event_type='lesson'` OR `metadata.kind='lesson'`. Decisions
+    use `metadata.kind='decision'` (or, historically, `activity_kind`). Both
+    are durable knowledge - the rules and the why behind them - and are the
+    types that hurt most when they quietly decay out of recall."""
+    if getattr(ev, "event_type", None) == "lesson":
+        return True
+    meta = getattr(ev, "metadata", None) or {}
+    kind = meta.get("kind") or meta.get("activity_kind")
+    return kind in ("lesson", "decision")
+
 
 def boost_on_recall(current_importance: float, hit_score: float) -> float:
     """
@@ -95,6 +116,14 @@ def apply_decay(engine: Engine, days_since_last_decay: float = 1.0) -> dict:
         if days_since_access < 7.0:
             recent_boost = 0.05 * (1.0 - days_since_access / 7.0)
         new_imp = min(1.0, new_imp + recent_boost)
+
+        # Floor for lessons / decisions - the "rules" and "why" behind the
+        # work. A rarely-recalled lesson can decay below find_lessons ranking
+        # and silently stop surfacing, which directly causes the agent to
+        # repeat the same mistake. Cap the downward drift here, not via
+        # `pin` (pinning is for the user's explicit "this is important").
+        if _is_lesson_or_decision(ev):
+            new_imp = max(new_imp, LESSON_DECISION_IMPORTANCE_FLOOR)
 
         engine.events.update_importance(ev.ulid, new_imp)
         n_decayed += 1

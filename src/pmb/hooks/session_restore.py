@@ -68,19 +68,30 @@ def build_session_restore(
         buf.append("\nDecisions made (don't re-litigate):")
         for d in decisions[:6]:
             buf.append(f"  > {_trim(d.get('content',''), 160)}")
+    # Track every surface_id we expose so the final block can ask the agent
+    # to explicitly confirm follow-through after acting. Without that block
+    # the agent reads "lessons" as ambient text and rarely calls
+    # mark_lesson_followed - which is the root cause of the same mistakes
+    # repeating across sessions.
+    pending_surface_ids: list[int] = []
     if lessons:
-        buf.append("\nLessons learned this session (RULES - keep following):")
-        for L in lessons[:6]:
-            buf.append(f"  ! {_trim(L.get('content',''), 180)}")
-        # R1: log the surfaces session-restore actually SHOWS (previously this
-        # path rendered lessons but logged nothing, so the adherence loop never
-        # saw them). Dedup in _log_lesson_surfaces keeps it from double-counting.
+        # R1+: log surfaces FIRST so each lesson dict gets its `surface_id`
+        # mutated in place; the rendered text then carries the id. Previously
+        # the call happened AFTER the buffer was built, so even when the row
+        # was inserted, the agent never saw the id and could not confirm.
         try:
             engine._log_lesson_surfaces(
                 [L for L in lessons[:6] if L.get("ulid")],
                 query="session-restore", source="session_restore")
         except Exception:
             pass
+        buf.append("\nRULES IN EFFECT (this session) - re-check BEFORE acting:")
+        for L in lessons[:6]:
+            sid = L.get("surface_id")
+            tag = f"[id:{sid}] " if sid else ""
+            buf.append(f"  ! {tag}{_trim(L.get('content',''), 180)}")
+            if isinstance(sid, int):
+                pending_surface_ids.append(sid)
     if failures:
         buf.append("\nFailures (don't repeat):")
         for f in failures[:5]:
@@ -142,9 +153,7 @@ def build_session_restore(
                             buf.append(f"  - {_trim(f.get('content',''), 150)}")
                     pls = ov.get("lessons") or []
                     if pls:
-                        buf.append("Project lessons (RULES):")
-                        for L in pls[:4]:
-                            buf.append(f"  ! {_trim(L.get('content',''), 170)}")
+                        # Log surfaces FIRST so surface_id is in the rendered text.
                         try:
                             engine._log_lesson_surfaces(
                                 [L for L in pls[:4] if L.get("ulid")],
@@ -152,6 +161,13 @@ def build_session_restore(
                                 source="session_restore")
                         except Exception:
                             pass
+                        buf.append("Project RULES (must follow):")
+                        for L in pls[:4]:
+                            sid = L.get("surface_id")
+                            tag = f"[id:{sid}] " if sid else ""
+                            buf.append(f"  ! {tag}{_trim(L.get('content',''), 170)}")
+                            if isinstance(sid, int):
+                                pending_surface_ids.append(sid)
             except Exception:
                 pass
 
@@ -160,11 +176,55 @@ def build_session_restore(
     if not meaningful:
         return ""
 
+    # Explicit confirm-block: the agent reads "lessons" as background unless
+    # told to ACT on them. Listing the surface_ids here turns the adherence
+    # loop from passive ("did the agent happen to call mark_lesson_followed?")
+    # into a direct ask the agent has to consciously skip.
+    if pending_surface_ids:
+        # Dedup while preserving order (a lesson can appear in both session
+        # and project blocks).
+        seen: set[int] = set()
+        unique = [s for s in pending_surface_ids
+                  if not (s in seen or seen.add(s))]
+        buf.append("")
+        buf.append(
+            "Pending lesson confirmations: ids=" + str(unique)
+        )
+        buf.append(
+            "  After you act on (or consciously skip) each rule above, call:"
+        )
+        buf.append(
+            "    mark_lesson_followed(surface_id=<id>, "
+            "followed=True|False, note=\"<one line: what you did>\")"
+        )
+        buf.append(
+            "  Be honest - followed=False with a note is BETTER than not "
+            "calling at all. Unmarked ids count as ignored on the dashboard."
+        )
+
     buf.append("")
     buf.append(
         "Pick the thread back up from the above - don't re-ask the user what "
         "you already did. Call session_brief / project_overview for more."
     )
+
+    # Memory Delta: SessionStart fires after /compact too, and the model loses
+    # any handle->text mapping it had. Clear this session's ledger here so the
+    # NEXT auto-context render restates full text - the "context rebase" step.
+    # Pure no-op when memory_delta is off or no ledger exists.
+    try:
+        if bool(engine.config.get("memory_delta.enabled")):
+            import sqlite3
+            from pmb.memo.ledger import ensure_table, rehydrate
+            sid = (getattr(engine, "session_id", None)
+                   or getattr(engine, "_session_id", None) or "")
+            if sid:
+                with sqlite3.connect(engine.workspace.db_path) as conn:
+                    ensure_table(conn)
+                    rehydrate(conn, engine.workspace.id, str(sid))
+                    conn.commit()
+    except Exception:
+        pass
 
     text = "\n".join(buf)
     if len(text) > max_chars:

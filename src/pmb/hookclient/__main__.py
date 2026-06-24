@@ -329,6 +329,39 @@ def cmd_pretool(args: list[str]) -> int:
     return 0
 
 
+def cmd_read_guard(args: list[str]) -> int:
+    """PreToolUse(Read): ask the daemon whether this is a redundant re-read of an
+    unchanged, recently-read file; if so, emit a deny so the file is not dumped
+    into context again. Daemon-served only; silent allow without a daemon."""
+    raw = _read_stdin_utf8()
+    if not raw.strip():
+        return 0
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return 0
+    if (payload.get("tool_name") or payload.get("tool") or "") != "Read":
+        return 0
+    ti = payload.get("tool_input") or {}
+    fp = ti.get("file_path") or ti.get("path") or ""
+    if not fp:
+        return 0
+    try:
+        from pmb.hooks.read_guard import deny_payload, file_sha1
+        sha = file_sha1(fp)
+    except Exception:
+        return 0
+    out = _daemon_request(
+        "/internal/hook/readguard",
+        {"file_path": fp, "sha1": sha, "session_id": payload.get("session_id"),
+         "workspace": _workspace_hint()},
+        timeout=0.6,
+    )
+    if out and out.get("decision") == "deny":
+        sys.stdout.write(json.dumps(deny_payload(out.get("reason") or "")) + "\n")
+    return 0
+
+
 def cmd_followcheck(args: list[str]) -> int:
     window = _opt(args, "--window", "30") or "30"
     out = _daemon_request(
@@ -355,6 +388,24 @@ def cmd_autowrite(args: list[str]) -> int:
                           detached=True)
 
 
+def cmd_capture_exploration(args: list[str]) -> int:
+    """Stop hook: pull transcript_path from the payload and hand off to the cold
+    `pmb capture-exploration` (gated off by default via memo.autocapture_enabled)."""
+    raw = _read_stdin_utf8()
+    tpath = ""
+    try:
+        s = raw.lstrip()
+        if s[:1] == "{":
+            tpath = (json.loads(s) or {}).get("transcript_path", "") or ""
+    except Exception:
+        tpath = ""
+    if not tpath:
+        return 0
+    return _exec_full_cli(
+        ["capture-exploration", "--transcript", tpath, "--quiet"], detached=True,
+    )
+
+
 _DISPATCH = {
     "prepare-context": cmd_prepare_context,
     "session-restore": cmd_session_restore,
@@ -363,6 +414,8 @@ _DISPATCH = {
     "followcheck": cmd_followcheck,
     "lesson-followcheck": cmd_followcheck,  # accept the full-CLI name too
     "autowrite": cmd_autowrite,
+    "capture-exploration": cmd_capture_exploration,
+    "read-guard": cmd_read_guard,
 }
 
 

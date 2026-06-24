@@ -67,6 +67,91 @@ pmb import chatgpt ~/Downloads/conversations.json
 
 ---
 
+## Project tracking (semantic layer over `index project`)
+
+All local, Haiku by default (or fully offline via Ollama), idempotent.
+
+| Command | What it does |
+|---|---|
+| `pmb track changes` | Summarise the INTENT of new git commits (Haiku) and link it to the files touched - keeps the "why", not the raw diff. Idempotent via a per-repo cursor. `--since`, `--max-commits`, `--backend`. |
+| `pmb track modules` | A one-line "what this file does" per indexed file. Run `pmb index project` first. `--limit`, `--force`. |
+| `pmb track install` | Install a git post-commit hook so `track changes` runs automatically (background, non-blocking, never clobbers an existing hook). |
+
+```bash
+pmb index project . && pmb track modules     # structure + purpose
+pmb track changes                            # capture intent of new commits
+pmb track install                            # keep it current automatically
+```
+
+The agent reads all of this back from memory with the **`project_structure(name)`**
+MCP tool - languages, files grouped by directory (each with its purpose + symbol
+count), key modules, and recent change intents - no filesystem scan.
+
+**Incremental cognition (exploration memo cache).** Two MCP tools let the agent
+reuse a past session's research instead of re-deriving it:
+
+- **`record_exploration(intent, conclusion, files)`** - after reading several files
+  to reach a conclusion, memoize it keyed to each file's content hash.
+- **`recall_exploration(intent)`** - replay matching conclusions with a freshness
+  check: `fresh` when every source file is unchanged (trust it, skip re-reading),
+  else `stale_files` lists what changed since so only those are re-checked.
+
+**Token-saving guards & self-measurement (opt-in).**
+
+- **Read-Guard** (`readguard.enabled`, default off) - a PreToolUse(Read) guard that
+  denies re-reading a file already read this session that is unchanged and recent,
+  so it is not dumped into the context window again. Conservative; daemon-served.
+- **Auto-capture** (`memo.autocapture_enabled`, default off) - a Stop hook that
+  memoizes a turn's research conclusion from the transcript when it read several
+  files, so `recall_exploration` can reuse it later.
+- **Earned Memory** - `pmb health lessons-impact` (CLI) and the `lesson_impact` MCP
+  tool show which lessons actually help outcomes: per-lesson success-rate, lift vs
+  the no-lesson baseline, and churn, by joining surfaced lessons to turn outcomes.
+
+---
+
+## Resume note (committable session continuity)
+
+A structured markdown snapshot of "where we are now" - open goals, recent
+decisions, lessons, recent activity, files touched, latest exploration
+conclusions, and project structure. Sourced from PMB's typed memory (not
+extractive), so the sections carry real structure. Commit `.pmb/resume.md` to
+git and share session continuity with your team.
+
+| Command | What it does |
+|---|---|
+| `pmb resume save [--path .pmb/resume.md]` | Write the resume note now. |
+| `pmb resume show` | Print the current resume note. |
+| `pmb resume install` | Enable auto-refresh at every turn end (Stop hook). Sets `resume.auto_save_enabled=true`. |
+
+Hand-edited additions below the `<!-- PMB-RESUME-MARKER ... -->` line are
+preserved verbatim across regenerations.
+
+---
+
+## Memory Delta Protocol (compact repeat injections, opt-in)
+
+A per-session ledger of items PMB has already shown the agent. When auto-context
+re-injects the same lesson, the renderer collapses it to a one-liner handle
+reference (`! [M07] still active`) instead of restating the full text. New
+items get a fresh `[Mxx]` tag, updated items are flagged, and items that left
+the active set surface as `Expired since last turn: M03`. SessionStart fires a
+**Context Rebase** (`rehydrate`) that clears the ledger so the next render
+restates full text - critical after `/compact` because the model loses the
+handle->text mapping.
+
+Measured -72% block size on repeat injections of 3 typical lessons within the
+same chat. Default off; the main win is repeat injections (same lessons firing
+turn after turn) rather than cross-chat (handles can't survive a new chat).
+
+| Command | What it does |
+|---|---|
+| `pmb config set memory_delta.enabled true` | Enable the protocol. |
+| `pmb memory ledger [--session ID]` | Inspect handles assigned this session. |
+| `pmb memory rehydrate <SESSION_ID>` | Manually wipe a session's ledger (Context Rebase). |
+
+---
+
 ## Recall & explore (read memory)
 
 | Command | What it does |
@@ -287,6 +372,18 @@ own `record_*` calls - it only fills the gap when the agent stays silent.
 A turn is journaled only if it clears an outcome-based quality bar (tests
 passed, a failure fixed, a deploy ran), so mechanical churn is dropped.
 Tune everything via `autowrite.*` (`pmb config list`).
+
+**Repeat-prevention (ON by default).** When a message reads as pushback /
+frustration (profanity, ALL-CAPS, "те же грабли", a repeat-word plus a negated
+action), PMB records a DRAFT lesson on the *first* complaint
+(`auto_recall.correction_capture`) so the rule exists when it's needed - not
+after the seventh time. If a later message or a tool call strongly overlaps a
+known rule or past failure, the guard surfaces it LOUD: at message time
+(`auto_recall.repeat_guard`) and at **action time** via the PreToolUse guard
+(`hooks.pretool_guard`) - "⛔ STOP - you were corrected on this before" right
+when the agent is about to repeat it, even inside an autonomous tool loop with
+no user message. Lessons/decisions also keep a decay floor so a rarely-recalled
+rule cannot fade out of ranking.
 
 ---
 

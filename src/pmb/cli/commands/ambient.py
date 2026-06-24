@@ -693,6 +693,69 @@ def _spawn_detached_autowrite(window: int) -> bool:
         return False
 
 
+@app.command("capture-exploration")
+def capture_exploration_cmd(
+    transcript: str = typer.Option(
+        "", "--transcript",
+        help="Path to the Claude Code transcript JSONL. If omitted, the "
+             "Stop-hook payload is read from stdin.",
+    ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Run even if memo.autocapture_enabled is false (for testing).",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be captured, write nothing.",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Silent (for the Stop hook).",
+    ),
+):
+    """Auto-capture an exploration memo from the transcript at turn end.
+
+    If the last turn READ >= memo.autocapture_min_files distinct files and ended
+    with an answer, record it via record_exploration so a future session can
+    reuse the conclusion. Off unless memo.autocapture_enabled. Designed for a
+    Stop hook.
+    """
+    import json as _json
+    import sys as _sys
+    tpath = transcript
+    if not tpath and not _sys.stdin.isatty():
+        raw = _read_stdin_utf8()
+        s = (raw or "").lstrip()
+        if s[:1] == "{":
+            try:
+                tpath = (_json.loads(s) or {}).get("transcript_path", "") or ""
+            except Exception:
+                tpath = ""
+    if not tpath:
+        if not quiet:
+            console.print("[dim]capture-exploration: no transcript[/]")
+        return
+    try:
+        from pmb.core.engine import Engine
+        from pmb.hooks.exploration_capture import run_autocapture
+        eng = Engine()
+    except Exception as e:
+        if not quiet:
+            _sys.stdout.write(f"[pmb hook] capture-exploration init failed: {e}\n")
+        return
+    if not force and not bool(eng.config.get("memo.autocapture_enabled")):
+        if not quiet:
+            console.print("[dim]capture-exploration disabled "
+                          "(memo.autocapture_enabled=false)[/]")
+        return
+    min_files = int(eng.config.get("memo.autocapture_min_files") or 3)
+    res = run_autocapture(eng, tpath, min_files=min_files, apply=not dry_run)
+    if not quiet:
+        console.print(f"[dim]capture-exploration: {res}[/]")
+    try:
+        eng.wait_for_writes(timeout=30)
+    except Exception:
+        pass
+
+
 @app.command("autowrite")
 def autowrite_cmd(
     window: int = typer.Option(
@@ -808,6 +871,16 @@ def autowrite_cmd(
         console.print(
             f"[dim]nothing journaled - {res.skipped_reason or 'no actions'}[/]"
         )
+    # Resume note: opt-in, piggy-backed on the Stop hook so it stays in sync
+    # with the rest of the auto-write lifecycle. Silent on errors - a hook
+    # must never crash a session.
+    try:
+        if bool(eng.config.get("resume.auto_save_enabled")):
+            from pmb.resume.builder import save_resume
+            rp = str(eng.config.get("resume.path") or ".pmb/resume.md")
+            save_resume(eng, path=rp)
+    except Exception:
+        pass
 
 
 # ─── pmb forget-auto - drop memory the ambient writer made (user control) ─

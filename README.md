@@ -142,6 +142,10 @@ record_keyed_fact("user", "city", "Warsaw")
 # Project structure - symbols, imports, .gitignore-aware
 pmb index project .
 
+# Why each file exists + the intent behind every commit (Haiku-summarised, local)
+pmb track modules                # one-line purpose per indexed file
+pmb track changes                # new commits: what changed and WHY
+
 # PDFs (research papers, manuals, contracts)
 pmb index pdf paper.pdf
 pmb index pdf ~/docs --recurse
@@ -295,7 +299,15 @@ pmb dashboard                               web UI on port 8765
 pmb index pdf paper.pdf                     extract + chunk + embed
 pmb index pdf ~/docs --recurse              entire directory
 pmb index project .                         scan codebase
+pmb track changes                           summarise commit intent (why)
+pmb track modules                           one-line purpose per module
 pmb import chatgpt ~/Downloads/export.json  bring existing history
+
+# Continuity & efficiency (opt-in)
+pmb resume save                             write .pmb/resume.md (commit it)
+pmb resume install                          refresh resume.md at every turn end
+pmb health lessons-impact                   which lessons actually help outcomes
+pmb memory ledger                           Memory Delta handles this session
 
 # Maintenance
 pmb regraph                                 rebuild entity graph

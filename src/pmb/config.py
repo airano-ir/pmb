@@ -70,6 +70,8 @@ DEFAULT_TIER_KEYS: frozenset[str] = frozenset({
     # ── Auto-recall hook (zero-cooperation memory injection) ──────
     "auto_recall.enabled",
     "auto_recall.budget_chars",
+    "auto_recall.correction_capture",
+    "auto_recall.repeat_guard",
 
     # ── Ambient auto-write (memory journals the agent) ────────────
     "autowrite.enabled",
@@ -337,6 +339,35 @@ SCHEMA: dict[str, _Setting] = {
         "before re-deciding them. Turn off if your workspace doesn't record "
         "decisions and the extra query is wasted.",
     ),
+    "auto_recall.correction_capture": _Setting(
+        bool, True,
+        "Capture-on-correction: when the user message reads as pushback / "
+        "frustration / a repeat complaint ('снова не заполнило', CAPS, "
+        "profanity, 'те же грабли'), record a DRAFT lesson IMMEDIATELY and "
+        "nudge the agent to refine it into a durable rule. Fixes the #1 cause "
+        "of repeats - the rule being written too late (after the 7th "
+        "complaint, not the 1st). Drafts are tagged source=correction-capture "
+        "and deduped within a 90-min window.",
+    ),
+    "auto_recall.correction_record_draft": _Setting(
+        bool, True,
+        "Hybrid mode: actually WRITE the draft lesson on a detected correction "
+        "(vs only nudging the agent to write one). Off = PMB injects the nudge "
+        "but records nothing itself.",
+    ),
+    "auto_recall.correction_importance": _Setting(
+        float, 0.85,
+        "Importance for an auto-captured correction draft. High by default so "
+        "it sits above the lesson/decision decay floor and surfaces reliably.",
+        min=0.0, max=1.0,
+    ),
+    "auto_recall.repeat_guard": _Setting(
+        bool, True,
+        "Repeat guard: when the message strongly overlaps a lesson that "
+        "ALREADY exists, promote it to a LOUD banner at the TOP of the "
+        "auto-context block ('YOU'VE HIT THIS BEFORE') instead of leaving it "
+        "as one line the agent habituates to.",
+    ),
 
     # ── Ambient memory (auto-write) - memory journals the agent itself ──
     # PostToolUse logs the agent's actions; the Stop hook synthesizes an
@@ -397,6 +428,65 @@ SCHEMA: dict[str, _Setting] = {
         str, "",
         "Model id for autowrite.synthesizer when it's an LLM backend. "
         "Empty = backend default (ollama → qwen2.5:3b, claude → haiku).",
+    ),
+    # ── Exploration memo auto-capture (incremental cognition) ──────
+    "memo.autocapture_enabled": _Setting(
+        bool, False,
+        "Auto-capture exploration memos at turn end (Stop hook). When true, if "
+        "the last turn READ >= memo.autocapture_min_files distinct files and "
+        "ended with an answer, PMB records an exploration memo (intent + "
+        "conclusion + each source file's hash) so a future session can reuse "
+        "the conclusion via recall_exploration instead of re-deriving it. "
+        "OFF by default - opt in once you've confirmed it helps for your repo "
+        "(`pmb config set memo.autocapture_enabled true`).",
+    ),
+    "memo.autocapture_min_files": _Setting(
+        int, 3,
+        "Minimum distinct files READ in a turn before auto-capture fires.",
+        min=1, max=50,
+    ),
+    # ── Read-Guard (block redundant in-context re-reads) ──────────
+    "readguard.enabled": _Setting(
+        bool, False,
+        "Read-Guard: a PreToolUse(Read) guard that DENIES re-reading a file you "
+        "already read this session that is unchanged (sha match) and was read "
+        "within readguard.recency_window reads ago - so it isn't dumped into the "
+        "context window again. Conservative: changed/new/long-ago files always "
+        "pass. OFF by default (blocking reads is a trust decision); opt in with "
+        "`pmb config set readguard.enabled true`. Daemon-served; no-op without a "
+        "daemon.",
+    ),
+    "readguard.recency_window": _Setting(
+        int, 40,
+        "How many reads ago a file can have been read and still be assumed in "
+        "the live context (so a re-read is redundant). Beyond this it is allowed "
+        "again - it may have been compacted out.",
+        min=1, max=1000,
+    ),
+    # ── Resume note (committable markdown snapshot of memory state) ───
+    "resume.auto_save_enabled": _Setting(
+        bool, False,
+        "Auto-rewrite .pmb/resume.md at every turn end (Stop hook). The note "
+        "is a structured markdown snapshot (open goals, decisions, lessons, "
+        "recent activity, project structure) - committable to git, shareable "
+        "with a team, and grounded in PMB's typed memory. Opt-in: enable with "
+        "`pmb resume install`.",
+    ),
+    "resume.path": _Setting(
+        str, ".pmb/resume.md",
+        "Output path for the resume note. Relative paths are resolved against "
+        "the current workspace cwd.",
+    ),
+    # ── Memory Delta Protocol (per-session item ledger + handles) ─────
+    "memory_delta.enabled": _Setting(
+        bool, False,
+        "Collapse items the agent already saw this session into compact "
+        "[Mxx still active] handles instead of restating the full text. "
+        "SessionStart fires a rehydrate so the agent always re-gets the full "
+        "text after a /compact ('context rebase'). Off by default; opt in with "
+        "`pmb config set memory_delta.enabled true`. Prompt caching already "
+        "discounts repeated context within one chat, so the win is across "
+        "chats and across /compact; measure with `pmb memory ledger` first.",
     ),
     "autowrite.llm_timeout_s": _Setting(
         float, 20.0,

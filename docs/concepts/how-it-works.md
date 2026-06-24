@@ -111,8 +111,12 @@ For Claude Code, PMB installs the full set:
   rebuilds a short digest of what this session already decided and did, so the
   agent does not re-ask you.
 - **PreToolUse** runs `pretool`: before a tool call it can surface a matching
-  rule, for example a lesson that names the command about to run. It is advisory
-  and never blocks the action.
+  rule, for example a lesson that names the command about to run. It also fires
+  the "do NOT repeat this" corpus - past failures and captured corrections - so
+  if the action walks into something you were corrected on before, you see
+  "⛔ STOP - you were corrected on this before" at the moment it matters, even
+  inside an autonomous tool loop with no user message. It is advisory and never
+  blocks the action.
 - **PostToolUse** runs `track-action`: it records the action for ambient memory,
   as a single fast write with no model.
 - **Stop** runs `lesson-followcheck` and `autowrite`: it scores which surfaced
