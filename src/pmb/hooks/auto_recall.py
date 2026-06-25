@@ -510,7 +510,7 @@ def run_auto_context(
         return res
 
     # Correction capture runs on EVERY non-trivial message, BEFORE intent
-    # classification. An angry correction ("снова блять не заполнило") is
+    # classification. An angry correction (profanity + "did not fill in again") is
     # usually NOT a question, so it would classify as SKIP and inject nothing -
     # which is exactly the moment the rule needs to be captured (the RR
     # failure: the locate-me lesson was written only after the 7th complaint).
@@ -604,7 +604,7 @@ def run_auto_context(
             res.intents = ["CORRECTION"]
         else:
             # Non-trivial but no intent matched. Still give the REPEAT GUARD a
-            # chance: a re-raised complaint ("почему опять X") often strongly
+            # chance: a re-raised complaint ("why X again") often strongly
             # overlaps an existing rule even when it's not a question and trips
             # no intent. Surface that rule LOUD - but ONLY if it strongly
             # matches; otherwise inject nothing (don't add generic-lesson noise

@@ -12,7 +12,8 @@ This test:
   * FAILS if Cyrillic appears in any `src/pmb/**.py` NOT on the allowlist —
     so prose Cyrillic can never creep back in.
   * Is a RATCHET: as L1 moves a file's data into the lang packs, delete that
-    file from `_DATA_ALLOWLIST`. The goal is an empty allowlist.
+    file from `_DATA_ALLOWLIST`. The goal is a MINIMAL allowlist — only files
+    whose RU/UK data genuinely cannot live in the off-by-default packs.
 """
 from __future__ import annotations
 
@@ -23,12 +24,18 @@ _CYRILLIC = re.compile(r"[Ѐ-ӿԀ-ԯⷠ-ⷿꙀ-ꚟ]")
 _SRC = next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()) / "src" / "pmb"
 
 # L1 COMPLETE (2026-06-10): every RU/UK matching datum — verb stems, stopword
-# sets, intent/heading/relation regexes, fact-extraction templates — now lives
-# in pmb/lang/packs/{ru,uk}.yaml (active-by-default), merged back in by each
-# module from an English inline floor. src/pmb is 100% Cyrillic-free and the
-# relocations are pinned by tests/test_regex_parity.py. The allowlist is empty
-# and MUST stay empty: any new Cyrillic in src/pmb is now a hard failure.
-_DATA_ALLOWLIST: set[str] = set()
+# sets, intent/heading/relation regexes, fact-extraction templates — was moved
+# into pmb/lang/packs/{ru,uk}.yaml (active-by-default), merged back in by each
+# module from an English inline floor; relocations pinned by
+# tests/test_regex_parity.py.
+#
+# The ONE deliberate exception is the correction/profanity floor: it MUST match
+# Russian/Ukrainian frustration out-of-the-box on a DEFAULT install, but the
+# lang-pack mechanism is OFF by default (G3) and profanity does not "self-heal"
+# via ALD — so that lexicon stays inline (see the module's own docstring). It is
+# FUNCTIONAL matching DATA, not prose, so it is allowlisted, not translated. Any
+# OTHER Cyrillic in src/pmb (prose, or new inline data) is still a hard failure.
+_DATA_ALLOWLIST: set[str] = {"hooks/correction_capture.py"}
 
 
 def _cyrillic_files() -> dict[str, int]:
