@@ -67,21 +67,31 @@ def health_lessons_impact(
         raise typer.Exit(1)
     base = r["baseline_success_rate"]
     base_s = f"{base:.0%}" if base is not None else "-"
+    suff = r.get("signal_sufficiency", "insufficient")
+    suff_color = {"ok": "green", "thin": "yellow"}.get(suff, "red")
     console.print(Panel.fit(
         f"window: {r['window_days']}d   outcome-bearing turns: {r['n_outcome_turns']}\n"
-        f"baseline success (no lesson active): {base_s} over {r['n_baseline_turns']} turns",
+        f"baseline success (no lesson active): {base_s} over {r['n_baseline_turns']} turns\n"
+        f"signal: [{suff_color}]{suff}[/]   provable (useful/harmful): {r.get('n_confident', 0)}",
         title="Earned Memory · lesson impact",
     ))
     if not r["lessons"]:
         console.print("[yellow]No lesson had an outcome-bearing turn in this window - "
                       "signal too sparse for the feedback loop yet.[/]")
         return
+    if not r.get("trustworthy", False):
+        console.print("[yellow]⚠ signal not yet trustworthy - the numbers below are "
+                      "measurement only, not a ranking signal.[/]")
     t = Table(show_header=True, header_style="bold magenta")
     t.add_column("n", justify="right")
     t.add_column("success", justify="right")
+    t.add_column("95% CI", justify="right")
+    t.add_column("verdict")
     t.add_column("lift", justify="right")
     t.add_column("churnD", justify="right")
     t.add_column("lesson")
+    _vcolor = {"useful": "green", "harmful": "red",
+               "unverified": "yellow", "insufficient": "dim"}
     for L in r["lessons"][:limit]:
         lift = L["lift"]
         if lift is None:
@@ -94,9 +104,13 @@ def health_lessons_impact(
             lift_s = "0%"
         cd = L["churn_delta"]
         cd_s = f"{cd:+.1f}" if cd is not None else "-"
-        t.add_row(str(L["n"]), f"{L['success_rate']:.0%}", lift_s, cd_s,
+        vd = L.get("verdict", "insufficient")
+        ci_s = f"{L.get('ci_low', 0):.0%}-{L.get('ci_high', 1):.0%}"
+        t.add_row(str(L["n"]), f"{L['success_rate']:.0%}", ci_s,
+                  f"[{_vcolor.get(vd, 'dim')}]{vd}[/]", lift_s, cd_s,
                   (L["content"] or L["lesson_ulid"])[:60])
     console.print(t)
+    console.print(f"[dim]{r.get('caveat', '')}[/]")
 
 
 @health_app.command("run")

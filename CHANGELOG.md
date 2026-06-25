@@ -2,6 +2,30 @@
 
 All notable changes to PMB are documented here.
 
+## [Unreleased]
+
+### Changed
+- **Default MCP tool surface trimmed 34 → 10 (`minimal` is now the built-in
+  default profile).** A freshly connected agent now sees a tight core-10 -
+  `prepare`, `recall`, `project_overview`, `find_lessons`,
+  `mark_lesson_followed`, `session_brief`, `record_batch`, `record_keyed_fact`,
+  `list_goals`, `update_goal` - instead of 30+ tools, cutting choice-confusion
+  and per-turn token cost. Nothing is removed: the fuller surface stays one flag
+  away (`PMB_TOOL_PROFILE=default` = 34 tools, `full` = ~65), and the public
+  `default` surface is byte-for-byte unchanged (still pinned by the API-contract
+  test). `pmb connect claude-code` now pins `minimal` (was `lean`).
+- **Earned Memory is now statistically honest.** `lesson_impact` /
+  `pmb health lessons-impact` previously reported per-lesson `lift` as a bare
+  point estimate, so an n=1 fluke could read as a real "useful"/"harmful"
+  effect. Each lesson now carries a 95% Wilson confidence interval and a
+  conservative `verdict` - `useful`/`harmful` only when the CI clears the
+  no-lesson baseline AND n ≥ `min_n` (default 5), otherwise `unverified` /
+  `insufficient`. The report adds `signal_sufficiency`, a `trustworthy` flag,
+  `n_confident`, and an explicit confounding-by-indication `caveat`; the CLI
+  shows the CI, the verdict, and a "not yet trustworthy" banner. The
+  measurement-only stance is unchanged - it now states WHEN it can't be trusted
+  instead of emitting a misleading number.
+
 ## [1.1.0] - 2026-06-24 - Semantic tracking, memory feedback, and token-saving guards
 
 A semantic layer on top of `pmb index project`. The structural index says which
