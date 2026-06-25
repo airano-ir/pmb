@@ -5,6 +5,16 @@ All notable changes to PMB are documented here.
 ## [Unreleased]
 
 ### Changed
+- **Silent best-effort swallows in the write path are now observable.** Audited
+  the ~340 bare `except Exception: pass` blocks. The hot write/recall paths use
+  them heavily, but for BEST-EFFORT secondary work (graph edges, temporal /
+  identity enrichment, dedup queueing) layered AFTER the primary event is
+  already persisted - non-blocking by design, not data loss. The real gap was
+  visibility: a systemic enrichment failure degraded recall silently. The
+  recall-affecting swallows in `write.py` now route through the existing
+  `errlog.log_error` seam (the same idiom `batch.py` already used), so a
+  repeated failure surfaces in `pmb doctor` / the status panel instead of
+  vanishing. The happy path is unchanged - zero cost unless something throws.
 - **Default MCP tool surface trimmed 34 → 10 (`minimal` is now the built-in
   default profile).** A freshly connected agent now sees a tight core-10 -
   `prepare`, `recall`, `project_overview`, `find_lessons`,
