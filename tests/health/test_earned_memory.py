@@ -75,6 +75,9 @@ def test_lesson_impact_refuses_to_trust_a_fluke(isolated_engine):
         assert L["verdict"] == "insufficient"            # n=1 < min_n
         assert 0.0 <= L["ci_low"] <= L["ci_high"] <= 1.0
         assert L["ci_high"] - L["ci_low"] > 0.3          # no false precision at n=1
+        # follow flag is NULL in this seed -> no causal arm at all
+        assert L["causal_verdict"] == "insufficient"
+        assert L["n_followed"] == 0 and L["n_ignored"] == 0
 
 
 def test_lesson_impact_can_fire_a_confident_verdict(isolated_engine):
@@ -109,3 +112,47 @@ def test_lesson_impact_can_fire_a_confident_verdict(isolated_engine):
     assert by["L_useful"]["verdict"] == "useful"
     assert by["L_useful"]["ci_low"] > r["baseline_success_rate"]
     assert r["n_confident"] >= 1
+
+
+def test_lesson_impact_causal_verdict_separates_followed_from_ignored(isolated_engine):
+    # Same lesson: FOLLOWED -> passes, IGNORED -> failures. The within-lesson
+    # causal read must fire "helps". Unlike baseline lift, this holds the
+    # surfacing trigger fixed (both arms are "this lesson was relevant").
+    db, ws, now = (isolated_engine.workspace.db_path,
+                   isolated_engine.workspace.id, time.time())
+    with sqlite3.connect(db) as c:
+        ensure_agent_actions_table(c)
+        c.execute(
+            "CREATE TABLE IF NOT EXISTS lesson_surfaces (id INTEGER PRIMARY KEY "
+            "AUTOINCREMENT, workspace_id TEXT, lesson_ulid TEXT, query TEXT, "
+            "source TEXT, surfaced_at REAL, session_id TEXT, followed INTEGER)"
+        )
+        state = {"sid": 0}
+
+        def surface(followed):
+            state["sid"] += 1
+            c.execute(
+                "INSERT INTO lesson_surfaces (id,workspace_id,lesson_ulid,query,"
+                "source,surfaced_at,followed) VALUES (?,?,?,'','test',?,?)",
+                (state["sid"], ws, "L_c", now, followed),
+            )
+            return state["sid"]
+
+        def act(sess, status, sids):
+            c.execute(
+                "INSERT INTO agent_actions (workspace_id,timestamp,tool,target,"
+                "status,significant,session_id,surface_ids) VALUES (?,?,?,?,?,?,?,?)",
+                (ws, now, "Bash", "pytest", status, 1, sess, sids),
+            )
+        for i in range(6):                       # followed -> pass
+            act(f"f{i}", "ok", str(surface(1)))
+        for i in range(6):                       # ignored -> fail
+            act(f"g{i}", "error", str(surface(0)))
+        c.commit()
+    r = lesson_impact(isolated_engine, window_days=30, min_n=5)
+    Lc = {L["lesson_ulid"]: L for L in r["lessons"]}["L_c"]
+    assert Lc["n_followed"] == 6 and Lc["n_ignored"] == 6
+    assert Lc["followed_success_rate"] == 1.0
+    assert Lc["ignored_success_rate"] == 0.0
+    assert Lc["causal_verdict"] == "helps"
+    assert r["n_causal"] >= 1
