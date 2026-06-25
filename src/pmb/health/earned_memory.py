@@ -21,6 +21,7 @@ red->green) are counted, so `n_outcome_turns` doubles as a signal-density check.
 """
 from __future__ import annotations
 
+import math
 import sqlite3
 import time
 from typing import TYPE_CHECKING
@@ -41,7 +42,31 @@ def _turn_outcome(classified: dict) -> tuple[bool, bool]:
     return has, success
 
 
-def lesson_impact(engine: Engine, window_days: int = 30, gap_seconds: float = 300.0) -> dict:
+def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for a binomial success-rate k/n. Stdlib-only
+    (no scipy). Returns (low, high) clamped to [0, 1]; (0.0, 1.0) for n == 0.
+
+    Wilson, not the normal approximation: it stays inside [0, 1] and is sane at
+    the tiny n the outcome signal actually produces, where the textbook
+    p ± z·sqrt(p(1-p)/n) interval breaks (it can leave [0,1] and collapses to
+    width 0 at p=0 or p=1).
+    """
+    if n <= 0:
+        return 0.0, 1.0
+    p = k / n
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    center = (p + z2 / (2 * n)) / denom
+    half = (z * math.sqrt((p * (1 - p) + z2 / (4 * n)) / n)) / denom
+    return max(0.0, center - half), min(1.0, center + half)
+
+
+def lesson_impact(
+    engine: Engine,
+    window_days: int = 30,
+    gap_seconds: float = 300.0,
+    min_n: int = 5,
+) -> dict:
     """Per-lesson effectiveness from the surface->outcome join. Model-free.
 
     Groups agent_actions into turns (same session, gaps < gap_seconds), keeps
@@ -144,13 +169,32 @@ def lesson_impact(engine: Engine, window_days: int = 30, gap_seconds: float = 30
     lessons_out = []
     for lu, vals in per_lesson.items():
         n = len(vals)
-        sr = sum(1 for s, _ in vals if s) / n
+        k = sum(1 for s, _ in vals if s)            # successes
+        sr = k / n
         ch = sum(c for _, c in vals) / n
+        ci_low, ci_high = _wilson(k, n)
+        # Verdict is deliberately CONSERVATIVE. A lesson is only called useful /
+        # harmful when its success-rate CI clears the baseline AND it has enough
+        # outcome turns to mean anything. Everything else is "unverified" (seen,
+        # not yet provable) or "insufficient" (too few turns to judge). This is
+        # what stops an n=2 fluke from being reported as a real effect - and why
+        # the per-lesson `lift` above must not drive ranking/decay on its own.
+        if base_rate is None or n < min_n:
+            verdict = "insufficient"
+        elif ci_low > base_rate:
+            verdict = "useful"
+        elif ci_high < base_rate:
+            verdict = "harmful"
+        else:
+            verdict = "unverified"
         lessons_out.append({
             "lesson_ulid": lu,
             "content": (content.get(lu, "") or "")[:160],
             "n": n,
             "success_rate": round(sr, 3),
+            "ci_low": round(ci_low, 3),
+            "ci_high": round(ci_high, 3),
+            "verdict": verdict,
             "lift": round(sr - base_rate, 3) if base_rate is not None else None,
             "avg_churn": round(ch, 2),
             "churn_delta": round(ch - base_churn, 2) if base_churn is not None else None,
@@ -158,11 +202,36 @@ def lesson_impact(engine: Engine, window_days: int = 30, gap_seconds: float = 30
     # Worst lift first (harmful/dead weight surfaces to the top for review).
     lessons_out.sort(key=lambda x: (x["lift"] if x["lift"] is not None else 0, -x["n"]))
 
+    # Top-level signal sufficiency. Outcome turns are RARE (each needs a test /
+    # build / deploy / red->green), so the loop is only trustworthy once enough
+    # of them have accrued AND a real no-lesson baseline exists. Until then the
+    # per-lesson numbers are shown but must NOT drive ranking/decay - exactly the
+    # "measurement only" stance the feature shipped with.
+    n_confident = sum(1 for L in lessons_out if L["verdict"] in ("useful", "harmful"))
+    if n_outcome_turns < 20 or len(base) < 5:
+        sufficiency = "insufficient"
+    elif n_outcome_turns < 50:
+        sufficiency = "thin"
+    else:
+        sufficiency = "ok"
+    trustworthy = sufficiency == "ok" and n_confident > 0
+
     return {
         "window_days": window_days,
         "n_outcome_turns": n_outcome_turns,
         "n_baseline_turns": len(base),
         "baseline_success_rate": round(base_rate, 3) if base_rate is not None else None,
         "baseline_avg_churn": round(base_churn, 2) if base_churn is not None else None,
+        "min_n": min_n,
+        "n_confident": n_confident,
+        "signal_sufficiency": sufficiency,   # insufficient | thin | ok
+        "trustworthy": trustworthy,
+        "caveat": (
+            "Lift is associational, not causal: lessons surface on harder, more "
+            "specific turns, so a genuine positive effect can read as negative "
+            "lift (confounding by indication). Treat useful/harmful as flags for "
+            "review, not ground truth, until a within-lesson followed-vs-ignored "
+            "control exists."
+        ),
         "lessons": lessons_out,
     }

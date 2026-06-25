@@ -58,3 +58,54 @@ def test_lesson_impact_empty(isolated_engine):
     r = lesson_impact(isolated_engine, window_days=30)
     assert r["n_outcome_turns"] == 0
     assert r["lessons"] == []
+
+
+def test_lesson_impact_refuses_to_trust_a_fluke(isolated_engine):
+    # The original seed has n=1 per lesson and only 3 outcome turns. Every
+    # verdict must be "insufficient", the whole report flagged untrustworthy,
+    # and the CIs genuinely wide - a 1-sample result must NEVER read as a real
+    # useful/harmful effect (that was the trust gap).
+    _seed(isolated_engine)
+    r = lesson_impact(isolated_engine, window_days=30)
+    assert r["signal_sufficiency"] == "insufficient"
+    assert r["trustworthy"] is False
+    assert r["n_confident"] == 0
+    assert r["caveat"]                                   # confounding caveat present
+    for L in r["lessons"]:
+        assert L["verdict"] == "insufficient"            # n=1 < min_n
+        assert 0.0 <= L["ci_low"] <= L["ci_high"] <= 1.0
+        assert L["ci_high"] - L["ci_low"] > 0.3          # no false precision at n=1
+
+
+def test_lesson_impact_can_fire_a_confident_verdict(isolated_engine):
+    # Counter to the test above: when a lesson HAS enough turns and its success
+    # CI clears the baseline, the verdict actually fires "useful". The change
+    # suppresses noise without muting real signal.
+    db, ws, now = (isolated_engine.workspace.db_path,
+                   isolated_engine.workspace.id, time.time())
+    with sqlite3.connect(db) as c:
+        ensure_agent_actions_table(c)
+        c.execute(
+            "CREATE TABLE IF NOT EXISTS lesson_surfaces (id INTEGER PRIMARY KEY "
+            "AUTOINCREMENT, workspace_id TEXT, lesson_ulid TEXT, query TEXT, "
+            "source TEXT, surfaced_at REAL, session_id TEXT, followed INTEGER)"
+        )
+        c.execute("INSERT INTO lesson_surfaces (id,workspace_id,lesson_ulid,query,"
+                  "source,surfaced_at) VALUES (1,?,'L_useful','','test',?)", (ws, now))
+
+        def act(sess, status, sids):
+            c.execute(
+                "INSERT INTO agent_actions (workspace_id,timestamp,tool,target,"
+                "status,significant,session_id,surface_ids) VALUES (?,?,?,?,?,?,?,?)",
+                (ws, now, "Bash", "pytest", status, 1, sess, sids),
+            )
+        for i in range(6):                       # baseline ~50%
+            act(f"b{i}", "ok" if i % 2 == 0 else "error", "")
+        for i in range(6):                       # lesson: 6/6 pass
+            act(f"u{i}", "ok", "1")
+        c.commit()
+    r = lesson_impact(isolated_engine, window_days=30, min_n=5)
+    by = {L["lesson_ulid"]: L for L in r["lessons"]}
+    assert by["L_useful"]["verdict"] == "useful"
+    assert by["L_useful"]["ci_low"] > r["baseline_success_rate"]
+    assert r["n_confident"] >= 1

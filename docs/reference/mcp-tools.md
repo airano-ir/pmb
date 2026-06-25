@@ -15,10 +15,10 @@ PMB trims the tool list so the agent is not overwhelmed. Pick a profile with the
 
 | Profile | Tools | For |
 |---|---|---|
-| `minimal` | 13 | The bare essentials, for the fastest path. |
-| `lean` | 26 | Claude Code with ambient hooks, where hooks already cover recall. |
-| `default` | 30 | Day-to-day usage. |
-| `full` | 65 | Everything, including maintenance and sleep-stage operations. |
+| `minimal` | 10 | **The default.** The core memory loop — read-first (`prepare`/`recall`/`project_overview`), the lesson loop, the single write path (`record_batch`), personal attrs, and goals. |
+| `lean` | 30 | `default` minus the read-status browse tools a host hook already covers (`what_just_happened`, `recent_activity`, `list_recent`, `overview`). |
+| `default` | 34 | The fuller day-to-day set (recall escalation, `record_fact`/`_tree`, ingestion, chains, stats). Opt in with `PMB_TOOL_PROFILE=default`. |
+| `full` | ~65 | Everything, including maintenance and sleep-stage operations. |
 
 ## Read first
 
