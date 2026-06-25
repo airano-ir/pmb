@@ -4,6 +4,15 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+### Added
+- **New docs page: "Does PMB actually help — and how we measure it honestly"**
+  (`concepts/measuring-impact.md`). Lays out the two-method evaluation stance -
+  retrieval benchmarks (LoCoMo / multilingual) for recall quality, and Earned
+  Memory's three honest layers (associational lift → Wilson-CI verdicts →
+  within-lesson followed-vs-ignored causal read) for whether memory changes
+  outcomes - with the limitations stated plainly and how to run it on your own
+  workspace.
+
 ### Changed
 - **Silent best-effort swallows in the write path are now observable.** Audited
   the ~340 bare `except Exception: pass` blocks. The hot write/recall paths use
