@@ -20,10 +20,14 @@ All notable changes to PMB are documented here.
   identity enrichment, dedup queueing) layered AFTER the primary event is
   already persisted - non-blocking by design, not data loss. The real gap was
   visibility: a systemic enrichment failure degraded recall silently. The
-  recall-affecting swallows in `write.py` now route through the existing
-  `errlog.log_error` seam (the same idiom `batch.py` already used), so a
-  repeated failure surfaces in `pmb doctor` / the status panel instead of
-  vanishing. The happy path is unchanged - zero cost unless something throws.
+  recall-affecting swallows in the hot path - `write.py` (graph / temporal /
+  identity / dedup enrichment), `embed.py` (queue drain - a systemic failure can
+  no longer silently leave events unembedded and unfindable) and `recall.py`
+  (scoring boosts + recall-time drain) - now route through the existing
+  `errlog.log_error` seam (the idiom `batch.py` already used), so a repeated
+  failure surfaces in `pmb doctor` / the status panel instead of vanishing.
+  Warmup probes, config reads and intentional fall-throughs are left silent by
+  design. The happy path is unchanged - zero cost unless something throws.
 - **Default MCP tool surface trimmed 34 → 10 (`minimal` is now the built-in
   default profile).** A freshly connected agent now sees a tight core-10 -
   `prepare`, `recall`, `project_overview`, `find_lessons`,

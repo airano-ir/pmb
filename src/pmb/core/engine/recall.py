@@ -482,8 +482,9 @@ class RecallMixin:
             if self._embed_queue:
                 _ = self.search.model   # recall pays this load regardless
                 self._drain_embed_inline(max_items=64)
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "recall_embed_drain", e)
         # Stage 1: search by BM25+vec only (no importance/recency in search core)
         raw_hits: list[SearchHit] = self.search.search(
             query=query,
@@ -1144,8 +1145,10 @@ class RecallMixin:
                         )
                         for (h, ev, base, recency) in scored
                     ]
-            except Exception:
-                pass  # never let a boost crash recall
+            except Exception as e:
+                # never let a boost crash recall; log so a systemic failure shows
+                from pmb.core.errlog import log_error
+                log_error(self.workspace.db_path, "recall_boost", e)
 
         scored.sort(key=lambda t: -t[2])
 
@@ -1376,8 +1379,9 @@ class RecallMixin:
         try:
             if self._embed_queue:
                 self._kick_embed_drain()
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "recall_kick_drain", e)
         # Stash for next time. Writes bump the generation so future stale
         # cache hits are dropped on read.
         self.recall_cache.put(cache_key, pack)
