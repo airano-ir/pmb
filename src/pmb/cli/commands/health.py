@@ -110,6 +110,24 @@ def health_lessons_impact(
                   f"[{_vcolor.get(vd, 'dim')}]{vd}[/]", lift_s, cd_s,
                   (L["content"] or L["lesson_ulid"])[:60])
     console.print(t)
+
+    # Within-lesson causal read (followed vs ignored, same lesson). Only show
+    # conclusive ones; if none, say so honestly rather than implying coverage.
+    causal = [L for L in r["lessons"] if L.get("causal_verdict") in ("helps", "hurts")]
+    if causal:
+        console.print("\n[bold]Within-lesson causal read[/] "
+                      "(followed vs ignored - controls for the surfacing trigger):")
+        for L in causal[:limit]:
+            cv = L["causal_verdict"]
+            col = "green" if cv == "helps" else "red"
+            console.print(
+                f"  [{col}]{cv}[/]  followed {L['followed_success_rate']:.0%} "
+                f"[{L['n_followed']}] vs ignored {L['ignored_success_rate']:.0%} "
+                f"[{L['n_ignored']}]  ·  {(L['content'] or L['lesson_ulid'])[:50]}"
+            )
+    else:
+        console.print("[dim]No lesson yet has >= min_n turns BOTH followed and "
+                      "ignored - causal read pending more data.[/]")
     console.print(f"[dim]{r.get('caveat', '')}[/]")
 
 

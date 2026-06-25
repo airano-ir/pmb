@@ -25,6 +25,17 @@ All notable changes to PMB are documented here.
   shows the CI, the verdict, and a "not yet trustworthy" banner. The
   measurement-only stance is unchanged - it now states WHEN it can't be trusted
   instead of emitting a misleading number.
+- **Earned Memory gains a within-lesson causal read.** Beyond the associational
+  `lift` (vs the no-lesson baseline), each lesson now reports a `causal_verdict`
+  (`helps` / `hurts` / `inconclusive` / `insufficient`) from a
+  followed-vs-ignored comparison of the SAME lesson's turns - holding the
+  surfacing trigger fixed, which controls for the confounding the baseline lift
+  cannot. It fires only when both arms clear `min_n` and their Wilson CIs
+  separate. New per-lesson fields `n_followed`, `n_ignored`,
+  `followed_success_rate`, `ignored_success_rate`, `followed_lift`; a top-level
+  `n_causal`; and a CLI section that prints the conclusive reads (or says the
+  causal read is pending more data). Residual confound noted in `caveat`: the
+  agent's choice to follow may itself track task type.
 
 ## [1.1.0] - 2026-06-24 - Semantic tracking, memory feedback, and token-saving guards
 

@@ -95,15 +95,31 @@ def lesson_impact(
                 rows = []  # table may not exist yet on a fresh workspace
             try:
                 surf_rows = c.execute(
-                    "SELECT id, lesson_ulid FROM lesson_surfaces WHERE workspace_id=?",
+                    "SELECT id, lesson_ulid, followed FROM lesson_surfaces "
+                    "WHERE workspace_id=?",
                     (ws,),
                 ).fetchall()
             except Exception:
-                surf_rows = []
+                # Older DBs may lack the `followed` column; fall back so the
+                # baseline join still works (just without the causal arm).
+                try:
+                    surf_rows = c.execute(
+                        "SELECT id, lesson_ulid FROM lesson_surfaces "
+                        "WHERE workspace_id=?",
+                        (ws,),
+                    ).fetchall()
+                except Exception:
+                    surf_rows = []
     except Exception:
         pass
 
-    surf2lesson = {str(r[0]): r[1] for r in surf_rows if r[1]}
+    surf2lesson = {str(r[0]): r[1] for r in surf_rows if len(r) >= 2 and r[1]}
+    # Known follow-through per surface (1/0). NULL = not yet marked -> excluded
+    # from the causal arm entirely (it is neither "followed" nor "ignored").
+    surf2followed = {
+        str(r[0]): bool(r[2])
+        for r in surf_rows if len(r) >= 3 and r[2] is not None
+    }
 
     # Group into turns: contiguous same-session actions with small gaps.
     turns: list[dict] = []
@@ -134,6 +150,9 @@ def lesson_impact(
 
     base: list[tuple[bool, int]] = []
     per_lesson: dict[str, list[tuple[bool, int]]] = {}
+    # Within-lesson causal arm: lesson -> {"followed": [success...],
+    # "ignored": [success...]}. Only surfaces with a KNOWN follow flag count.
+    arms: dict[str, dict[str, list[bool]]] = {}
     n_outcome_turns = 0
     for t in turns:
         cl = classify_actions(t["actions"])
@@ -142,11 +161,28 @@ def lesson_impact(
             continue
         n_outcome_turns += 1
         churn = int(cl["n_significant"])
-        lessons = {surf2lesson.get(s) for s in t["surfaces"]} - {None}
+        # Per lesson active in this turn, resolve its follow-arm: "followed" if
+        # ANY of its surfaces here was followed, else "ignored" if at least one
+        # surface was explicitly not-followed, else unknown (skip the arm).
+        lesson_arm: dict[str, str] = {}
+        for s in t["surfaces"]:
+            lu = surf2lesson.get(s)
+            if lu is None:
+                continue
+            lesson_arm.setdefault(lu, "")  # lesson is active even if arm unknown
+            if s in surf2followed:
+                if surf2followed[s]:
+                    lesson_arm[lu] = "followed"
+                elif lesson_arm[lu] != "followed":
+                    lesson_arm[lu] = "ignored"
+        lessons = set(lesson_arm)
         if not lessons:
             base.append((success, churn))
         for lu in lessons:
             per_lesson.setdefault(lu, []).append((success, churn))
+            arm = lesson_arm[lu]
+            if arm:  # known follow-through only
+                arms.setdefault(lu, {"followed": [], "ignored": []})[arm].append(success)
 
     base_rate = (sum(1 for s, _ in base if s) / len(base)) if base else None
     base_churn = (sum(ch for _, ch in base) / len(base)) if base else None
@@ -187,6 +223,25 @@ def lesson_impact(
             verdict = "harmful"
         else:
             verdict = "unverified"
+        # Within-lesson causal read: same lesson, FOLLOWED turns vs IGNORED
+        # turns. Holds the surfacing trigger fixed, so it is far less confounded
+        # than `lift` (which compares against unrelated no-lesson turns). Fires
+        # only when both arms clear min_n and their success CIs separate.
+        fa = arms.get(lu, {}).get("followed", [])
+        ia = arms.get(lu, {}).get("ignored", [])
+        nf, ni = len(fa), len(ia)
+        followed_lift = None
+        causal_verdict = "insufficient"
+        if nf >= min_n and ni >= min_n:
+            f_lo, f_hi = _wilson(sum(fa), nf)
+            i_lo, i_hi = _wilson(sum(ia), ni)
+            followed_lift = round(sum(fa) / nf - sum(ia) / ni, 3)
+            if f_lo > i_hi:
+                causal_verdict = "helps"
+            elif f_hi < i_lo:
+                causal_verdict = "hurts"
+            else:
+                causal_verdict = "inconclusive"
         lessons_out.append({
             "lesson_ulid": lu,
             "content": (content.get(lu, "") or "")[:160],
@@ -198,6 +253,12 @@ def lesson_impact(
             "lift": round(sr - base_rate, 3) if base_rate is not None else None,
             "avg_churn": round(ch, 2),
             "churn_delta": round(ch - base_churn, 2) if base_churn is not None else None,
+            "n_followed": nf,
+            "n_ignored": ni,
+            "followed_success_rate": round(sum(fa) / nf, 3) if nf else None,
+            "ignored_success_rate": round(sum(ia) / ni, 3) if ni else None,
+            "followed_lift": followed_lift,
+            "causal_verdict": causal_verdict,
         })
     # Worst lift first (harmful/dead weight surfaces to the top for review).
     lessons_out.sort(key=lambda x: (x["lift"] if x["lift"] is not None else 0, -x["n"]))
@@ -208,6 +269,7 @@ def lesson_impact(
     # per-lesson numbers are shown but must NOT drive ranking/decay - exactly the
     # "measurement only" stance the feature shipped with.
     n_confident = sum(1 for L in lessons_out if L["verdict"] in ("useful", "harmful"))
+    n_causal = sum(1 for L in lessons_out if L["causal_verdict"] in ("helps", "hurts"))
     if n_outcome_turns < 20 or len(base) < 5:
         sufficiency = "insufficient"
     elif n_outcome_turns < 50:
@@ -224,14 +286,17 @@ def lesson_impact(
         "baseline_avg_churn": round(base_churn, 2) if base_churn is not None else None,
         "min_n": min_n,
         "n_confident": n_confident,
+        "n_causal": n_causal,
         "signal_sufficiency": sufficiency,   # insufficient | thin | ok
         "trustworthy": trustworthy,
         "caveat": (
-            "Lift is associational, not causal: lessons surface on harder, more "
-            "specific turns, so a genuine positive effect can read as negative "
-            "lift (confounding by indication). Treat useful/harmful as flags for "
-            "review, not ground truth, until a within-lesson followed-vs-ignored "
-            "control exists."
+            "`lift`/`verdict` compare a lesson's turns to the no-lesson baseline "
+            "and are ASSOCIATIONAL: lessons surface on harder, more specific "
+            "turns, so a real positive effect can read as negative lift "
+            "(confounding by indication). Prefer `causal_verdict` - a "
+            "within-lesson followed-vs-ignored comparison that holds the "
+            "surfacing trigger fixed. Its residual confound: the agent's CHOICE "
+            "to follow may itself track task type."
         ),
         "lessons": lessons_out,
     }
