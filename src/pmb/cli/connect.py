@@ -941,14 +941,16 @@ _HOOK_HOSTS = {"claude-code", "codex"}
 
 
 def _lean_for(agent: str) -> str | None:
-    """MCP tool profile to set when hooks ARE installed for `agent`.
+    """MCP tool profile to PIN for `agent` when hooks ARE installed.
 
-    Only claude-code has a per-turn auto-recall HOOK (UserPromptSubmit) that
-    makes the read-status tools redundant → "lean". Codex installs hooks for
-    AMBIENT (rollout + notify) but has NO per-turn read hook, so it still needs
-    the full read surface (prepare / session_brief) → leave the server default.
+    The built-in default is now the core-10 ("minimal") surface, so most hosts
+    need no override. claude-code installs a per-turn auto-recall HOOK
+    (UserPromptSubmit) that makes even the browse tools redundant, so we pin it
+    explicitly to "minimal" — self-documenting in the generated config and
+    robust to a future change of the built-in default. Codex installs only
+    AMBIENT hooks (no per-turn read hook), so it inherits the server default.
     """
-    return "lean" if agent == "claude-code" else None
+    return "minimal" if agent == "claude-code" else None
 
 
 def connect(

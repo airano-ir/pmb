@@ -1,8 +1,10 @@
 """Lean MCP profile + hooks-by-default in `pmb connect`.
 
 Architecture: hooks = the involuntary floor (auto-recall / ambient / restore),
-MCP = the deliberate ceiling. On a hook-enabled host the read-status tools the
-hooks already cover are trimmed from the MCP surface ('lean' profile).
+MCP = the deliberate ceiling. The built-in default is the core-10 ('minimal')
+surface; a hook-enabled host (claude-code) is pinned to it explicitly. The
+'lean' profile (default minus hook-covered browse tools) still exists and is
+exercised by the structural tests below.
 
 Safety: `install_hook` is mocked (no real ~/.claude/settings.json write) and
 HOME is redirected to tmp (so rules don't land in the user's real CLAUDE.md).
@@ -74,12 +76,13 @@ def test_should_register_respects_lean(monkeypatch):
 # ─── connect wiring ─────────────────────────────────────────────────────
 
 
-def test_connect_claude_sets_lean_and_installs_hooks(isolated_home, mock_hooks):
+def test_connect_claude_sets_minimal_and_installs_hooks(isolated_home, mock_hooks):
     from pmb.cli.connect import connect
     proj = isolated_home / "proj"; proj.mkdir()
     res = connect("claude-code", cwd=proj, scope="project", install_hooks=True)
-    assert res["tool_profile"] == "lean"
-    assert res["entry"]["env"]["PMB_TOOL_PROFILE"] == "lean"
+    # core-10 is the built-in default; claude-code is pinned to it explicitly.
+    assert res["tool_profile"] == "minimal"
+    assert res["entry"]["env"]["PMB_TOOL_PROFILE"] == "minimal"
     assert mock_hooks == ["claude-code"]
     assert res["hooks"] and not res["hooks"].get("error")
 

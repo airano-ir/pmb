@@ -9,51 +9,73 @@ import os
 # config.toml env block to control which tools the LLM sees. Fewer tool
 # definitions = faster LLM thinking + less choice confusion.
 #
-#   "minimal" - 13 tools, the absolute essentials
-#   "lean"    - 26 tools: default MINUS the pure read-status browse tools a
-#               host HOOK already covers (what_just_happened, recent_activity,
-#               list_recent, overview). KEEPS session_brief. Set by
-#               `pmb connect claude-code` when it installs the hooks, so the
-#               agent isn't offered a slow MCP version of what auto-recall /
-#               session-restore already inject for free.
-#   "default" - 30 tools, day-to-day usage (this is the default)
-#   "full"    - all 65 tools incl. admin (consolidate, compact, run_self_test,
+#   "minimal" - 10 tools, the core memory loop. THIS IS THE DEFAULT: a tight
+#               read-first + single-write surface so a fresh agent isn't drowned
+#               in 30+ tool choices on every turn. Everything else stays exactly
+#               one env-flag away (PMB_TOOL_PROFILE=default / full).
+#   "lean"    - the default set MINUS the pure read-status browse tools a host
+#               HOOK already covers (what_just_happened, recent_activity,
+#               list_recent, overview).
+#   "default" - the fuller day-to-day set: core-10 plus recall escalation,
+#               record_fact/_tree singles, ingestion, chains, browse and stats.
+#               Opt in with PMB_TOOL_PROFILE=default.
+#   "full"    - every tool incl. admin (consolidate, compact, run_self_test,
 #               graph_stats, dedupe_run_pending, …). Use for debugging/dev.
 #
-# Even when an admin tool is HIDDEN from the agent, you can still call it
-# via the CLI: `pmb consolidate`, `pmb dedupe`, `pmb prune-graph`, etc.
+# Even when a tool is HIDDEN from the agent, you can still call it via the CLI
+# (`pmb consolidate`, `pmb dedupe`, …) and re-expose it with a wider profile.
 
-_TOOL_PROFILE = (os.environ.get("PMB_TOOL_PROFILE") or "default").lower().strip()
+_TOOL_PROFILE = (os.environ.get("PMB_TOOL_PROFILE") or "minimal").lower().strip()
 
+# THE DEFAULT SURFACE (core-10): the smallest set that still runs the whole
+# memory loop - read-first (prepare / recall / project_overview), the lesson
+# loop (find_lessons -> mark_lesson_followed), the SINGLE write path
+# (record_batch), mutable personal attrs (record_keyed_fact), goal tracking,
+# and post-compaction re-orientation. Deliberately EXCLUDES the read-status
+# browse tools a host hook already covers (what_just_happened / recent_activity)
+# and the record_fact / record_fact_tree singles that record_batch subsumes -
+# those live in `default`. Keep this list tight: every tool here is a choice
+# paid by every agent on every turn.
 _MINIMAL_TOOLS = {
-    "recall", "record_batch", "pin", "what_just_happened",
-    "recent_activity", "list_goals", "update_goal", "workspace_info",
-    "record_fact",          # one-off (when batch overkill)
-    "record_fact_tree",     # one-off (event + subfacts)
-    "record_keyed_fact",    # ⭐ upsert personal attributes (city, employer, ...)
-    "session_brief",        # re-orient after context compaction (long sessions)
     "prepare",              # ⭐ one-call READ-FIRST bundle at task start
+    "recall",               # general semantic + lexical search over memory
+    "project_overview",     # graph-driven full context for a NAMED project
+    "find_lessons",         # procedural rules that apply to X (carry surface_id)
+    "mark_lesson_followed", # close the self-improvement loop
+    "session_brief",        # re-orient after context compaction (long sessions)
+    "record_batch",         # ⭐ the ONE write path (facts / goals / activities)
+    "record_keyed_fact",    # ⭐ upsert personal attributes (city, employer, ...)
+    "list_goals",           # what's in flight
+    "update_goal",          # move a goal's status / progress
 }
+# `default` = core-10 PLUS the fuller day-to-day surface (opt in with
+# PMB_TOOL_PROFILE=default). The tools below were demoted from the core so a
+# fresh agent isn't drowned, but stay one flag away. Membership here is the
+# public "default surface" pinned by tests/eval/test_api_contract.py - adding
+# is free, removing/renaming is a BREAKING change (note it in the changelog).
 _DEFAULT_TOOLS = _MINIMAL_TOOLS | {
     "recall_smart",         # important queries with escalation (fast, bounded)
-    "recall_deep",          # explicit slow/deep LLM-decomposition path (#13)
+    "recall_deep",          # explicit slow/deep LLM-decomposition path
     "overview",             # structured "what do I know about <topic>"
-    "project_overview",     # graph-driven full context for a known project
-    "find_lessons",         # standalone "what procedural rules apply to X"
-    "mark_lesson_followed", # agent self-reports lesson follow-through
+    "what_just_happened",   # last-N events of the session (a host hook covers this)
+    "recent_activity",      # last X minutes of activity (a host hook covers this)
+    "list_recent",          # last N events of any type
+    "pin",                  # pin an event against decay
+    "workspace_info",       # which workspace / memory am I in
+    "record_fact",          # one-off fact (when record_batch is overkill)
+    "record_fact_tree",     # one-off event + subfacts
+    "record_goal",          # one-off goal (record_batch also handles goals)
+    "record_activity",      # one-off activity
+    "record_milestone",     # one-off milestone
     "index_pdf",            # 📄 ingest PDF into memory
     "index_project",        # 📂 ingest code-project structure
     "project_structure",    # 🗺️ read a project's file/module map from memory
     "recall_exploration",   # 💡 reuse a past session's research conclusion (hash-gated)
     "record_exploration",   # 💡 memoize a research conclusion keyed to file hashes
     "lesson_impact",        # 📊 which lessons actually help outcomes (surface->outcome)
-    "record_goal",          # one-off goal
-    "record_activity",      # one-off activity
-    "record_milestone",     # one-off milestone
     "chain_history",        # query a state-chain
     "chain_current",        # latest milestone of a chain
     "get_subfacts",         # pull subfacts of a parent event
-    "list_recent",          # last N events of any type
     "forget",               # archive an event
     "stats",                # workspace stats
 }
@@ -210,6 +232,11 @@ _SHORT_DESC: dict[str, str] = {
     "list_goals": (
         "List open goals. list_goals(status='in_progress'). For 'what are my "
         "goals/what's in flight'."
+    ),
+    "update_goal": (
+        "Move a goal's status/progress. update_goal(goal_ulid, "
+        "status='in_progress'|'done', progress=0-100, note='...'). Records a "
+        "goal_update event so the goal's history is preserved."
     ),
     "index_pdf": (
         "Ingest a PDF into memory. index_pdf(path) - extracts, chunks and "
