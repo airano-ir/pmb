@@ -144,6 +144,9 @@ def make_handler(engine):
                     hours = float((qs.get("hours") or ["168"])[0])
                     self._send_json(self._handle_errors(hours))
                     return
+                if route == "/api/config":
+                    self._send_json(self._handle_config())
+                    return
                 self.send_error(404)
             except Exception as e:
                 log.exception("GET %s failed", route)
@@ -187,6 +190,12 @@ def make_handler(engine):
                 if route == "/api/dedup_sweep":
                     self._send_json(self._handle_dedup_sweep(payload))
                     return
+                if route == "/api/config_set":
+                    self._send_json(self._handle_config_set(payload))
+                    return
+                if route == "/api/config_reset":
+                    self._send_json(self._handle_config_reset(payload))
+                    return
                 self.send_error(404)
             except Exception as e:
                 log.exception("POST %s failed", route)
@@ -200,6 +209,53 @@ def make_handler(engine):
             stats = engine.stats() if hasattr(engine, "stats") else {}
             graph_stats = engine.graph_stats() if hasattr(engine, "graph_stats") else {}
             return {"workspace": stats, "graph": graph_stats}
+
+        def _handle_config(self) -> dict:
+            """All tunables with current value + schema metadata, for the
+            Settings tab. Read-only here; writes go via /api/config_set."""
+            from pmb.config import DEFAULT_TIER_KEYS, SCHEMA
+            cfg = engine.config
+            out = []
+            for key, s in SCHEMA.items():
+                try:
+                    val = cfg.get(key)
+                except Exception:
+                    val = s.default
+                out.append({
+                    "key": key,
+                    "section": key.split(".", 1)[0],
+                    "value": val,
+                    "default": s.default,
+                    "type": getattr(s.type, "__name__", str(s.type)),
+                    "help": s.help,
+                    "choices": list(s.choices) if s.choices else None,
+                    "min": s.min,
+                    "max": s.max,
+                    "source": cfg.source_of(key),
+                    "tier": "default" if key in DEFAULT_TIER_KEYS else "pro",
+                })
+            return {"settings": out}
+
+        def _handle_config_set(self, payload: dict) -> dict:
+            """Write one setting to the per-workspace config (validated via the
+            schema's _coerce). Localhost-only surface."""
+            key = str(payload.get("key") or "")
+            try:
+                typed = engine.config.set_workspace(key, payload.get("value"))
+                return {"ok": True, "key": key, "value": typed,
+                        "source": engine.config.source_of(key)}
+            except Exception as e:
+                return {"ok": False, "key": key, "error": str(e)}
+
+        def _handle_config_reset(self, payload: dict) -> dict:
+            """Drop a per-workspace override, reverting to global/default."""
+            key = str(payload.get("key") or "")
+            try:
+                engine.config.reset_workspace(key)
+                return {"ok": True, "key": key, "value": engine.config.get(key),
+                        "source": engine.config.source_of(key)}
+            except Exception as e:
+                return {"ok": False, "key": key, "error": str(e)}
 
         def _handle_events(self, limit: int) -> list[dict]:
             evs = engine.events.list_active(engine.workspace.id, limit=limit)
