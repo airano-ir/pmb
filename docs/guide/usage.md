@@ -89,7 +89,7 @@ Nothing was pasted; the agent showed up already informed.
 
 ```bash
 pmb dashboard        # local web UI on http://127.0.0.1:8765 (nothing leaves the box)
-pmb tui              # terminal UI
+pmb dashboard        # web dashboard (replaces the old TUI)
 pmb audit            # "what does PMB know about me?" - grouped, read-only
 pmb recall "query"   # search with the full ranking trace
 pmb export           # dump everything to Markdown/JSON - your data, in the open

@@ -10,7 +10,6 @@ cd pmb
 python -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -e .
-pip install textual                  # for the TUI
 pip install pytest                   # for tests
 ```
 
@@ -43,7 +42,7 @@ src/pmb/
   reasoning/        - facts, reflect, causation, arcs, temporal, dedup, typo_fix
   mcp/              - FastMCP server, perf tracking, tools schema
   dashboard/        - local web UI (HTTP, no framework)
-  cli/              - typer entry points (main, tui_*, ollama_cmd, connect)
+  cli/              - typer entry points (main, ollama_cmd, connect)
   agent_wrapper/    - pmb-chat (optional standalone chat loop)
   health/           - consolidation, doctor checks
   eval/             - LoCoMo judge helpers
@@ -60,7 +59,6 @@ scripts/            - benchmarks, demos, profilers
 | add an MCP tool | `mcp/server.py` (decorate with `@mcp.tool()`) |
 | add a CLI command | `cli/main.py` |
 | add a dashboard tab | `dashboard/static/index.html` + a handler in `dashboard/server.py` |
-| add a TUI tab | `cli/tui_workspace.py` |
 
 ## Code style
 
@@ -95,12 +93,12 @@ If you are doing a sweeping technical-debt pass (lazy imports, exception handlin
 ## What we are not looking for
 
 - Multi-user, multi-device, cloud sync. PMB is single-user single-machine on purpose.
-- Frontend frameworks. The dashboard is plain HTML/JS; the TUI is textual. Keep it that way.
+- Frontend frameworks. The dashboard is plain HTML/JS. Keep it that way.
 - New embedding backends. We have sentence-transformers (default) and fastembed (optional). Adding a third needs a strong case.
 
 ## Filing issues
 
-Useful issues include: a minimal repro (or a workspace dump), the version of PMB (`pip show pmb`), and what command/agent triggered it. "It feels slow" without timing data is harder to act on - `pmb tui` → `[3] Stats` shows the real numbers.
+Useful issues include: a minimal repro (or a workspace dump), the version of PMB (`pip show pmb`), and what command/agent triggered it. "It feels slow" without timing data is harder to act on - the dashboard's Performance tab (`pmb dashboard`) shows the real numbers.
 
 ## Licensing of contributions
 

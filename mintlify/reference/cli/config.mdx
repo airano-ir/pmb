@@ -1,6 +1,6 @@
 ---
 title: "Config, UI & maintenance"
-description: "Settings, the dashboard/TUI, background upkeep, and the few opt-in LLM-powered commands."
+description: "Settings, the web dashboard, background upkeep, and the few opt-in LLM-powered commands."
 icon: "sliders"
 ---
 
@@ -17,14 +17,8 @@ pmb config set recall.top_k 8
 pmb config list --only-overridden
 ```
 
-### `pmb tune`
-TUI to browse + edit all settings live (needs `textual`).
-
-### `pmb tui`
-Full 5-tab terminal workspace (Memory / Recall / Stats / Dedup / Tune).
-
 ### `pmb dashboard`
-Local web dashboard on `127.0.0.1:8765` (graph, events, perf, recall debugger).
+Local web dashboard on `127.0.0.1:8765`: graph, timeline, a live **Settings** editor (replaces the old `tune`/`tui` TUIs), an **Errors** view, perf, and a recall debugger.
 
 <Tip>
   `pmb connect --active` builds the agent's proactive rules from the `agent.*`

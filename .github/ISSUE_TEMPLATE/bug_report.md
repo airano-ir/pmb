@@ -35,7 +35,7 @@ pmb doctor
 pmb stats
 ```
 
-If performance-related, snapshot from `pmb tui` → tab [3] Stats helps a lot.
+If performance-related, the dashboard's Performance tab (`pmb dashboard`) helps a lot.
 
 ## Logs / traceback
 

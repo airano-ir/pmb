@@ -289,8 +289,7 @@ on one machine.
 Inspect:
 
 ```bash
-pmb dashboard     # http://127.0.0.1:8765
-pmb tui           # terminal UI
+pmb dashboard     # http://127.0.0.1:8765 (graph, timeline, settings, errors)
 pmb stats         # quick numbers
 pmb doctor        # health check
 ```
@@ -303,8 +302,7 @@ pmb doctor        # health check
 # Memory
 pmb stats                                  show counts and storage info
 pmb recall "query"                          search with full debug
-pmb tui                                     interactive terminal UI
-pmb dashboard                               web UI on port 8765
+pmb dashboard                               web UI on port 8765 (graph, settings, errors)
 
 # Ingest
 pmb index pdf paper.pdf                     extract + chunk + embed
