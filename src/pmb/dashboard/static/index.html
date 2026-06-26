@@ -82,21 +82,33 @@
 
   /* Header is normal flow — it takes its own row at the top, and `main`
      fills the rest of the viewport. Nothing under the header overlaps it. */
-  #app{position:relative;z-index:2;height:100vh;display:flex;flex-direction:column}
-  main{flex:1;min-height:0}
+  #app{position:relative;z-index:2;height:100vh;display:flex;flex-direction:row}
+  main{flex:1;min-height:0;min-width:0}
 
   /* HEADER — normal flow row at the top: search on the LEFT, tabs on the
      RIGHT. Fully transparent (no background, no border) so it reads as a
      thin strip of controls over the empty top of the page, not as a
      separate band of chrome. Takes its own height in flex so the graph /
      timeline below it never has to render through it. */
-  header{position:relative;z-index:50;
-    display:flex;align-items:center;gap:18px;
-    padding:14px 18px;background:transparent;flex-shrink:0}
+  header{position:relative;z-index:50;width:216px;flex-shrink:0;height:100vh;
+    display:flex;flex-direction:column;align-items:stretch;gap:12px;
+    padding:16px 12px;background:var(--glass-bg);border-right:1px solid var(--hairline);
+    backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
+    overflow-y:auto;overflow-x:hidden}
+  /* Sidebar brand (top) + doc/repo links (pinned bottom). */
+  .sb-brand{display:flex;align-items:center;gap:9px;padding:2px 8px 6px;text-decoration:none;color:var(--ink)}
+  .sb-brand img{width:24px;height:24px;border-radius:6px}
+  .sb-brand b{font-family:var(--sans);font-weight:700;font-size:15px;letter-spacing:-0.02em}
+  .sb-links{margin-top:auto;display:flex;flex-direction:column;gap:1px;padding-top:8px;border-top:1px solid var(--hairline)}
+  .sb-links a{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;
+    color:var(--dim);text-decoration:none;font-size:12.5px;font-weight:500;
+    transition:color var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
+  .sb-links a:hover{color:var(--ink);background:var(--glass-bg)}
+  .sb-links svg{width:15px;height:15px;flex-shrink:0;opacity:.8}
   /* No brand, no workspace label — declutter. */
   .brand{display:none}
   /* Top-bar search — replaces the floating one inside the map. */
-  .topsearch{position:relative;max-width:380px;justify-self:start}
+  .topsearch{position:relative;max-width:none;width:100%}
   .topsearch input{width:100%;background:var(--glass-bg);
     border:1px solid var(--glass-border);color:var(--ink);font-family:var(--sans);
     font-size:13px;font-weight:500;padding:10px 14px 10px 36px;border-radius:11px;
@@ -107,16 +119,15 @@
   .topsearch input:focus-visible{border-color:rgba(126,168,255,.55)}
   .topsearch svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);
     opacity:.55;pointer-events:none}
-  nav.tabs{display:flex;gap:2px;background:var(--glass-bg);
-    border:1px solid var(--glass-border);border-radius:var(--r);padding:3px;
-    backdrop-filter:blur(14px);
-    overflow-x:auto;scrollbar-width:none;
-    margin-left:auto  /* pushes tabs to the far right inside the flex header */}
+  nav.tabs{display:flex;flex-direction:column;gap:2px;width:100%;
+    overflow:visible;scrollbar-width:none}
   nav.tabs::-webkit-scrollbar{display:none}
-  .tab{background:none;border:none;color:var(--dim);font-family:var(--sans);
-    font-size:12.5px;font-weight:500;padding:8px 14px;border-radius:9px;cursor:pointer;
+  .tab{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    background:none;border:none;color:var(--dim);font-family:var(--sans);
+    font-size:13px;font-weight:500;padding:9px 12px;border-radius:10px;cursor:pointer;
     letter-spacing:-0.005em;white-space:nowrap;
     transition:color var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
+  .tab svg{width:16px;height:16px;flex-shrink:0;opacity:.85}
   .tab:hover{color:var(--ink)}
   .tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .tab.on{background:var(--glass-bg-strong);color:var(--ink);
@@ -693,24 +704,31 @@
 <div id="app">
 
 <header>
+  <a class="sb-brand" href="https://github.com/oleksiijko/pmb" target="_blank" rel="noopener" title="PMB">
+    <span style="width:22px;height:22px;border-radius:6px;background:var(--accent);flex-shrink:0;display:inline-block"></span>
+    <b>PMB</b>
+  </a>
   <div class="topsearch">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
     <input id="mapsearch" type="search" placeholder="Search memory…" autocomplete="off" aria-label="Search entities">
   </div>
-  <span></span>
   <nav class="tabs" id="tabs" role="tablist" aria-label="Sections">
-    <button class="tab on" data-tab="map" role="tab">Map</button>
-    <button class="tab" data-tab="timeline" role="tab">Timeline</button>
-    <button class="tab" data-tab="overview" role="tab">Overview</button>
-    <button class="tab" data-tab="entities" role="tab">Entities</button>
-    <button class="tab" data-tab="arcs" role="tab">Arcs</button>
-    <button class="tab" data-tab="lessons" role="tab">Lessons</button>
-    <button class="tab" data-tab="adherence" role="tab">Adherence</button>
-    <button class="tab" data-tab="dedup" role="tab">Duplicates</button>
-    <button class="tab" data-tab="perf" role="tab">Performance</button>
-    <button class="tab" data-tab="recall" role="tab">Recall</button>
-    <button class="tab" data-tab="errors" role="tab">Errors</button>
+    <button class="tab on" data-tab="map" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2"/><circle cx="18" cy="9" r="2"/><circle cx="9" cy="18" r="2"/><path d="m7.8 8.1 8.2.9M8.3 16.2 16.3 10.5"/></svg>Map</button>
+    <button class="tab" data-tab="timeline" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>Timeline</button>
+    <button class="tab" data-tab="overview" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>Overview</button>
+    <button class="tab" data-tab="entities" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="1.4"/><circle cx="5" cy="12" r="1.4"/><circle cx="5" cy="18" r="1.4"/><path d="M10 6h10M10 12h10M10 18h10"/></svg>Entities</button>
+    <button class="tab" data-tab="arcs" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17c0-8 5-11 8-11s4 3 8 3"/><circle cx="4" cy="17" r="1.6"/><circle cx="20" cy="9" r="1.6"/></svg>Arcs</button>
+    <button class="tab" data-tab="lessons" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="m8 12 2.6 2.6L16 9"/></svg>Lessons</button>
+    <button class="tab" data-tab="adherence" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V11M12 21V4M19 21v-6"/></svg>Adherence</button>
+    <button class="tab" data-tab="dedup" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg>Duplicates</button>
+    <button class="tab" data-tab="perf" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 18a7.5 7.5 0 1 1 15 0"/><path d="M12 18l3.6-4.6"/></svg>Performance</button>
+    <button class="tab" data-tab="recall" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Recall</button>
+    <button class="tab" data-tab="errors" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.5h.01"/></svg>Errors</button>
   </nav>
+  <div class="sb-links">
+    <a href="https://docs.pmbai.dev" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20"/></svg>Docs</a>
+    <a href="https://github.com/oleksiijko/pmb" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.27a11 11 0 0 0-3.48 21.46c.55.1.73-.24.73-.53v-1.85c-3.03.66-3.67-1.45-3.67-1.45-.5-1.27-1.21-1.61-1.21-1.61-.99-.68.07-.66.07-.66 1.1.08 1.67 1.13 1.67 1.13.97 1.67 2.55 1.19 3.17.91.1-.71.38-1.19.69-1.46-2.42-.28-4.96-1.21-4.96-5.38 0-1.19.42-2.16 1.13-2.92-.11-.28-.49-1.39.11-2.9 0 0 .92-.3 3.02 1.12a10.4 10.4 0 0 1 5.5 0c2.1-1.42 3.02-1.12 3.02-1.12.6 1.51.22 2.62.11 2.9.7.76 1.13 1.73 1.13 2.92 0 4.18-2.55 5.1-4.98 5.37.39.34.74 1 .74 2.03v3.01c0 .29.18.63.74.52A11 11 0 0 0 12 1.27"/></svg>GitHub</a>
+  </div>
 </header>
 
 <main>
