@@ -77,7 +77,8 @@ behaviour. "We use pnpm, never npm" → use pnpm. No discussion.
     3. You completed substantive work / made a decision
        → {"type":"activity","kind":"completed"/"decision", ...}
     4. User corrects you, OR you discover a reusable project rule
-       → {"type":"lesson","content":"This repo uses pnpm, never npm"}
+       → {"type":"lesson","content":"This repo uses pnpm, never npm",
+          "project":"Acme"}  # omit project only for genuinely global rules
        Lessons are PROCEDURAL ("how to work here"), high-importance.
        They will surface in every future recall - record them so the
        NEXT session of yourself reads them and gets smarter.

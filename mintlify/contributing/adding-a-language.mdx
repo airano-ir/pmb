@@ -1,0 +1,69 @@
+---
+title: "Adding a language"
+description: "Short version: you probably don't have to do anything. A language works because the embedder already knows it."
+icon: "language"
+---
+
+As of v0.9 PMB has **no per-language packs** in its core. A language works
+because the multilingual embedder already knows it - not because someone
+hand-wrote a list.
+
+## Why most languages just work
+
+<Steps>
+  <Step title="Recall - language-agnostic">
+    The embedder (`paraphrase-multilingual-MiniLM-L12-v2`, 50+ languages) maps
+    same-meaning text to nearby vectors across languages. A Russian query finds
+    an English fact, no translation.
+  </Step>
+  <Step title="Intents & extraction - English anchors (warm)">
+    Classified by English semantic anchors; the embedder projects your language
+    next to them, so "was sind meine Ziele" lands on the same `goals_query`
+    anchor as "what are my open goals".
+  </Step>
+  <Step title="Cold lexical path - self-compiling (ALD)">
+    As the warm tier classifies your messages, it logs which n-grams co-fired
+    with which anchor and distils the high-precision ones into
+    `$PMB_HOME/lang/auto.yaml`. Your common phrasings then classify *cold*, at
+    regex speed - generated from your own traffic, not a pack.
+  </Step>
+</Steps>
+
+## Check that your language works
+
+```bash
+pmb warmup                              # load the embedder once
+pmb recall "<a query in your language>" # should surface the right facts
+cat "$PMB_HOME/lang/auto.yaml"          # grows from your traffic over days
+```
+
+<Warning>
+  Honest limits: ALD only learns while the **warm daemon** runs and needs some
+  traffic; CJK (no spaces) stays warm-anchor-only; exact top-1 is weaker for
+  zh/ja (still strong in top-3).
+</Warning>
+
+## If your language is weak: swap the embedder
+
+The real lever now - not writing a pack:
+
+```bash
+pmb config set embedding.model BAAI/bge-m3   # broader language coverage
+pmb reindex
+pmb daemon restart
+```
+
+Anchor calibration is keyed by model id, so it rebuilds itself automatically.
+
+## Escape hatch: hand-seed a pack
+
+The file-based pack mechanism still exists to bootstrap a language's cold path
+before ALD has traffic. Opt-in and additive - with no pack files PMB behaves
+exactly as shipped.
+
+```bash
+pmb lang list          # shipped templates (de, es, fr) + what's enabled
+pmb lang enable de     # copy the template to $PMB_HOME/lang/de.yaml
+pmb daemon restart
+pmb reindex
+```

@@ -1,0 +1,83 @@
+---
+title: "Configuration"
+description: "PMB works with zero config - every setting has a tuned default. These are the knobs you're most likely to touch."
+icon: "sliders"
+---
+
+## How configuration works
+
+Settings resolve in this order, first match wins:
+
+1. a per-call override,
+2. the workspace config (`~/.pmb/workspaces/<name>/config.yaml`),
+3. the global config (`~/.pmb/config.yaml`),
+4. the built-in schema default.
+
+```bash
+pmb config list             # common keys: value, source, default
+pmb config list --pro       # everything, including advanced knobs
+pmb config get <key>
+pmb config set <key> <value>
+pmb tune                    # interactive editor
+```
+
+## Recall quality
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `recall.top_k` | `5` | How many results recall returns. |
+| `recall.bm25_weight` | `0.7` | Lexical vs semantic balance (1.0 = pure BM25). |
+| `recall.recency_half_life_days` | `30` | How fast a memory's recency boost decays. |
+| `recall.keyed_fact_boost` | `0.35` | Extra weight for current keyed facts (e.g. your city). |
+| `recall.ppr_enabled` | `true` | Use the entity graph to spread relevance to related memory. |
+| `recall.rerank` | `false` | Run a slower cross-encoder reranker on results. |
+
+## The read hook (auto-recall)
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `auto_recall.enabled` | `true` | Inject relevant memory before the model thinks. |
+| `auto_recall.budget_chars` | `4000` | Size cap on the injected block. |
+| `auto_recall.correction_capture` | `true` | On pushback, record a DRAFT lesson on the first complaint. |
+| `auto_recall.repeat_guard` | `true` | Surface an existing rule LOUD when a message strongly overlaps it. |
+
+## Daemon & connect
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `connect.default_daemon` | `true` | Point JSON hosts at the one shared daemon. |
+| `daemon.autostart` | `true` | Start a daemon in the background when a cold hook runs. |
+| `daemon.idle_exit_min` | `120` | Exit after N idle minutes (connecting pins this to 0). |
+| `daemon.tool_profile` | (set by connect) | MCP tool profile: minimal / lean / default / full. |
+
+## Ambient auto-write
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `autowrite.enabled` | `true` | Journal a turn the agent didn't record itself. |
+| `autowrite.min_importance` | `0.45` | Quality bar a turn must clear to be journaled. |
+| `autowrite.synthesizer` | `template` | `template` needs no model; an LLM backend gives richer summaries. |
+
+## Agent logging (active mode)
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `agent.active_mode` | `false` | Install proactive-logging rules by default. |
+| `agent.apply_lessons` | `true` | The self-improvement loop: recall + follow lessons before a task. |
+| `agent.context_continuity` | `true` | Re-orient after a long session with `session_brief`. |
+
+## Background brain & maintenance
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `consolidate.auto_trigger` | `false` | Run sleep-stage consolidation automatically. |
+| `decay.factor_per_day` | `0.985` | The forgetting curve applied by `pmb decay`. |
+| `dedup.enable` | `true` | Deduplicate near-identical memories. |
+| `graph.extractor` | `regex` | How entities are pulled from text (`regex` / `spacy` / `llm:*`). |
+| `embedding.model` | multilingual MiniLM | The embedder. Change with `pmb model` (re-embeds for you). |
+
+<Note>
+  There are ~150 advanced "pro" knobs (`pmb config list --pro`). They're advanced
+  on purpose - defaults are ablation-tuned and a blocking CI gate protects recall
+  quality, so changing them is opt-in and rarely needed.
+</Note>

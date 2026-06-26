@@ -94,15 +94,20 @@ def test_repo_changed_since_flags_external_churn(isolated_engine, tmp_path):
     import subprocess
 
     def g(*a):
-        subprocess.run(["git", *a], cwd=str(tmp_path), check=True,
-                       capture_output=True, text=True)
+        r = subprocess.run(["git", *a], cwd=str(tmp_path),
+                           capture_output=True, text=True)
+        assert r.returncode == 0, f"git {a} failed ({r.returncode}): {r.stderr}"
 
     g("init")
     g("config", "user.email", "t@example.com")
     g("config", "user.name", "Test")
     f = tmp_path / "keep.py"
     f.write_text("v = 1\n", encoding="utf-8")
-    g("add", "-A")
+    # Add only the test's OWN files, never `git add -A`: the isolated_engine
+    # workspace (pmb_home/, workspace/) lives UNDER tmp_path, so `-A` would sweep
+    # in the engine's live SQLite/LanceDB files and race the async write thread
+    # on a slow CI runner (git add exits 128 mid-rewrite).
+    g("add", "keep.py")
     g("commit", "-m", "c1")
     sha = hashlib.sha1(f.read_bytes()).hexdigest()
     _seed_memo(isolated_engine, tmp_path, "where is v defined",
@@ -110,7 +115,7 @@ def test_repo_changed_since_flags_external_churn(isolated_engine, tmp_path):
 
     # An unrelated commit moves HEAD; keep.py stays byte-identical.
     (tmp_path / "other.py").write_text("z = 2\n", encoding="utf-8")
-    g("add", "-A")
+    g("add", "other.py")
     g("commit", "-m", "c2")
 
     r = recall_exploration(isolated_engine, "where is v defined",

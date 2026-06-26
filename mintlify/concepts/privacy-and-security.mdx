@@ -1,0 +1,68 @@
+---
+title: "Privacy & security"
+description: "Local-first by design - what stays on your machine, secret redaction, and the team-mode boundary."
+icon: "shield-halved"
+---
+
+PMB is local-first by design. Your memory is a SQLite file and a vector index on
+your own machine, and nothing leaves it unless you run a sync or export command
+on purpose.
+
+## What stays local
+
+<CardGroup cols={2}>
+  <Card title="Storage" icon="hard-drive">
+    Global config, daemon token, and every workspace live under `~/.pmb/`.
+  </Card>
+  <Card title="The read path" icon="magnifying-glass">
+    Recall runs locally - no LLM call, no network request.
+  </Card>
+  <Card title="The dashboard" icon="lock">
+    Binds to `127.0.0.1` only; never exposed to the network.
+  </Card>
+  <Card title="No telemetry" icon="ban">
+    There is no PMB server to phone home, by design.
+  </Card>
+</CardGroup>
+
+The only commands that touch the network are the explicit sync/export commands -
+and only when you run them.
+
+## Secret redaction
+
+Before an event is written, PMB scans its text for credentials and replaces each
+with a `[REDACTED:<kind>]` marker, so secrets aren't stored:
+
+- **API keys:** Anthropic, OpenAI, Google, Stripe, AWS.
+- **Tokens:** GitHub, Slack, JWTs, bearer / `Authorization` headers.
+- **PEM private key blocks.**
+- **`KEY=value` lines** for `API_KEY`, `SECRET`, `PASSWORD`, `TOKEN`, `DATABASE_URL`.
+
+<Warning>
+  Redaction is pattern-based - a bare high-entropy string with no recognizable
+  prefix can still slip through. Treat it as a strong safety net, not a guarantee.
+</Warning>
+
+## Memory poisoning & procedural lessons
+
+Local storage keeps PMB private, but it doesn't make every remembered fact
+authoritative. PMB surfaces lessons as rules before an agent acts, so a
+low-trust memory could become a future instruction if recorded without review.
+
+- Treat recalled lessons as **evidence with provenance**, not invisible policy -
+  check source, confidence, freshness, and `surface_id` before a risky action.
+- Review durable rules with `pmb lessons` and the broader view with `pmb audit`.
+- Be more conservative with automatic writes than explicit `learn`/`remember`;
+  archive suspect ones with `pmb forget-auto`.
+- Keep imported third-party histories in a separate workspace until trusted.
+
+## Team mode: the bearer token is the boundary
+
+Locally there's no network surface. The moment you expose the MCP server over
+HTTP for a team, the bearer token is the only thing between your agent and any
+host that can reach the port.
+
+<Warning>
+  Set `PMB_MCP_BEARER_TOKEN`, and put the server behind a private network
+  (Tailscale) or an SSH tunnel. Only team mode should listen beyond localhost.
+</Warning>

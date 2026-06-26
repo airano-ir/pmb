@@ -173,8 +173,9 @@ class EmbedMixin:
         # for the next process restart.
         try:
             self._kick_embed_drain()
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "embed_kick_drain", e)
 
         return {
             "total_ms": round((_t.time() - t0) * 1000, 1),
@@ -409,8 +410,9 @@ class EmbedMixin:
                         conn.execute(
                             "DELETE FROM embed_queue_pending WHERE ulid = ?",
                             (ulid,))
-                except Exception:
-                    pass
+                except Exception as e:
+                    from pmb.core.errlog import log_error
+                    log_error(self.workspace.db_path, "embed_pending_delete", e)
 
     def _kick_embed_drain(self) -> None:
         """Drain any embeds left queued while the process was cold. Called at
@@ -431,8 +433,9 @@ class EmbedMixin:
             try:
                 self._durable_embed_queue.drain_once(
                     lambda u, t: self.search.add(u, t), max_items=200)
-            except Exception:
-                pass
+            except Exception as e:
+                from pmb.core.errlog import log_error
+                log_error(self.workspace.db_path, "embed_drain", e)
 
     def _drain_embed_queue(self) -> None:
         """Background worker: wait for the model to be ready (poll every

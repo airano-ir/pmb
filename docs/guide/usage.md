@@ -1,7 +1,8 @@
 # Usage
 
-Concrete, copy-paste recipes. PMB is local-first: one SQLite file on your disk,
-no cloud, no API keys.
+Concrete, copy-paste recipes. PMB is local-first: SQLite is the durable source
+of truth, rebuildable search indexes stay local, and there are no cloud or API
+key requirements.
 
 ## 60-second setup (guided)
 

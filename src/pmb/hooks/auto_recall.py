@@ -510,7 +510,7 @@ def run_auto_context(
         return res
 
     # Correction capture runs on EVERY non-trivial message, BEFORE intent
-    # classification. An angry correction ("снова блять не заполнило") is
+    # classification. An angry correction (profanity + "did not fill in again") is
     # usually NOT a question, so it would classify as SKIP and inject nothing -
     # which is exactly the moment the rule needs to be captured (the RR
     # failure: the locate-me lesson was written only after the 7th complaint).
@@ -604,7 +604,7 @@ def run_auto_context(
             res.intents = ["CORRECTION"]
         else:
             # Non-trivial but no intent matched. Still give the REPEAT GUARD a
-            # chance: a re-raised complaint ("почему опять X") often strongly
+            # chance: a re-raised complaint ("why X again") often strongly
             # overlaps an existing rule even when it's not a question and trips
             # no intent. Surface that rule LOUD - but ONLY if it strongly
             # matches; otherwise inject nothing (don't add generic-lesson noise
@@ -761,9 +761,22 @@ def run_auto_context(
     # explicit intent we pull a bigger window; otherwise just 3.
     try:
         limit = lessons_limit if Intent.LESSONS_QUERY in intents else 3
-        lessons = engine.find_lessons(query=msg, limit=limit)
+        project_scope = None
+        if res.project:
+            project_scope = (res.project.get("entity") or {}).get("name")
+        try:
+            lessons = engine.find_lessons(
+                query=msg, limit=limit, project=project_scope,
+            )
+        except TypeError:
+            # Compatibility with light test doubles / older engines.
+            lessons = engine.find_lessons(query=msg, limit=limit)
         if lessons:
             res.lessons = lessons
+            if res.project is not None:
+                # project_overview() is exhaustive when called directly;
+                # automatic injection is intentionally message-specific.
+                res.project["lessons"] = lessons
             if log_surfaces:
                 try:
                     engine._log_lesson_surfaces(
@@ -771,8 +784,11 @@ def run_auto_context(
                     )
                 except Exception:
                     pass
+        elif res.project is not None:
+            res.project["lessons"] = []
     except Exception:
-        pass
+        if res.project is not None:
+            res.project["lessons"] = []
 
     # Decisions (the "why we did X" rationale): always run when enabled.
     # Surfacing past decisions next to lessons means "before you do this,

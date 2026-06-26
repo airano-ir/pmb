@@ -1,141 +1,124 @@
-<div class="hero" markdown>
-<div class="hero__eyebrow">Local-first memory for coding agents</div>
+---
+hide:
+  - navigation
+  - toc
+---
 
-# PMB gives coding agents local memory
+<div class="hero" markdown>
+<div class="hero__eyebrow">Memory that survives the session</div>
+
+# Stop re-explaining your project to your AI
 
 PMB gives Claude Code, Codex, Cursor, and other MCP agents a shared private
-memory. It captures project decisions and lessons as you work, ranks relevant
-context locally, and injects it before the next answer.
+memory. It remembers project decisions, lessons, goals, and past work, then
+injects the relevant context before the next answer.
+
+SQLite is the durable source of truth. Rebuildable search indexes stay local.
+No cloud account, API key, telemetry, or LLM call on the read path.
 
 <div class="hero__actions" markdown>
-[Start with setup](guide/getting-started.md){ .md-button .md-button--primary }
-[See how it works](concepts/how-it-works.md){ .md-button }
+[View PMB on GitHub](https://github.com/oleksiijko/pmb){ .md-button .md-button--primary }
+[Install in 60 seconds](guide/getting-started.md){ .md-button }
 </div>
 </div>
 
 <div class="hero__metrics" markdown>
 <div class="hero__metric" markdown>
-<strong>Local by default</strong>
-<span>SQLite, LanceDB, and config live on your machine.</span>
+<strong>4-16 ms</strong>
+<span>Warm prepare call with project context, lessons, and goals.</span>
 </div>
 <div class="hero__metric" markdown>
-<strong>Fast recall</strong>
-<span>One warm daemon serves every connected agent.</span>
+<strong>Zero cloud accounts</strong>
+<span>Your memory and search indexes remain on your machine.</span>
 </div>
 <div class="hero__metric" markdown>
-<strong>Agent-native</strong>
-<span>MCP tools plus hooks fit into existing workflows.</span>
+<strong>10 core tools</strong>
+<span>A small default MCP surface instead of dozens of competing choices.</span>
+</div>
+<div class="hero__metric" markdown>
+<strong>Measured impact</strong>
+<span>PMB reports when the evidence is useful, harmful, or insufficient.</span>
 </div>
 </div>
 
-## How PMB fits into your workflow
+## Same prompt. The difference is memory.
 
-``` mermaid
-flowchart LR
-  Work["Work"] --> Capture["Capture"]
-  Capture --> Store["Store"]
-  Store --> Recall["Recall"]
-  Recall --> Context["Context"]
-  Context --> Answer["Answer"]
-  Answer --> Work
+<div class="pmb-demo" markdown>
+
+![Without memory the agent asks for context. With PMB it recalls the file, bug, and saved rule.](assets/before-after.svg)
+
+</div>
+
+Without memory, the next session starts with clarifying questions. With PMB, the
+agent can recover the relevant file, decision, and rule before it starts acting.
+
+## Install once, then keep working
+
+```bash
+pip install pmb-ai
+pmb setup
+pmb warmup
 ```
 
-## Choose your path
+Restart your agent and talk normally. PMB handles the memory loop in the
+background. Prefer npm? `npx pmb-ai setup` runs the same setup flow.
 
-<div class="grid cards" markdown>
+[Open the setup guide](guide/getting-started.md){ .md-button .md-button--primary }
+[Browse the source](https://github.com/oleksiijko/pmb){ .md-button }
 
--   **Getting started**
-
-    Go from zero to a wired agent with `pip`, `uv`, `pipx`, or `npx`.
-
-    [Install PMB →](guide/getting-started.md)
-
--   **Usage**
-
-    Connect Claude Code, Codex, Cursor, Windsurf, Gemini, Zed, and more.
-
-    [Connect an agent →](guide/usage.md)
-
--   **Architecture**
-
-    See the daemon, hook, MCP, storage, and retrieval paths as diagrams.
-
-    [Understand the system →](concepts/architecture.md)
-
--   **Core engine**
-
-    Read the Engine map, schema, queues, and code paths behind recall.
-
-    [Inspect the core →](concepts/core-engine.md)
-
--   **Commands**
-
-    Look up setup, recall, dashboard, delete, sync, and maintenance commands.
-
-    [Open the reference →](reference/COMMANDS.md)
-
-</div>
-
-## Why teams use it
+## Why PMB feels different
 
 <div class="pmb-feature-grid" markdown>
 <div markdown>
-<strong>Durable memory</strong>
-<span>Facts, decisions, goals, lessons, and session summaries persist between sessions.</span>
+<strong>Memory shows up before the model thinks</strong>
+<span>Hooks and the `prepare` tool surface relevant context at the start of the task, instead of waiting for the agent to remember to search.</span>
 </div>
 <div markdown>
-<strong>Free reads</strong>
-<span>Local pre-message recall through hooks and MCP, so remembering costs no tokens.</span>
+<strong>One memory across agents</strong>
+<span>Claude Code, Codex, Cursor, Windsurf, Zed, VS Code, and other MCP clients can share the same workspace.</span>
 </div>
 <div markdown>
-<strong>One shared brain</strong>
-<span>Several agents on one project share a warm daemon and one workspace memory.</span>
+<strong>It measures whether lessons help</strong>
+<span>Earned Memory joins surfaced lessons to test, build, deploy, and red-to-green outcomes, with conservative confidence checks.</span>
 </div>
 <div markdown>
-<strong>Private by default</strong>
-<span>Local storage; the network is touched only by the explicit sync commands you run.</span>
-</div>
-<div markdown>
-<strong>Learns from drift</strong>
-<span>Lessons and failures surface before the work they apply to, so mistakes do not repeat.</span>
+<strong>You own every byte</strong>
+<span>SQLite is the source of truth, exports are open, deletion is explicit, and optional network features stay opt-in.</span>
 </div>
 </div>
 
-## The core loop
+## The loop
 
 ``` mermaid
-flowchart TB
-  User["Request"] --> Prepare["Prepare"]
-  Prepare --> Context{"Found?"}
-  Context -->|Yes| Relevant["Relevant memory"]
-  Context -->|No| Quiet["Stay quiet"]
-  Relevant --> Agent["Act"]
-  Quiet --> Agent
-  Agent --> Record{"Worth saving?"}
-  Record -->|Yes| Memory["Record"]
-  Record -->|No| Skip["Skip"]
-  Memory --> Next["Better next turn"]
-  Skip --> Next
+flowchart LR
+  Request["Your request"] --> Prepare["Prepare context"]
+  Prepare --> Memory{"Relevant memory?"}
+  Memory -->|Yes| Act["Agent acts informed"]
+  Memory -->|No| Quiet["PMB stays quiet"]
+  Quiet --> Act
+  Act --> Record["Save durable outcome"]
+  Record --> Next["Better next session"]
 ```
 
-## Common tasks
+## Evidence, with the caveats visible
 
-| I want to... | Do this |
-|---|---|
-| Set up one agent | `pmb setup` |
-| Set up every detected agent | `pmb setup --all` |
-| Install from npm in one step | `npx pmb-ai setup` |
-| See whether memory is warm | `pmb daemon status` |
-| Change the embedding model | `pmb model` |
-| Archive a memory | `pmb delete <ulid>` |
-| Delete a memory permanently | `pmb delete <ulid> --hard` |
-| Bring an archived memory back | `pmb restore <ulid>` |
-| Open the local dashboard | `pmb dashboard` |
-| Reset stray PMB processes | `pmb daemon kill-all` |
+| Signal | Current measured result |
+|---|---:|
+| Warm recall p50 / p95 | **35 ms / 110 ms** |
+| Warm `prepare(message)` | **4-16 ms** |
+| LoCoMo recall@10 | **94.5%** |
+| Multilingual stress top-10 | **99.2%** |
 
-## What to read next
+Retrieval quality and real-world outcome impact are different questions. PMB
+reports them separately and says `insufficient` when the outcome sample is too
+small to support a conclusion.
 
-- [Guide](guide/index.md): install PMB, connect agents, and operate the dashboard.
-- [Concepts](concepts/index.md): understand the architecture and retrieval model.
-- [Reference](reference/index.md): look up commands and configuration.
-- [Contributing](contributing/index.md): extend language packs or improve the docs.
+[Read the measurement methodology](concepts/measuring-impact.md){ .md-button }
+[Inspect the benchmarks](https://github.com/oleksiijko/pmb/tree/main/scripts/benchmarks){ .md-button }
+
+## Ready to give your agent a memory?
+
+PMB is Apache-2.0 licensed and runs on Linux, macOS, and Windows.
+
+[View PMB on GitHub](https://github.com/oleksiijko/pmb){ .md-button .md-button--primary }
+[Read the documentation](guide/index.md){ .md-button }

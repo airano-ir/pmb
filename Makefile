@@ -1,16 +1,15 @@
-.PHONY: help install dev test test-core test-smoke test-all-WARN lint format clean bench bench-quick tui dashboard docker-build docker-shell docker-dashboard docker-mcp docker-test docker-bench-data docker-bench-write docker-bench-locomo docker-stop docker-restart docker-down docker-fix-perms docker-build-gpu docker-shell-gpu docker-dashboard-gpu docker-down-gpu
+.PHONY: help install dev test test-all test-core test-smoke test-all-WARN lint format clean bench bench-quick tui dashboard docker-build docker-shell docker-dashboard docker-mcp docker-test docker-bench-data docker-bench-write docker-bench-locomo docker-stop docker-restart docker-down docker-fix-perms docker-build-gpu docker-shell-gpu docker-dashboard-gpu docker-down-gpu
 
 help:
 	@echo "PMB development targets:"
 	@echo "  make install        - pip install -e ."
 	@echo "  make dev            - install + dev tools (pytest, ruff, textual)"
 	@echo ""
-	@echo "  make test           - alias for test-core (CI baseline, 88 tests, ~80s)"
-	@echo "  make test-core      - the 8 deterministic core test files from .github/workflows/ci.yml"
+	@echo "  make test           - full CI suite, excluding quarantined load-flaky tests"
+	@echo "  make test-all       - same as make test"
+	@echo "  make test-core      - fast deterministic engine/security subset"
 	@echo "  make test-smoke     - lightweight import smoke tests only (~5s)"
-	@echo "  make test-all-WARN  - full pytest tests/  (KNOWN ISSUE: hangs on huggingface_hub parallel"
-	@echo "                        downloads when the embedding model isn't cached; only run if you"
-	@echo "                        have the HF cache populated)"
+	@echo "  make test-all-WARN  - backwards-compatible alias for make test-all"
 	@echo ""
 	@echo "  make lint           - ruff check"
 	@echo "  make format         - ruff format"
@@ -43,20 +42,19 @@ dev:
 	pip install -e ".[dev]"
 
 # --------------------------------------------------------------------------
-# Tests. The default `test` target intentionally runs ONLY the 8 core files
-# used by CI. Running `pytest tests/` directly is known to deadlock on first
-# run because several test modules trigger parallel huggingface_hub model
-# downloads against the same cache directory. Until that is fixed, use:
-#   - `make test`        for the deterministic CI baseline
-#   - `make test-smoke`  for the import-weight smoke tests
-#   - `make test-all-WARN` only if your HF cache is already populated
+# Tests. CI runs the whole suite on Linux, Windows, and macOS, excluding only
+# tests explicitly marked `quarantined`. Keep the default local target aligned
+# with that contract; `test-core` remains available for a fast edit loop.
 # --------------------------------------------------------------------------
 
 CORE_TESTS = tests/engine/test_graph.py tests/engine/test_persons.py tests/engine/test_goals_chains.py \
 	tests/engine/test_fact_tree.py tests/recall/test_recall_cache.py tests/engine/test_config.py \
 	tests/security/test_redact.py tests/recall/test_causation.py
 
-test: test-core
+test: test-all
+
+test-all:
+	pytest tests/ -q -m "not quarantined"
 
 test-core:
 	pytest $(CORE_TESTS) -q
@@ -64,10 +62,7 @@ test-core:
 test-smoke:
 	pytest tests/meta/test_lightweight_imports.py -v
 
-test-all-WARN:
-	@echo "WARNING: full pytest is known to deadlock on parallel HF downloads."
-	@echo "         If this hangs >60s, Ctrl-C and run 'make test-core' instead."
-	pytest tests/ -q
+test-all-WARN: test-all
 
 lint:
 	ruff check src/ tests/ scripts/

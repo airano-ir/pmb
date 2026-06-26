@@ -1,0 +1,81 @@
+---
+title: "Manage, sync & backup"
+description: "Export, delete, pin, snapshot - and the only commands that ever touch the network, run on purpose."
+icon: "box-archive"
+---
+
+## Own your data
+
+### `pmb export [--format markdown | json] [--out FILE]`
+Dump all memory to readable text (`--include-archived`). Plain, unencrypted.
+
+```bash
+pmb export --format json --out memory.json
+```
+
+### `pmb delete <ulid...>` / `pmb forget <ulid>`
+Archive one or more memories after a preview + confirmation (reversible). Add
+`--hard` to `delete` to permanently purge memories, vectors, and graph links.
+
+### `pmb restore <ulid>`
+Restore a soft-deleted or archived memory.
+
+### `pmb forget-topic <topic>`
+Archive everything about a topic in one command. `--dry-run`, `--yes`,
+`--in content|tag|source`.
+
+```bash
+pmb delete 0193abc12345_deadbeef
+pmb restore 0193abc12345_deadbeef
+pmb forget-topic project-x --dry-run
+```
+
+### `pmb pin <ulid>`
+Pin a memory (max importance, never auto-archived).
+
+### `pmb tag <ulid> <tags...>` / `pmb untag`
+Tag / untag a memory for local organization.
+
+### `pmb ttl <ulid> 30d | clear` · `pmb prune-expired`
+Set/clear an expiry; archive memories past their TTL (run from cron).
+
+### `pmb snapshot create | list | restore`
+Local, offline, timestamped workspace snapshots.
+
+### `pmb decay` · `pmb dedupe` · `pmb compact`
+Apply the forgetting curve; deduplicate (offline cosine by default;
+`--run-pending` uses an LLM for borderline pairs <Tooltip tip="needs an LLM backend">LLM optional</Tooltip>);
+move old archived events to cold storage + VACUUM.
+
+```bash
+pmb snapshot create --note "before refactor"
+pmb decay
+```
+
+## Sync & backup
+
+<Warning>
+  These are the **only** commands that touch the network - and only when you run
+  them. Everything else is fully local.
+</Warning>
+
+### `pmb workspace init [--remote URL]`
+Turn the workspace into a git repo.
+
+### `pmb workspace push | pull | status`
+Sync memory to/from a git remote (cross-device, team, backup).
+
+### `pmb workspace clone <url> <name>`
+Clone a remote workspace locally.
+
+### `pmb workspace export <out> [--key-file]` / `import <bundle> <name>`
+Encrypt the workspace into one portable bundle (scrypt + AES/HMAC) - safe even
+on a public remote - and decrypt it back. Needs `pip install 'pmb-ai[crypto]'`.
+
+### `pmb workspaces`
+List all known workspaces.
+
+```bash
+pmb workspace init --remote git@github.com:me/pmb-memory.git
+pmb workspace push
+```

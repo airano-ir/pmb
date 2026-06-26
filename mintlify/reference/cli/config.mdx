@@ -1,0 +1,90 @@
+---
+title: "Config, UI & maintenance"
+description: "Settings, the dashboard/TUI, background upkeep, and the few opt-in LLM-powered commands."
+icon: "sliders"
+---
+
+## Config & UI
+
+### `pmb config list`
+Every setting, its value, and where it comes from (`--only-overridden`).
+
+### `pmb config get | set | reset <key> [value]`
+Read / change / reset a setting (workspace or `--global`).
+
+```bash
+pmb config set recall.top_k 8
+pmb config list --only-overridden
+```
+
+### `pmb tune`
+TUI to browse + edit all settings live (needs `textual`).
+
+### `pmb tui`
+Full 5-tab terminal workspace (Memory / Recall / Stats / Dedup / Tune).
+
+### `pmb dashboard`
+Local web dashboard on `127.0.0.1:8765` (graph, events, perf, recall debugger).
+
+<Tip>
+  `pmb connect --active` builds the agent's proactive rules from the `agent.*`
+  toggles (log_decisions, log_lessons, apply_lessons, …). Change them, then
+  re-run `pmb connect <agent> --active` to regenerate.
+</Tip>
+
+## Maintenance
+
+### `pmb regraph` · `pmb prune-graph` · `pmb reindex`
+Rebuild the entity graph; drop weak edges to keep recall fast; re-embed all
+events (after switching the embedding model).
+
+### `pmb rehearse`
+Spaced-repetition refresh of important-but-idle memories.
+
+### `pmb session start | end | current | brief`
+Session management. `brief` = a digest of what was decided/done/learned **this
+session** (also the `session_brief` MCP tool). `end` can auto-distill lessons.
+
+### `pmb sync [--days N]` · `pmb schedule`
+Capture git commits into memory; print OS scheduler config (cron / schtasks).
+
+## Ollama (optional, fully local)
+
+### `pmb ollama status | use <profile> | test`
+Health-check + list models; select a profile (tiny/balanced/quality);
+smoke-test. Ollama is optional - PMB works fully offline without any LLM.
+
+## LLM-powered commands
+
+<Warning>
+  These are the **only** commands that need an LLM backend (Claude CLI /
+  `ANTHROPIC_API_KEY` / Ollama). They run off the recall hot path - recall
+  itself never calls an LLM.
+</Warning>
+
+### `pmb consolidate`
+Sleep-stage consolidation: cluster related memories, extract one rule per
+cluster.
+
+### `pmb reflect`
+For each event, an LLM asks "why does this matter?" and stores searchable
+bridges for multi-hop queries.
+
+### `pmb distill`
+Extract durable lessons/failures from a session's events automatically.
+
+### `pmb arcs cluster`
+Cluster events into narrative threads ("Postgres adoption journey").
+
+```bash
+pmb consolidate --backend auto   # auto = Claude CLI > Anthropic > Ollama
+pmb distill                      # turn a session into lessons
+```
+
+### Entity-graph extractor
+Swap how event text becomes graph nodes - `regex` (default, offline),
+`spacy` (POS + NER, no LLM), or `llm:claude|ollama|codex`.
+
+```bash
+pmb config set graph.extractor spacy
+```

@@ -1,0 +1,81 @@
+---
+title: "PMB"
+description: "Local-first memory for your AI coding agent. One SQLite file on your disk. No cloud, no API keys, no re-explaining."
+icon: "house"
+---
+
+<Note>
+  Your AI agent forgets everything between sessions. PMB remembers - locally.
+</Note>
+
+PMB gives Claude Code, Cursor, Codex and other MCP agents a real memory:
+decisions, lessons, and project facts. They live in **one SQLite file on your
+disk** and come back through MCP - no cloud, no API keys, no LLM call on the
+read path. And it's the only agent memory that **tells you when it's actually
+helping**, instead of claiming "+X%".
+
+<Frame caption="Same prompt. The difference is memory.">
+  <img src="/images/before-after.svg" alt="Without memory the agent asks clarifying questions; with PMB it recalls the answer in 6ms." />
+</Frame>
+
+<CodeGroup>
+```bash pip
+pip install pmb-ai
+pmb connect claude-code
+```
+
+```bash npx
+npx pmb-ai setup
+```
+</CodeGroup>
+
+## Start here
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install, wire your agent, and let memory work automatically.
+  </Card>
+  <Card title="How it works" icon="gears" href="/concepts/how-it-works">
+    Hybrid recall, async writes, hooks, and the storage model.
+  </Card>
+  <Card title="Does it help?" icon="chart-line" href="/concepts/measuring-impact">
+    How PMB measures its own value - honestly.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/reference/cli/setup-connect">
+    Every command, by category: connect, recall, manage, hooks, config.
+  </Card>
+</CardGroup>
+
+## Why PMB
+
+<Columns cols={2}>
+  <Card title="Local-first" icon="lock">
+    One file on disk. No keys, no telemetry, no cloud to trust.
+  </Card>
+  <Card title="MCP-native" icon="plug">
+    Claude Code, Cursor, Codex, Windsurf, Zed - one `pmb connect`.
+  </Card>
+  <Card title="Multilingual" icon="language">
+    50+ languages out of the box; a Russian query finds an English fact.
+  </Card>
+  <Card title="Honestly measured" icon="scale-balanced">
+    Tells you when a memory isn't helping. No fake numbers.
+  </Card>
+</Columns>
+
+## What it feels like
+
+<CodeGroup>
+```text Without memory
+you  ▸ fix the pricing bug from last Tuesday
+ai   ▸ which file is that in? what was the bug?
+```
+
+```text With PMB
+you  ▸ fix the pricing bug from last Tuesday
+ai   ▸ recalled in 6ms → verdict-policy.ts:142,
+       bundle fallback dropped below the 25% floor.
+```
+</CodeGroup>
+
+The agent didn't ask. It read its memory and showed up to the task informed.

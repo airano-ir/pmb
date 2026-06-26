@@ -342,8 +342,8 @@ SCHEMA: dict[str, _Setting] = {
     "auto_recall.correction_capture": _Setting(
         bool, True,
         "Capture-on-correction: when the user message reads as pushback / "
-        "frustration / a repeat complaint ('снова не заполнило', CAPS, "
-        "profanity, 'те же грабли'), record a DRAFT lesson IMMEDIATELY and "
+        "frustration / a repeat complaint ('it did not fill in again', CAPS, "
+        "profanity, 'the same rake again'), record a DRAFT lesson IMMEDIATELY and "
         "nudge the agent to refine it into a durable rule. Fixes the #1 cause "
         "of repeats - the rule being written too late (after the 7th "
         "complaint, not the 1st). Drafts are tagged source=correction-capture "

@@ -1,0 +1,34 @@
+---
+title: "Ollama & offline LLM"
+description: "PMB works fully offline without any LLM. Ollama is only for the few opt-in background commands."
+icon: "robot"
+---
+
+PMB needs **no LLM** for its core: recall, writes, and the read hook are all
+model-free. An LLM is only used by a few opt-in, off-the-hot-path commands
+(`consolidate`, `reflect`, `distill`, the `llm:*` graph extractor). For those,
+Ollama keeps everything local.
+
+## Set it up
+
+```bash
+pmb ollama status          # health check + installed models
+pmb ollama use balanced    # pick a profile: tiny / balanced / quality
+pmb ollama test            # smoke-test the local model
+```
+
+## Use it for the optional LLM passes
+
+```bash
+pmb config set consolidate.backend ollama
+pmb consolidate            # cluster memories, extract one rule per cluster - local
+```
+
+Backends resolve `auto` as Claude CLI → Anthropic → Ollama. Pin Ollama
+explicitly to stay fully offline.
+
+<Note>
+  The graph extractor can also run on Ollama for a cleaner knowledge graph:
+  `pmb config set graph.extractor llm:ollama`. It never blocks the write path -
+  on timeout it falls back to the regex extractor for that one event.
+</Note>

@@ -20,7 +20,6 @@ from pmb.hooks.correction_capture import (
     strong_lesson_matches,
 )
 
-
 # ── 1. Detector ────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("msg", [

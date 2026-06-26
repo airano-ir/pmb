@@ -4,7 +4,30 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+### Added
+- **New docs page: "Does PMB actually help — and how we measure it honestly"**
+  (`concepts/measuring-impact.md`). Lays out the two-method evaluation stance -
+  retrieval benchmarks (LoCoMo / multilingual) for recall quality, and Earned
+  Memory's three honest layers (associational lift → Wilson-CI verdicts →
+  within-lesson followed-vs-ignored causal read) for whether memory changes
+  outcomes - with the limitations stated plainly and how to run it on your own
+  workspace.
+
 ### Changed
+- **Silent best-effort swallows in the write path are now observable.** Audited
+  the ~340 bare `except Exception: pass` blocks. The hot write/recall paths use
+  them heavily, but for BEST-EFFORT secondary work (graph edges, temporal /
+  identity enrichment, dedup queueing) layered AFTER the primary event is
+  already persisted - non-blocking by design, not data loss. The real gap was
+  visibility: a systemic enrichment failure degraded recall silently. The
+  recall-affecting swallows in the hot path - `write.py` (graph / temporal /
+  identity / dedup enrichment), `embed.py` (queue drain - a systemic failure can
+  no longer silently leave events unembedded and unfindable) and `recall.py`
+  (scoring boosts + recall-time drain) - now route through the existing
+  `errlog.log_error` seam (the idiom `batch.py` already used), so a repeated
+  failure surfaces in `pmb doctor` / the status panel instead of vanishing.
+  Warmup probes, config reads and intentional fall-throughs are left silent by
+  design. The happy path is unchanged - zero cost unless something throws.
 - **Default MCP tool surface trimmed 34 → 10 (`minimal` is now the built-in
   default profile).** A freshly connected agent now sees a tight core-10 -
   `prepare`, `recall`, `project_overview`, `find_lessons`,

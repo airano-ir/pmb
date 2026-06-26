@@ -1,6 +1,25 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+_PROJECT_ENTITY_BLACKLIST = {
+    "auth", "design", "docs", "engine", "deploys", "deploy", "issue", "integrated",
+    "fix", "built", "installed", "code", "done", "config", "sources", "tests",
+    "test", "file", "script", "endpoint", "tool", "tools", "feature", "features",
+    "agent", "agents", "session", "sessions", "model", "models", "user", "users",
+    "project", "projects", "data", "memory", "memories", "event", "events",
+    "log", "logs", "task", "tasks", "idea", "ideas", "update", "updates", "time",
+    "work", "core", "source", "main", "module", "modules", "options", "option",
+}
+_NON_PROJECT_ENTITY_KINDS = {
+    "concept", "file", "function", "method", "class", "import", "module",
+    "package", "tech",
+}
+_PROJECT_ENTITY_KINDS = {
+    "project", "repo", "repository", "product", "codebase",
+    "app", "application", "service", "system",
+}
 
 
 class OverviewMixin:
@@ -105,48 +124,136 @@ class OverviewMixin:
         scored.sort(key=lambda a: -a["overlap_count"])
         return scored[:limit]
 
-    def detect_project_in_text(self, text: str, min_mentions: int = 3) -> dict | None:
-        """Look for an auto-detected project name inside arbitrary text.
-        Returns the matching entity dict or None. Used to enrich recall:
-        when the query mentions a known project, attach project_overview
-        automatically so the agent gets the full context."""
-        if not text:
-            return None
-        import re as _re
+    def _project_entity_candidates(self, min_mentions: int = 3) -> list[dict]:
+        """Return plausible project-name candidates, cached by write generation.
+
+        Legacy workspaces sometimes classified product names such as LoadGuard
+        as ``person`` or ``concept``. Keep those candidates, but exclude entity
+        kinds that are structurally code/technology rather than projects.
+        """
         import sqlite3
+
+        gen = getattr(self.recall_cache, "_generation", 0)
+        cache = getattr(self, "_project_candidate_cache", None)
+        ckey = (gen, int(min_mentions))
+        if cache is not None and cache[0] == ckey:
+            return cache[1]
+
         ws = self.workspace.id
-        text_lc = text.lower()
-        # Limit candidates to entities with non-trivial mentions - same
-        # threshold as the dashboard's project heuristic.
+        current = self._workspace_project_aliases()
+        # The min=1 path is used only for project-scoping a small lesson set.
+        # Keep enough legacy person-kind entities to catch low-frequency product
+        # names such as HackerNoon without admitting concept/tech noise.
+        candidate_limit = 1000 if min_mentions <= 1 else 100
         with sqlite3.connect(self.workspace.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
                 SELECT id, kind, name, n_mentions FROM graph_entities
                 WHERE workspace_id = ? AND n_mentions >= ?
-                ORDER BY n_mentions DESC LIMIT 50
+                ORDER BY n_mentions DESC LIMIT ?
                 """,
-                (ws, min_mentions),
+                (ws, min_mentions, candidate_limit),
             ).fetchall()
-        blacklist = {
-            'auth','design','docs','engine','deploys','deploy','issue','integrated',
-            'fix','built','installed','code','done','config','sources','tests',
-            'test','file','script','endpoint','tool','tools','feature','features',
-            'agent','agents','session','sessions','model','models','user','users',
-            'project','projects','data','memory','memories','event','events',
-            'log','logs','task','tasks','idea','ideas','update','updates','time',
-            'work','core','source','main','module','modules','options','option',
-        }
+        out: list[dict] = []
         for r in rows:
             nm = (r["name"] or "").lower()
-            if len(nm) < 4 or len(nm) > 30: continue
-            if nm in blacklist: continue
-            if '.' in nm or '/' in nm or '\\' in nm: continue
-            # Word-boundary match - "node" matches "node" but not "nodejs"
-            if _re.search(rf"\b{_re.escape(nm)}\b", text_lc):
-                return {"id": r["id"], "name": r["name"],
-                        "kind": r["kind"], "n_mentions": r["n_mentions"]}
-        return None
+            kind = (r["kind"] or "").lower()
+            # Short names are noisy in the general graph, but the current
+            # repository's explicit name is authoritative (notably "PMB").
+            if (len(nm) < 4 and nm not in current) or len(nm) > 30:
+                continue
+            if nm in _PROJECT_ENTITY_BLACKLIST:
+                continue
+            if "." in nm or "/" in nm or "\\" in nm:
+                continue
+            if kind in _NON_PROJECT_ENTITY_KINDS and nm not in current:
+                continue
+            out.append({
+                "id": r["id"],
+                "name": r["name"],
+                "kind": r["kind"],
+                "n_mentions": r["n_mentions"],
+            })
+        # Avoid retaining sqlite.Row objects/connections in the cache.
+        self._project_candidate_cache = (ckey, out)
+        return out
+
+    def _workspace_project_aliases(self) -> set[str]:
+        """Names that identify the repository the current Engine was opened in."""
+        out: set[str] = set()
+        try:
+            root_name = (self.workspace.root.name or "").strip().lower()
+            if root_name:
+                out.add(root_name)
+        except Exception:
+            pass
+        try:
+            raw = str(self.workspace.name or "").strip()
+            if raw:
+                out.add(raw.lower())
+                out.add(Path(raw).name.lower())
+        except Exception:
+            pass
+        return {x for x in out if x}
+
+    def projects_in_text(self, text: str, min_mentions: int = 3) -> list[dict]:
+        """All plausible project mentions, ranked for task routing.
+
+        The current repository wins when explicitly named. Otherwise textual
+        order wins: in "compare Alpha with Beta", Alpha is the primary subject.
+        Mention-count is only a tie-breaker, never the main routing signal.
+        """
+        if not text:
+            return []
+        import re as _re
+
+        text_lc = text.lower()
+        current = self._workspace_project_aliases()
+        matches: list[dict] = []
+        for cand in self._project_entity_candidates(min_mentions=min_mentions):
+            nm = (cand.get("name") or "").lower()
+            m = _re.search(rf"\b{_re.escape(nm)}\b", text_lc)
+            if not m:
+                continue
+            item = dict(cand)
+            item["position"] = m.start()
+            item["current_workspace"] = nm in current
+            matched = text[m.start():m.end()]
+            letters = [c for c in matched if c.isalpha()]
+            item["projectish_spelling"] = bool(
+                letters
+                and (
+                    all(c.isupper() for c in letters)
+                    or any(c.isupper() for c in matched[1:])
+                )
+            )
+            matches.append(item)
+        matches.sort(
+            key=lambda x: (
+                not x["current_workspace"],
+                x["position"],
+                0 if (x.get("kind") or "").lower() in _PROJECT_ENTITY_KINDS else 1,
+                -int(x.get("n_mentions") or 0),
+            )
+        )
+        return matches
+
+    def detect_project_in_text(self, text: str, min_mentions: int = 3) -> dict | None:
+        """Return the primary project explicitly mentioned in ``text``.
+
+        Unlike the old implementation, this does not let the most-mentioned
+        project in the database hijack a multi-project sentence. The current
+        repository wins when named; otherwise the first project mention wins.
+        """
+        matches = self.projects_in_text(text, min_mentions=min_mentions)
+        if not matches:
+            return None
+        out = dict(matches[0])
+        out.pop("position", None)
+        out.pop("current_workspace", None)
+        out.pop("projectish_spelling", None)
+        return out
 
     def project_overview(self, name: str, max_per_section: int = 8) -> dict:
         """Graph-driven overview of one project / entity. Faster + more

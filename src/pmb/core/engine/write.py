@@ -103,14 +103,16 @@ class WriteMixin:
             from pmb.reasoning.causation import add_temporal_next_edge
 
             add_temporal_next_edge(self, ev)
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "temporal_next_edge", e)
         # Improvement C: parse event_time (date references) from content
         # and store in metadata. Enables temporal-proximity boost at recall.
         try:
             self._attach_event_time(ev)
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "attach_event_time", e)
         self.recall_cache.bump_generation()
         return ev.ulid
 
@@ -263,8 +265,9 @@ class WriteMixin:
             from pmb.reasoning.user_names import looks_like_name_statement
             if looks_like_name_statement(clean_fact):
                 self.mark_user_names_dirty()
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "user_names_mark", e)
         # Improvement W: embed inline if model loaded, else queue
         self._embed_or_defer(ev.ulid, ev.to_text())
         self._index_graph_or_defer(ev, full_text=clean_fact)
@@ -272,14 +275,16 @@ class WriteMixin:
             from pmb.reasoning.causation import add_temporal_next_edge
 
             add_temporal_next_edge(self, ev)
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "temporal_next_edge", e)
         # Improvement C: parse event_time (date references) from content
         # and store in metadata. Enables temporal-proximity boost at recall.
         try:
             self._attach_event_time(ev)
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "attach_event_time", e)
 
         # L2.5: borderline candidate detected - enqueue for async LLM verify
         if borderline is not None and self.config.get("dedup.async_verify"):
@@ -293,8 +298,9 @@ class WriteMixin:
                     candidate_ulid=borderline[0],
                     similarity=borderline[1],
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                from pmb.core.errlog import log_error
+                log_error(self.workspace.db_path, "dedup_borderline", e)
 
         # Current-state promotion (#9): if this plain user fact states a
         # CURRENT personal attribute ("I now live in Tampa"), also upsert the
@@ -1580,14 +1586,16 @@ class WriteMixin:
             from pmb.reasoning.causation import add_temporal_next_edge
 
             add_temporal_next_edge(self, ev)
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "temporal_next_edge", e)
         # Improvement C: parse event_time (date references) from content
         # and store in metadata. Enables temporal-proximity boost at recall.
         try:
             self._attach_event_time(ev)
-        except Exception:
-            pass
+        except Exception as e:
+            from pmb.core.errlog import log_error
+            log_error(self.workspace.db_path, "attach_event_time", e)
         self.recall_cache.bump_generation()
         return ev.ulid
 

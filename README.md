@@ -2,19 +2,21 @@
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/logo.png" width="160" alt="PMB logo">
+<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/logo.png" width="100" alt="PMB logo">
 
 # PMB
 
 ### Local-first memory for your AI coding agent.
-### One file on your disk. Twenty-nine MCP tools. No cloud.
+### SQLite source of truth. No cloud, no API keys, no re-explaining.
 
 [![PyPI](https://img.shields.io/pypi/v/pmb-ai.svg?label=pypi)](https://pypi.org/project/pmb-ai/)
-[![Downloads](https://img.shields.io/pypi/dm/pmb-ai.svg?color=blue)](https://pypi.org/project/pmb-ai/)
-[![Python](https://img.shields.io/pypi/pyversions/pmb-ai.svg)](https://pypi.org/project/pmb-ai/)
 [![CI](https://github.com/oleksiijko/pmb/actions/workflows/ci.yml/badge.svg)](https://github.com/oleksiijko/pmb/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-online-0f766e.svg)](https://oleksiijko.github.io/pmb/)
+[![Python](https://img.shields.io/pypi/pyversions/pmb-ai.svg)](https://pypi.org/project/pmb-ai/)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-475569.svg)](https://github.com/oleksiijko/pmb/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-native-purple.svg)](https://modelcontextprotocol.io)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-pmb--ai-8B7FF0?logo=modelcontextprotocol&logoColor=white)](https://github.com/mcp/oleksiijko/pmb-ai)
 
 <img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-map.gif" width="720" alt="PMB - your project's memory as a live graph">
 
@@ -22,10 +24,12 @@
 
 [Quickstart](#quickstart) · [Dashboard](#see-your-memory) · [Why pmb-ai?](#why-pmb-ai) · [Demo](#what-it-feels-like) · [How it works](#how-it-works) · [FAQ](#faq)
 
-**Persistent memory for AI coding agents - local, offline, no API keys.**
-For developers on Claude Code / Cursor / Codex who are tired of re-explaining
-context every session. PMB remembers your decisions, lessons, and project facts
-in one SQLite file on your disk and feeds them back through MCP.
+**Your AI agent forgets everything between sessions.** So you re-explain the same
+decisions, lessons and constraints over and over. PMB remembers them in one
+local workspace and feeds them back through MCP - no cloud, no API keys, no LLM
+call on the read path. SQLite is the source of truth; rebuildable search indexes
+stay beside it on your disk. And PMB tells you **when memory is actually
+helping**, instead of claiming "+X%".
 
 ⭐ **Star the repo if PMB saves you a re-explanation.**
 
@@ -37,9 +41,9 @@ PMB gives Claude Code, Cursor, Codex and the other MCP-aware agents a
 real memory. Decisions you made last week. Lessons you taught them.
 Personal facts about you. Project structure. PDFs. They survive every
 restart, every model upgrade, every agent switch - because they live
-in **one SQLite file on your disk**.
+in a **local workspace you own**, with SQLite as the durable source of truth.
 
-No API keys. No subscription. No LLM call on the read path. Just files.
+No API keys. No subscription. No LLM call on the read path. Just local files.
 
 ## Quickstart
 
@@ -97,7 +101,7 @@ Prefer text? The [Quickstart](#quickstart) above is the same flow in seven comma
 
 ## Why pmb-ai?
 
-- **Local-first, zero-config.** One SQLite file on your disk. No account, no API keys, no telemetry, no cloud to trust.
+- **Local-first, zero-config.** SQLite holds the durable memory; rebuildable search indexes stay local. No account, API keys, telemetry, or cloud to trust.
 - **It actually gets used.** On Claude Code / Codex, hooks inject the right memory *before* the model thinks - you never have to remember to call a tool.
 - **Multilingual, no setup.** The embedder covers 50+ languages; a Russian query finds an English fact. No per-language config.
 - **MCP-native.** One `pmb connect` wires Claude Code, Cursor, Codex, Windsurf, Zed, VS Code, and more.
@@ -107,6 +111,12 @@ Prefer text? The [Quickstart](#quickstart) above is the same flow in seven comma
 ---
 
 ## What it feels like
+
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/before-after.svg" width="880" alt="Same prompt, with and without memory: without PMB the agent asks which file and what the bug was; with PMB it recalls verdict-policy.ts:142 in 6ms.">
+
+</div>
 
 ```
 You:    fix that LoadGuard pricing bug we hit last Tuesday
@@ -194,8 +204,9 @@ flowchart LR
     style C fill:#dcfce7,color:#14532d
 ```
 
-**Storage** - every event lives in SQLite. Vectors live in LanceDB next
-to it. Both are files on your disk; copy them anywhere with `cp`.
+**Storage** - every durable event lives in SQLite, the source of truth.
+Rebuildable vector indexes live in LanceDB beside it. The whole workspace stays
+on your disk and can be copied or exported whenever you want.
 
 **Recall** - BM25 (lexical) + dense vector (semantic) + entity graph
 + optional cross-encoder rerank, fused via Reciprocal-Rank-Fusion.
@@ -467,9 +478,9 @@ has a timeout and falls back to the template, so it never blocks the turn.
 
 Every lesson the agent surfaces carries a `surface_id`. Follow-through is
 recorded two ways: the agent can confirm explicitly via
-`mark_lesson_followed(surface_id, True)`, and the **Stop hook** infers it
-automatically from recorded activity. The **Lessons tab** then shows, per
-rule:
+`mark_lesson_followed(surface_id, True)`, mark an irrelevant surface with
+`applicable=False`, and the **Stop hook** infers both outcomes automatically
+from recorded activity. The **Lessons tab** then shows, per rule:
 
 - How often it was shown to the agent
 - How often it was followed (confirmed or auto-detected)
@@ -526,9 +537,9 @@ $0. There is no PMB service.
 
 **Does the agent need to know about PMB?**
 After `pmb connect`, the right rules are appended to `CLAUDE.md` /
-`AGENTS.md` automatically. The agent learns the 29 default MCP tools (of
-64 total - the rest are admin/sleep-mode ops, gated behind the `full`
-tool profile) and the `prepare()` pattern from those rules.
+`AGENTS.md` automatically. The default minimal profile exposes 10 core MCP
+tools, including the `prepare()` read-first pattern. Wider `default` and `full`
+profiles remain available for ingestion, inspection, and administration.
 
 **Will it slow my agent down?**
 The MCP tools return in single-digit milliseconds for everything

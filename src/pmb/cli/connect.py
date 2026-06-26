@@ -57,11 +57,16 @@ After acting on a surfaced lesson:
 
 ```
 mark_lesson_followed(surface_id=<from prepare>, followed=True|False,
+                     applicable=True|False,
                      note="<one line: what you did>")
 ```
 
-Do this even when followed=False (be honest - the dashboard shows
-both). Lessons never marked are counted as ignored.
+Use applicable=False when the lesson was unrelated to the task. Use
+followed=False only when it applied but you deliberately did not follow it.
+Lessons never marked remain unknown.
+
+When recording a project-specific lesson via record_batch, include
+`"project":"<project name>"`. Omit `project` only for genuinely global rules.
 
 ### OK to skip prepare() ONLY when
 

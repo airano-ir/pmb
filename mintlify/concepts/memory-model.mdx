@@ -1,0 +1,77 @@
+---
+title: "Memory model"
+description: "What PMB stores, the kinds of memory it keeps, and how memories age."
+icon: "layer-group"
+---
+
+## Everything is an event
+
+Every memory is an append-only event with a ULID, a type, content, an importance
+score, a timestamp, access counters, and a tier. Events aren't edited in place:
+an update appends a new event, and a removal either archives (soft delete) or
+purges (hard delete). That keeps history honest and recovery easy.
+
+## Types of memory
+
+PMB separates memory by type so the agent can treat each kind with the right
+weight.
+
+| Type | What it is | Comes from |
+| --- | --- | --- |
+| `fact` | An atomic, durable fact | `record_fact`, `record_batch` |
+| `keyed_fact` | A mutable personal attribute (subject / attribute / value) | `record_keyed_fact` |
+| `decision` | A project-shaping choice | `record_batch` activity `kind=decision` |
+| `lesson` | A procedural rule that surfaces before relevant work | `pmb learn`, `record_batch` |
+| `goal` | A future intention with a status | `record_goal` |
+| `activity` | A lightweight log of a turn | `record_activity` |
+| `milestone` | A checkpoint in a named state-chain | `record_milestone` |
+| `qa` | A stored question/answer pair | `remember` |
+| `git`, `file`, `code` | Repository and code context | `pmb sync`, `index_project` |
+| `image` | An image with optional cross-modal embedding | `record_image` |
+
+## Facts that change: keyed facts
+
+Some facts have exactly one current value - your city, your employer, a pet's
+name. `record_keyed_fact` stores these as `(subject, attribute, value)` and
+**upserts**: writing a new value archives the old one, so recall returns only the
+current value while the history stays queryable.
+
+```text
+record_keyed_fact("user", "city", "Warsaw")
+record_keyed_fact("user", "employer", "Anthropic")
+```
+
+## Importance, pinning, and forgetting
+
+<CardGroup cols={3}>
+  <Card title="Importance" icon="gauge">
+    Every event has a 0.0-1.0 score that drives ranking and decay. Defaults vary
+    by type - a fact starts higher than a routine activity.
+  </Card>
+  <Card title="Pin" icon="thumbtack">
+    Pinning locks a memory at max importance; a pinned memory is never
+    auto-archived.
+  </Card>
+  <Card title="Forgetting curve" icon="clock-rotate-left">
+    A daily decay lowers importance over time; old, low-importance memory is
+    eventually archived. Tune with `decay.factor_per_day` or run `pmb decay`.
+  </Card>
+</CardGroup>
+
+## Three tiers: how fast memory fades
+
+Every event sits in one of three tiers that differ only in fade speed. Recalling
+a memory promotes it toward a slower-fading tier - what you use sticks, what you
+never touch decays.
+
+| Tier | Holds | Fades over |
+| --- | --- | --- |
+| Working | New activity and routine events | days |
+| Episodic | Events you've recalled a few times | weeks |
+| Semantic | Facts, decisions, and lessons | months |
+
+## Soft delete vs hard delete
+
+Archiving (soft delete) hides a memory from recall but keeps the row, so you can
+restore it. A hard delete purges the row, its search vector, and its graph links.
+See [Deleting memories](/guides/deleting-memories).

@@ -76,8 +76,8 @@ _WEAK_REPEAT = re.compile(
     re.IGNORECASE,
 )
 
-# Negated action - "it did NOT do X". Targeted (not a blanket "не") to avoid
-# firing on "не надо / не знаю / don't worry".
+# Negated action - "it did NOT do X". Targeted (not a blanket negation) to avoid
+# firing on generic negatives like "no need / I don't know / don't worry".
 _NEG_ACTION = re.compile(
     "|".join([
         r"не\s+заполн", r"не\s+работа", r"не\s+отправ", r"не\s+валидир",
@@ -120,8 +120,8 @@ def detect_correction(message: str) -> CorrectionSignal | None:
 
     Strong if ANY strong marker hits or the message is a CAPS shout.
     Weak (still a correction) if a repeat-marker co-occurs with either a
-    negated action or a second weak marker - "снова не заполнило",
-    "опять стоп". A lone "снова открой дашборд" stays None (no negation,
+    negated action or a second weak marker - "did not fill in again",
+    "stop again". A lone "open the dashboard again" stays None (no negation,
     one weak marker only).
     """
     msg = (message or "").strip()

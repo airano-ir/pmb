@@ -1,0 +1,78 @@
+---
+title: "Setup & connect"
+description: "Wire PMB into your agent, manage the warm daemon, switch models, and diagnose the install."
+icon: "plug"
+---
+
+Every command supports `--help` for its full flag list. Everything is offline
+unless tagged otherwise.
+
+## Setup
+
+### `pmb setup [agent]`
+Recommended one-command setup. Detects your agent, picks the memory model, wires
+MCP + rules + hooks, warms the engine, and starts the shared daemon - in one
+guided flow. Omit `agent` to auto-detect.
+
+```bash
+pmb setup           # guided
+pmb setup --all     # wire every detected agent, one shared warm daemon
+```
+
+### `pmb init [--name NAME]`
+Initialize a workspace in the current directory. Optional - a workspace
+auto-detects from cwd.
+
+## Connect an agent
+
+### `pmb connect <agent>`
+Wire PMB into an agent's MCP config and install its rules. Points at the shared
+daemon by default; `--stdio` keeps a per-client server.
+
+<Note>
+  Agents: `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `vscode`,
+  `zed`, `opencode`, `continue`.
+</Note>
+
+```bash
+pmb connect claude-code
+pmb connect cursor --workspace personal   # share one memory across agents
+pmb connect codex --active                # proactive-logging rules
+pmb connect --list                        # all agents + where config lives
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--active` | Install proactive-logging rules (agent records its own decisions/lessons). |
+| `--workspace NAME` | Point several agents at one shared workspace. |
+| `--probe` | After wiring, briefly spawn `pmb-mcp` to confirm it starts. |
+| `--stdio` | Per-client server instead of the shared daemon. |
+
+## Models & daemon
+
+### `pmb model [light | balanced | best]`
+Switch the embedding model later: download, re-embed memory, and restart the
+daemon in one step. Omit the arg for the interactive menu.
+
+### `pmb daemon start | stop | status | restart`
+Manage the one warm daemon (Engine + model + LanceDB) that N clients share for
+instant recall.
+
+```bash
+pmb daemon status
+pmb daemon kill-all   # stop daemon + kill stray PMB processes, clear registry
+```
+
+### `pmb mcp serve | status | proxy`
+Run a shared HTTP MCP server (team mode), list running servers + their RAM, or
+run the stdio↔daemon bridge (`proxy`, auto-wired for Codex).
+
+## Diagnose
+
+### `pmb doctor`
+Diagnose the install and runtime state. `--remote user@host:/path` prints an
+SSH-tunneled MCP snippet.
+
+### `pmb warmup`
+Pre-load the model + BM25 + LanceDB so the next recall is fast (avoids the
+~1-2s cold start).

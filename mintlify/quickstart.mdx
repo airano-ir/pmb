@@ -1,0 +1,55 @@
+---
+title: "Quickstart"
+description: "Install PMB, wire your agent, and let memory work automatically."
+icon: "rocket"
+---
+
+<Steps>
+  <Step title="Install" icon="download">
+    ```bash
+    pip install pmb-ai
+    ```
+    Prefer npm? `npx pmb-ai setup` installs the Python package, then runs setup.
+  </Step>
+
+  <Step title="Connect your agent" icon="plug">
+    One command wires PMB over MCP and appends the rules to `CLAUDE.md` /
+    `AGENTS.md` so the agent knows how to use it.
+
+    ```bash
+    pmb connect claude-code   # or cursor, codex, windsurf, zed…
+    ```
+  </Step>
+
+  <Step title="Just talk to your agent" icon="comments">
+    Memory is automatic. On Claude Code, lifecycle hooks inject the right
+    memory **before the model thinks** - you never have to remember to call a
+    tool. Trivial messages inject nothing.
+  </Step>
+
+  <Step title="Inspect (optional)" icon="chart-network">
+    ```bash
+    pmb dashboard   # your memory as a live graph, on 127.0.0.1
+    pmb stats       # what's stored
+    pmb doctor      # confirm everything's wired
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Everything is local **stdio** - the server runs as a child process of your
+  agent. No network, no port, no token. Apache-2.0, fully offline.
+</Note>
+
+## Point several agents at one memory
+
+```bash
+pmb connect claude-code --workspace personal
+pmb connect cursor      --workspace personal
+# both now read/write the same memory
+```
+
+<Tip>
+  Sharing one memory across machines or a team? That's an optional HTTP mode
+  with bearer-token auth - you don't need it for local use.
+</Tip>
