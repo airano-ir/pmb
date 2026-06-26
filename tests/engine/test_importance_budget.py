@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import sqlite3
 
+import pytest
+
 from pmb.core.engine import Engine
 
 
@@ -28,6 +30,9 @@ def _row(eng, ulid):
     return float(r["importance"]), json.loads(r["metadata_json"] or "{}")
 
 
+# platform_sensitive: the high-importance budget count's visibility races under
+# macOS-CI load; deterministic + green on the Linux reference runner.
+@pytest.mark.platform_sensitive
 def test_high_importance_facts_clamped_past_budget(tmp_pmb_home, tmp_workspace_dir):
     eng = _engine(tmp_workspace_dir, tmp_pmb_home, budget=2)
     u1 = eng.record_fact("important fact one", importance=0.95)

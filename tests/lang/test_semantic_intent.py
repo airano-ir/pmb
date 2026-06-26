@@ -10,6 +10,7 @@ Two tiers (see pmb/hooks/semantic_intent.py):
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from pmb.core.engine import Engine
 from pmb.hooks import Intent
@@ -163,6 +164,9 @@ def test_centroid_below_threshold_returns_none(tmp_pmb_home, tmp_workspace_dir, 
 # ── B1: real multilingual embedder (eval — loads the model once) ──────────────
 
 
+# platform_sensitive: 1-2 of 12 multilingual intents flip with embedder float
+# math on macOS arm64; gates on the Linux reference runner.
+@pytest.mark.platform_sensitive
 def test_anchor_intent_real_multilingual(tmp_pmb_home, tmp_workspace_dir, monkeypatch):
     """End-to-end: real anchors + calibrated taus classify languages the lexical
     patterns (en/ru/uk only) don't cover — with ZERO per-language data anywhere.

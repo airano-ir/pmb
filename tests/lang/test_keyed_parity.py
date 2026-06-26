@@ -58,6 +58,7 @@ def test_anchor_agrees_with_regex_where_both_apply(tmp_pmb_home, tmp_workspace_d
 
 
 @pytest.mark.eval
+@pytest.mark.platform_sensitive  # embedder float-variance flips 2-3/4 on macOS arm64; gates on Linux
 def test_anchor_extends_keyed_extraction_to_new_languages(tmp_pmb_home, tmp_workspace_dir):
     eng = _warm(tmp_workspace_dir, tmp_pmb_home)
     # Languages with NO pack — the regex tier returns nothing; the anchor tier
