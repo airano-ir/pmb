@@ -196,6 +196,9 @@ def make_handler(engine):
                 if route == "/api/config_reset":
                     self._send_json(self._handle_config_reset(payload))
                     return
+                if route == "/api/run":
+                    self._send_json(self._handle_run(payload))
+                    return
                 self.send_error(404)
             except Exception as e:
                 log.exception("POST %s failed", route)
@@ -256,6 +259,57 @@ def make_handler(engine):
                         "source": engine.config.source_of(key)}
             except Exception as e:
                 return {"ok": False, "key": key, "error": str(e)}
+
+        # Whitelisted maintenance commands runnable from the dashboard. Each maps
+        # to a `pmb` argv. LLM/heavy ones are flagged so the UI can warn.
+        RUN_COMMANDS = {
+            "dedupe":      {"argv": ["dedupe"],      "label": "Deduplicate",      "slow": False},
+            "arcs":        {"argv": ["arcs", "cluster"], "label": "Cluster arcs", "slow": True},
+            "regraph":     {"argv": ["regraph"],     "label": "Rebuild graph",    "slow": False},
+            "prune-graph": {"argv": ["prune-graph"], "label": "Prune weak edges", "slow": False},
+            "rehearse":    {"argv": ["rehearse"],    "label": "Rehearse idle",    "slow": False},
+            "reindex":     {"argv": ["reindex"],     "label": "Re-embed all",     "slow": True},
+            "consolidate": {"argv": ["consolidate"], "label": "Consolidate (LLM)", "slow": True},
+            "reflect":     {"argv": ["reflect"],     "label": "Reflect (LLM)",    "slow": True},
+            "declutter":   {"argv": ["declutter"],   "label": "Declutter junk",   "slow": False},
+        }
+
+        def _handle_run(self, payload: dict) -> dict:
+            """Run a whitelisted maintenance command as a subprocess. Localhost-
+            only surface. Heavy/LLM jobs are capped by the timeout; the request
+            blocks until the job finishes (ThreadingHTTPServer keeps other
+            requests responsive meanwhile)."""
+            import shutil
+            import subprocess
+            import sys
+            import time
+            cmd = str(payload.get("cmd") or "")
+            spec = self.RUN_COMMANDS.get(cmd)
+            if spec is None:
+                return {"ok": False, "cmd": cmd,
+                        "error": f"command not allowed: {cmd!r}"}
+            exe = shutil.which("pmb") or shutil.which("pmb.exe")
+            base = [exe] if exe else [sys.executable, "-m", "pmb"]
+            t0 = time.monotonic()
+            try:
+                proc = subprocess.run(
+                    base + spec["argv"],
+                    capture_output=True, text=True, timeout=900,
+                )
+                out = (proc.stdout or "")
+                if proc.stderr:
+                    out += ("\n" + proc.stderr)
+                out = out.strip()
+                if len(out) > 4000:
+                    out = "…(truncated)\n" + out[-4000:]
+                return {"ok": proc.returncode == 0, "cmd": cmd,
+                        "code": proc.returncode, "output": out or "(no output)",
+                        "seconds": round(time.monotonic() - t0, 1)}
+            except subprocess.TimeoutExpired:
+                return {"ok": False, "cmd": cmd, "error": "timed out after 900s",
+                        "seconds": round(time.monotonic() - t0, 1)}
+            except Exception as e:
+                return {"ok": False, "cmd": cmd, "error": str(e)}
 
         def _handle_events(self, limit: int) -> list[dict]:
             evs = engine.events.list_active(engine.workspace.id, limit=limit)
