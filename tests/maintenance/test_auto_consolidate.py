@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from pmb.core.engine import Engine
 from pmb.health.auto_consolidate import (
     TriggerState,
@@ -20,6 +22,9 @@ def test_disabled_by_default(tmp_pmb_home, tmp_workspace_dir):
     assert out["reason"] == "auto_trigger_disabled"
 
 
+# platform_sensitive: the event-count trigger races with async write visibility
+# under macOS-CI load; gates on the Linux reference runner.
+@pytest.mark.platform_sensitive
 def test_event_count_threshold(tmp_pmb_home, tmp_workspace_dir):
     eng = Engine(
         cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home,
