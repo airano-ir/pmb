@@ -6,37 +6,54 @@
 <title>PMB · memory</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <style>
   :root{
-    /* Dark, no glow. Liquid-glass surfaces sit on top of a near-black base. */
-    --bg:#08090c; --bg2:#0d0f14; --ink:#ebeef5; --dim:#8e9099; --faint:#5a5d68;
-    --hairline:rgba(255,255,255,.06); --hairline-strong:rgba(255,255,255,.14);
-    /* Liquid-glass tokens: translucent surface + subtle inner highlight + soft edge */
-    --glass-bg:rgba(255,255,255,.04);
-    --glass-bg-strong:rgba(255,255,255,.07);
-    --glass-border:rgba(255,255,255,.09);
-    --glass-highlight:rgba(255,255,255,.14);
+    /* ===== PMB design system (PMB=WEB tokens) — violet brand, mint secondary,
+       near-black surfaces. Legacy var names kept as aliases so the existing
+       2.7k-line stylesheet keeps resolving. ===== */
+    /* Surfaces — recessed → raised */
+    --bg-deep:#07080C; --bg:#0B0D13; --bg2:#15171F;
+    --surface:#15171F; --surface-2:#1B1E28; --surface-3:#232734;
+    --ink:#EBEEF5; --ink-dim:#9DA1AD; --dim:#8E9099; --faint:#5A5D68;
+    --hairline:rgba(255,255,255,.07); --hairline-strong:rgba(255,255,255,.14);
+    /* Liquid-glass */
+    --glass-bg:rgba(255,255,255,.040); --glass-bg-strong:rgba(255,255,255,.070);
+    --glass-border:rgba(255,255,255,.090); --glass-highlight:rgba(255,255,255,.140);
     --glass-shadow:0 12px 36px rgba(0,0,0,.45);
-    /* Single muted accent — no dual amber+cyan, just one cool blue. */
-    --accent:#7ea8ff; --accent-soft:rgba(126,168,255,.18); --accent-dim:#4d6da6;
-    --good:#62c79d; --warn:#d6b86b; --bad:#e07a8b;
-    /* Entity-kind palette — muted, no neon. */
-    --k-person:#88a8d9; --k-project:#7fc4a3; --k-topic:#d4b78a; --k-place:#c3879c;
-    --k-org:#9d8ed0; --k-tool:#7eb9c4; --k-event:#cf9b78; --k-concept:#cc8a8a;
-    --k-tech:#88a8d9; --k-file:#7fc4a3; --k-function:#d4b78a; --k-class:#9d8ed0;
-    --k-import:#7eb9c4; --k-theme:#9d8ed0; --k-other:#90939e;
-    /* Tableau-10 muted — keep cluster identity, no neon. */
-    --c0:#4E79A7; --c1:#F28E2B; --c2:#E15759; --c3:#76B7B2;
-    --c4:#59A14F; --c5:#EDC948; --c6:#B07AA1; --c7:#FF9DA7;
-    --c8:#9C755F; --c9:#BAB0AC; --c10:#86BCB6; --c11:#D7B5A6;
-    --sans:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    /* Violet — the MCP brand accent (replaces the old cool blue) */
+    --violet-100:#E5E1FB; --violet-300:#B4ABF6; --violet:#8B7FF0;
+    --violet-600:#6F62D9; --violet-700:#574BB0;
+    --accent:#8B7FF0; --accent-soft:rgba(139,127,240,.16);
+    --accent-line:rgba(139,127,240,.40); --accent-dim:#5B5288;
+    /* Mint — secondary */
+    --mint:#5DCAA5; --mint-soft:rgba(93,202,165,.14);
+    /* Semantic */
+    --good:#5DCAA5; --warn:#E1B340; --bad:#E07A8B; --info:#7EA8FF;
+    --good-soft:rgba(93,202,165,.14); --warn-soft:rgba(225,179,64,.14);
+    --bad-soft:rgba(224,122,139,.14); --info-soft:rgba(126,168,255,.14);
+    /* Entity-kind ramp — violet↔mint family */
+    --k-decision:#8B7FF0; --k-lesson:#5DCAA5; --k-person:#88A8D9;
+    --k-project:#7FC4A3; --k-file:#9D8ED0; --k-concept:#C9A2E0;
+    --k-tool:#7EB9C4; --k-event:#E1B340; --k-fact:#7EA8FF; --k-other:#90939E;
+    /* legacy kind aliases (existing CSS still references these) */
+    --k-topic:#C9A2E0; --k-place:#C3879C; --k-org:#9D8ED0; --k-tech:#88A8D9;
+    --k-function:#C9A2E0; --k-class:#9D8ED0; --k-import:#7EB9C4; --k-theme:#9D8ED0;
+    /* Cluster palette — distinct hues, re-tinted to the brand family */
+    --c0:#8B7FF0; --c1:#5DCAA5; --c2:#E1B340; --c3:#7EA8FF;
+    --c4:#C9A2E0; --c5:#7EB9C4; --c6:#E07A8B; --c7:#88A8D9;
+    --c8:#7FC4A3; --c9:#B4ABF6; --c10:#9D8ED0; --c11:#C3879C;
+    /* Type — Inter (UI) + JetBrains Mono (data/metrics) */
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-    --serif:var(--sans);  /* legacy alias — old rules just get Manrope */
-    --r:12px; --r-lg:18px;
-    --shadow-2:0 4px 14px rgba(0,0,0,.35); --shadow-3:0 16px 40px rgba(0,0,0,.5);
-    --t-fast:160ms; --t-norm:240ms; --ease:cubic-bezier(.2,.7,.2,1);
+    --serif:var(--sans);
+    /* Radii / shadow / motion */
+    --r-sm:8px; --r:12px; --r-lg:18px; --r-pill:999px;
+    --shadow-1:0 1px 3px rgba(0,0,0,.30); --shadow-2:0 4px 14px rgba(0,0,0,.35);
+    --shadow-3:0 16px 40px rgba(0,0,0,.50);
+    --t-fast:160ms; --t-norm:240ms; --t-slow:360ms;
+    --ease:cubic-bezier(.2,.7,.2,1); --ease-out:cubic-bezier(.16,1,.3,1);
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
