@@ -12,6 +12,11 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege (OpenSSF Scorecard): CI only reads the repo. Publishing
+# (PyPI / npm) lives in its own workflow with a scoped, short-lived token.
+permissions:
+  contents: read
+
 jobs:
   # --------------------------------------------------------------
   # Lint — fast, runs once. BLOCKING (T2): ruff must be clean.
@@ -37,6 +42,7 @@ jobs:
   test:
     name: tests · ${{ matrix.os }} · py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -239,3 +245,42 @@ jobs:
           tests/eval/test_memory_eval_multilingual.py
           tests/lang/test_extract_anchor.py
           tests/lang/test_anchors.py
+
+  # --------------------------------------------------------------
+  # Dependency vulnerability audit — VISIBLE but non-blocking, so a
+  # newly-disclosed transitive advisory surfaces without wedging PRs.
+  # --------------------------------------------------------------
+  security-audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip pip-audit
+          pip install -e .
+      - run: pip-audit --desc
+
+  # --------------------------------------------------------------
+  # Single required status check for branch protection: green only when
+  # every BLOCKING job above succeeded. Point the `main` branch rule at
+  # "CI green" and one check covers the whole matrix.
+  # --------------------------------------------------------------
+  ci-green:
+    name: CI green
+    if: always()
+    needs: [lint, test, coverage, smoke, packs-off-ratchet]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all blocking jobs to pass
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "::error::One or more required jobs failed."
+          exit 1
+      - run: echo "All required jobs passed."
