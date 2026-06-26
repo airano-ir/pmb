@@ -128,6 +128,19 @@
     letter-spacing:-0.005em;white-space:nowrap;
     transition:color var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
   .tab svg{width:16px;height:16px;flex-shrink:0;opacity:.85}
+  /* Settings (config editor) */
+  .cfg-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:11px 2px;border-bottom:1px solid var(--hairline)}
+  .cfg-row:last-child{border-bottom:none}
+  .cfg-meta{min-width:0}
+  .cfg-meta code{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+  .cfg-help{color:var(--faint);font-size:11.5px;margin-top:2px;max-width:600px}
+  .cfg-ctrl{flex-shrink:0}
+  .cfg-input{background:var(--surface-3);border:1px solid var(--glass-border);color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:6px 9px;border-radius:8px;outline:none;min-width:96px}
+  .cfg-input:focus-visible{border-color:var(--accent-line)}
+  .cfg-toggle{width:40px;height:22px;border-radius:999px;border:1px solid var(--glass-border);background:var(--surface-3);cursor:pointer;position:relative;padding:0;transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease)}
+  .cfg-toggle span{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--dim);transition:transform var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
+  .cfg-toggle.on{background:var(--accent-soft);border-color:var(--accent-line)}
+  .cfg-toggle.on span{transform:translateX(18px);background:var(--accent)}
   .tab:hover{color:var(--ink)}
   .tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .tab.on{background:var(--glass-bg-strong);color:var(--ink);
@@ -724,6 +737,7 @@
     <button class="tab" data-tab="perf" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 18a7.5 7.5 0 1 1 15 0"/><path d="M12 18l3.6-4.6"/></svg>Performance</button>
     <button class="tab" data-tab="recall" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Recall</button>
     <button class="tab" data-tab="errors" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.5h.01"/></svg>Errors</button>
+    <button class="tab" data-tab="settings" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h7M15 17h5"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="13" cy="17" r="2"/></svg>Settings</button>
   </nav>
   <div class="sb-links">
     <a href="https://docs.pmbai.dev" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20"/></svg>Docs</a>
@@ -845,6 +859,18 @@
     <div id="errors-summary" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
     <div id="errors-list"></div>
   </div>
+</section>
+
+<!-- SETTINGS — live config editor (reads/writes the workspace config) -->
+<section id="tab-settings" class="view scrollable hidden" role="tabpanel">
+  <div class="panel">
+    <h2>Settings<span class="sub" id="settings-meta">workspace config</span></h2>
+    <div class="row-bar" style="align-items:center">
+      <button class="btn" id="cfg-pro-btn" onclick="toggleCfgPro()" type="button">Show all</button>
+      <span id="settings-status" style="font-family:var(--mono);font-size:11.5px;margin-left:6px"></span>
+    </div>
+  </div>
+  <div id="settings-list"></div>
 </section>
 
 <!-- LESSONS — self-improvement loop -->
@@ -1011,8 +1037,9 @@ const TAB_LOAD = {
   perf: ()=>loadPerf(24),
   recall: ()=>{},
   errors: ()=>loadErrors(),
+  settings: ()=>loadSettings(),
 };
-const VALID_TABS = new Set(['map','timeline','overview','entities','arcs','lessons','adherence','dedup','perf','recall','errors']);
+const VALID_TABS = new Set(['map','timeline','overview','entities','arcs','lessons','adherence','dedup','perf','recall','errors','settings']);
 function showTab(name){
   if(!VALID_TABS.has(name)) name = 'map';
   activeTab = name;
@@ -2361,6 +2388,65 @@ async function loadErrors(){
       ${e.note?`<div style="color:var(--dim);font-size:11.5px;margin-top:3px">${esc(e.note)}</div>`:''}
     </div>`).join('') : '<div class="empty">Nothing logged - these come from PMB best-effort paths (same source as <code>pmb doctor</code>).</div>';
 }
+
+/* ============= SETTINGS — live workspace-config editor ============= */
+let _cfgAll = [], _cfgPro = false;
+async function loadSettings(){
+  const data = await api('/api/config').catch(_=>({settings:[]}));
+  _cfgAll = data.settings || [];
+  renderSettings();
+}
+function renderSettings(){
+  const ss = _cfgPro ? _cfgAll : _cfgAll.filter(s=>s.tier==='default');
+  const bySec = {};
+  ss.forEach(s=>{(bySec[s.section]=bySec[s.section]||[]).push(s);});
+  const secs = Object.keys(bySec).sort();
+  const mod = _cfgAll.filter(s=>s.source==='workspace').length;
+  $('#settings-meta').innerHTML = `${ss.length} of ${_cfgAll.length}${mod?` · <span style="color:var(--accent)">${mod} modified</span>`:''}`;
+  $('#settings-list').innerHTML = secs.length ? secs.map(sec=>`
+    <div class="panel">
+      <h2>${esc(sec)}<span class="sub">${bySec[sec].length}</span></h2>
+      ${bySec[sec].map(cfgRow).join('')}
+    </div>`).join('') : '<div class="empty">No settings.</div>';
+  bindSettings();
+}
+function cfgRow(s){
+  const k = esc(s.key); let control;
+  if(s.type==='bool') control = `<button class="cfg-toggle ${s.value?'on':''}" data-key="${k}" data-type="bool" aria-pressed="${!!s.value}"><span></span></button>`;
+  else if(s.choices) control = `<select class="cfg-input" data-key="${k}" data-type="str">${s.choices.map(c=>`<option ${String(c)===String(s.value)?'selected':''}>${esc(String(c))}</option>`).join('')}</select>`;
+  else if(s.type==='int'||s.type==='float') control = `<input class="cfg-input" type="number" data-key="${k}" data-type="${s.type}" value="${esc(String(s.value))}" step="${s.type==='float'?'any':'1'}"${s.min!=null?` min="${s.min}"`:''}${s.max!=null?` max="${s.max}"`:''}>`;
+  else control = `<input class="cfg-input" type="text" data-key="${k}" data-type="str" value="${esc(String(s.value??''))}">`;
+  const m = s.source==='workspace';
+  return `<div class="cfg-row">
+    <div class="cfg-meta">
+      <div><code>${esc(s.key.split('.').slice(1).join('.')||s.key)}</code>${m?` <span class="tag" style="color:var(--accent);border-color:var(--accent-line);cursor:pointer" data-reset="${k}" title="Reset to default">modified ✕</span>`:''}</div>
+      <div class="cfg-help">${esc(s.help||'')}</div>
+    </div>
+    <div class="cfg-ctrl">${control}</div>
+  </div>`;
+}
+function bindSettings(){
+  $$('#settings-list .cfg-input').forEach(el=>el.onchange=()=>{
+    let v=el.value;
+    if(el.dataset.type==='int') v=parseInt(v,10);
+    else if(el.dataset.type==='float') v=parseFloat(v);
+    setCfg(el.dataset.key, v);
+  });
+  $$('#settings-list .cfg-toggle').forEach(el=>el.onclick=()=>setCfg(el.dataset.key, !el.classList.contains('on')));
+  $$('#settings-list [data-reset]').forEach(el=>el.onclick=()=>resetCfg(el.dataset.reset));
+}
+async function setCfg(key,value){
+  const r = await api('/api/config_set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,value})}).catch(e=>({ok:false,error:String(e)}));
+  cfgStatus(r.ok?`✓ ${key} = ${r.value}`:`✗ ${key}: ${r.error||'failed'}`, r.ok);
+  if(r.ok){ const s=_cfgAll.find(x=>x.key===key); if(s){ s.value=r.value; s.source=r.source; } renderSettings(); }
+}
+async function resetCfg(key){
+  const r = await api('/api/config_reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})}).catch(e=>({ok:false,error:String(e)}));
+  cfgStatus(r.ok?`↺ ${key} reset`:`✗ ${key}: ${r.error}`, r.ok);
+  if(r.ok){ const s=_cfgAll.find(x=>x.key===key); if(s){ s.value=r.value; s.source=r.source; } renderSettings(); }
+}
+function cfgStatus(msg,ok){ const e=$('#settings-status'); if(e){ e.textContent=msg; e.style.color=ok?'var(--good)':'var(--bad)'; } }
+function toggleCfgPro(){ _cfgPro=!_cfgPro; const b=$('#cfg-pro-btn'); if(b) b.textContent=_cfgPro?'Curated':'Show all'; renderSettings(); }
 
 /* ============= LESSONS — self-improvement loop ============= */
 async function loadLessons(days){
