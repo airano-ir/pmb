@@ -140,6 +140,10 @@ def make_handler(engine):
                     days = int((qs.get("days") or ["90"])[0])
                     self._send_json(self._handle_activity(days))
                     return
+                if route == "/api/errors":
+                    hours = float((qs.get("hours") or ["168"])[0])
+                    self._send_json(self._handle_errors(hours))
+                    return
                 self.send_error(404)
             except Exception as e:
                 log.exception("GET %s failed", route)
@@ -272,6 +276,18 @@ def make_handler(engine):
                 "peak": max(per_day.values(), default=0),
                 "series": series,
                 "by_type": by_type,
+            }
+
+        def _handle_errors(self, hours: float) -> dict:
+            """Recent swallowed-error breadcrumbs (the error_log table) - the
+            same source `pmb doctor` reads. Surfaced read-only for triage."""
+            from pmb.core.errlog import error_counts, recent_errors
+            since = max(0.0, hours) * 3600.0
+            db = engine.workspace.db_path
+            return {
+                "hours": hours,
+                "counts": error_counts(db, since_s=since),
+                "errors": recent_errors(db, since_s=since, limit=200),
             }
 
         def _handle_lesson_stats(self, days: float) -> dict:

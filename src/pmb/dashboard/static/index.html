@@ -709,6 +709,7 @@
     <button class="tab" data-tab="dedup" role="tab">Duplicates</button>
     <button class="tab" data-tab="perf" role="tab">Performance</button>
     <button class="tab" data-tab="recall" role="tab">Recall</button>
+    <button class="tab" data-tab="errors" role="tab">Errors</button>
   </nav>
 </header>
 
@@ -816,6 +817,15 @@
   <div class="panel">
     <h2>Narrative arcs<span class="sub">storylines across events</span></h2>
     <div id="arcs-list"></div>
+  </div>
+</section>
+
+<!-- ERRORS — swallowed best-effort breadcrumbs (same source as `pmb doctor`) -->
+<section id="tab-errors" class="view scrollable hidden" role="tabpanel">
+  <div class="panel">
+    <h2>Errors<span class="sub" id="errors-meta">swallowed breadcrumbs · last 7d</span></h2>
+    <div id="errors-summary" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+    <div id="errors-list"></div>
   </div>
 </section>
 
@@ -982,8 +992,9 @@ const TAB_LOAD = {
   dedup: ()=>loadDedup(),
   perf: ()=>loadPerf(24),
   recall: ()=>{},
+  errors: ()=>loadErrors(),
 };
-const VALID_TABS = new Set(['map','timeline','overview','entities','arcs','lessons','adherence','dedup','perf','recall']);
+const VALID_TABS = new Set(['map','timeline','overview','entities','arcs','lessons','adherence','dedup','perf','recall','errors']);
 function showTab(name){
   if(!VALID_TABS.has(name)) name = 'map';
   activeTab = name;
@@ -2310,6 +2321,27 @@ async function loadArcs(){
       <div style="color:var(--faint);font-size:11px;margin:4px 0 6px">${a.n_events} events</div>
       <div style="color:var(--dim);font-size:12.5px;line-height:1.5">${esc(a.summary||'')}</div>
     </div>`).join('');
+}
+
+/* ============= ERRORS — swallowed breadcrumbs (same source as pmb doctor) ============= */
+async function loadErrors(){
+  const data = await api('/api/errors?hours=168').catch(_=>({errors:[],counts:{}}));
+  const errs = data.errors||[], counts = data.counts||{};
+  const total = errs.length;
+  const m = $('#errors-meta'); if(m) m.textContent = `last ${Math.round((data.hours||168)/24)}d · ${total} error${total===1?'':'s'}`;
+  const chips = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  $('#errors-summary').innerHTML = total
+    ? chips.map(([c,n])=>`<span class="tag" style="color:var(--bad);border-color:rgba(224,122,139,.45)">${esc(c)} · ${n}</span>`).join('')
+    : '<span style="color:var(--good)">No errors in the window ✓</span>';
+  $('#errors-list').innerHTML = total ? errs.map((e,i)=>`
+    <div style="padding:12px 14px;background:var(--bad-soft);border:1px solid rgba(224,122,139,.22);border-radius:var(--r);margin-bottom:8px;animation:fadeup .4s ${Math.min(i,12)*.03}s var(--ease) backwards">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <span class="tag" style="color:var(--bad);border-color:rgba(224,122,139,.5)">${esc(e.component||'?')}</span>
+        <span style="color:var(--faint);font-family:var(--mono);font-size:11px">${e.ts?fmtTime(e.ts):''}</span>
+      </div>
+      <div style="margin-top:6px;font-family:var(--mono);font-size:12px;color:var(--ink);word-break:break-word">${esc(e.message||'')}</div>
+      ${e.note?`<div style="color:var(--dim);font-size:11.5px;margin-top:3px">${esc(e.note)}</div>`:''}
+    </div>`).join('') : '<div class="empty">Nothing logged - these come from PMB best-effort paths (same source as <code>pmb doctor</code>).</div>';
 }
 
 /* ============= LESSONS — self-improvement loop ============= */
