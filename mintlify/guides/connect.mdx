@@ -1,0 +1,47 @@
+---
+title: "Connect your agent"
+description: "Wire PMB into Claude Code, Cursor, Codex and others - one command, then just talk to your agent."
+icon: "plug"
+---
+
+```bash
+pmb connect claude-code   # or cursor, codex, windsurf, gemini, vscode, zed, opencode, continue
+```
+
+`pmb connect` writes the agent's MCP config and appends the usage rules to
+`CLAUDE.md` / `AGENTS.md`. Restart the agent and memory is live.
+
+## Three tiers of integration
+
+<CardGroup cols={3}>
+  <Card title="Full hooks" icon="wand-magic-sparkles">
+    **Claude Code** - auto-recall before each message, ambient write, session
+    restore, follow-through. Memory works without calling a tool.
+  </Card>
+  <Card title="Ambient hooks" icon="feather">
+    **Codex** - MCP plus ambient write on turn-complete; no per-turn read hook.
+  </Card>
+  <Card title="MCP only" icon="plug">
+    **Cursor · Windsurf · Gemini · VS Code · Zed · OpenCode · Continue** - memory
+    via tools; ambient optional via `pmb ambient-watch`.
+  </Card>
+</CardGroup>
+
+## Useful flags
+
+```bash
+pmb connect cursor --workspace personal   # share one memory across agents
+pmb connect codex --active                # proactive logging (agent records its own work)
+pmb connect --list                        # every agent + where its config lives
+pmb connect claude-code --probe           # confirm pmb-mcp starts after wiring
+```
+
+<Tip>
+  Prefer the all-in-one path: `pmb setup` (or `pmb setup --all`) detects your
+  agents, picks the model, wires + warms + starts the shared daemon in one flow.
+</Tip>
+
+## Remove it anytime
+
+Delete the `pmb` entry from the agent's MCP config to disconnect - your stored
+memory stays on disk and is still readable via the CLI.

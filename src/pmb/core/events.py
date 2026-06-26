@@ -257,8 +257,8 @@ _DDL = [
     # Every time a lesson is surfaced to the agent (via recall, overview,
     # find_lessons, project_overview) we log one row. The agent can later
     # call mark_lesson_followed(surface_id, True/False) to confirm whether
-    # the lesson actually changed its behaviour. Powers the self-improvement
-    # loop ("of 12 lessons surfaced last week, 7 were followed").
+    # the lesson changed behaviour, or mark it not-applicable when irrelevant.
+    # Powers the self-improvement loop.
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS lesson_surfaces (

@@ -1,0 +1,68 @@
+---
+title: "How it works"
+description: "Hybrid recall, async writes, lifecycle hooks, and a storage model that's just files on your disk."
+icon: "gears"
+---
+
+## The shape of it
+
+Your agent calls PMB over MCP (local stdio). Reads go through a hybrid ranker;
+writes return in under a millisecond and embed in the background. Everything
+lands in one SQLite file, with vectors next to it.
+
+<Steps>
+  <Step title="Read - hybrid recall (~35ms warm)" icon="magnifying-glass">
+    BM25 (lexical) + dense vectors + an entity graph, fused with
+    Reciprocal-Rank-Fusion and an optional cross-encoder rerank. One call -
+    `prepare(message)` - returns project context, surfaced lessons, recent
+    activity and open goals in 4-16ms.
+  </Step>
+  <Step title="Write - async (sub-ms return)" icon="bolt">
+    The MCP tool returns immediately; the embed + vector insert happen on a
+    background thread. No LLM call on the read or write path, ever, by default.
+  </Step>
+  <Step title="Store - files on disk" icon="database">
+    Every event lives in SQLite; vectors live in LanceDB beside it. Both are
+    files - copy them anywhere with `cp`, commit them, put them on a USB stick.
+  </Step>
+</Steps>
+
+## Memory that doesn't wait to be asked
+
+The hard part of agent memory isn't storing - it's getting the agent to *use*
+what's stored. Soft instructions get skipped, so PMB wires hooks at the
+protocol level (on Claude Code):
+
+<CardGroup cols={2}>
+  <Card title="Auto-recall" icon="wand-magic-sparkles">
+    Every prompt is classified (sub-ms) and the matching memory is injected
+    **before** the model thinks. The agent never decides to call `recall`.
+  </Card>
+  <Card title="Ambient write" icon="feather">
+    If the agent forgets to record its work, PMB synthesizes one entry from the
+    observed actions - outcome-scored, tagged `source=autowrite`, reversible.
+  </Card>
+  <Card title="Session restore" icon="rotate">
+    After the context window compacts, PMB rebuilds “where you left off” so the
+    agent picks the thread back up instead of re-asking you.
+  </Card>
+  <Card title="Follow-through" icon="circle-check">
+    At turn end PMB checks which surfaced lessons actually showed up in the
+    work, and marks them followed - without the model self-reporting.
+  </Card>
+</CardGroup>
+
+## Dedup, four layers
+
+<Accordion title="Exact → semantic → borderline → manual">
+  Exact text match → cosine ≥ 0.92 auto-merge → cosine 0.80-0.92 borderline
+  (verified later) → manual review in the dashboard. Old values are archived,
+  never deleted; full history is queryable as-of any point in time.
+</Accordion>
+
+<Note>
+  Multilingual with no language packs: the default embedder covers 50+
+  languages, so a Russian query finds an English fact. The cold lexical path
+  self-compiles from your own traffic - a language you use gets faster over
+  time, zero config.
+</Note>

@@ -1,0 +1,57 @@
+---
+title: "Roadmap"
+description: "Honest and local-first. Every item keeps memory on your disk, offline by default, with no call-home."
+icon: "map"
+---
+
+<Note>
+  Dates are intentionally absent - this is a one-maintainer project. Order
+  signals priority, not a schedule.
+</Note>
+
+## Shipped - v0.9 "Anchor Engine"
+
+Language packs are no longer required. The RU/UK packs were **deleted**; many
+languages now ride one mechanism instead of a pack each:
+
+- **Semantic anchors** - English exemplars classify intents + keyed-fact
+  extraction; the multilingual embedder transfers them cross-lingually.
+- **ALD (anchor→lexicon distillation)** - the cold lexical path self-compiles
+  from your own traffic into `$PMB_HOME/lang/auto.yaml`.
+- **Measured** - RU/UK recall top-1 = 1.00; 101-query multilingual eval top-3 ≈
+  0.91; a blocking CI gate runs the eval with packs off so recall can't regress.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Validate ALD on real traffic" icon="chart-line">
+    Add a cold-path-coverage-over-time metric and report how fast it self-heals
+    a language in real use.
+  </Card>
+  <Card title="Latency on commodity hardware" icon="gauge-high">
+    Re-measure recall + anchor p95 on a normal machine and tighten the gate.
+  </Card>
+  <Card title="Default-on keyed extraction" icon="key">
+    Promote v0.9 keyed extraction to default only once field false-positive rate
+    is measured.
+  </Card>
+  <Card title="Stronger embedder path" icon="cube">
+    Make `bge-m3` a first-class documented upgrade for CJK / lower-resource
+    languages.
+  </Card>
+</CardGroup>
+
+## Ingest & storage
+
+- **Backup** via litestream (continuous SQLite replication to a bucket you own).
+- **Optional cloud-sync** - bring-your-own bucket, never a PMB-hosted service.
+- **tree-sitter** project indexing for Rust / TypeScript.
+- **Image OCR** so screenshots and scanned PDFs become searchable memory.
+
+## Non-goals
+
+<Warning>
+  No hosted PMB service, no telemetry, no call-home - there's nothing to add
+  later because there's no server. No silent network calls on the read/write
+  path; optional LLM passes stay explicit and opt-in.
+</Warning>

@@ -18,7 +18,6 @@ from itertools import count
 
 from pmb.hooks.session_restore import build_session_restore
 
-
 # --- session_brief --------------------------------------------------------
 
 def test_session_brief_lessons_include_ulid(tmp_pmb_home, tmp_workspace_dir):

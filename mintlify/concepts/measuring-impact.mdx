@@ -1,0 +1,70 @@
+---
+title: "Does PMB actually help?"
+description: "How PMB measures its own value - conservatively, on your data, and honest about when it can't be trusted."
+icon: "chart-line"
+---
+
+Most memory tools assert they improve your agent and back it with one
+flattering number. PMB takes the opposite stance: **measure it conservatively,
+on _your_ data, and say loudly when the signal isn't trustworthy yet.** A
+memory system you can't measure is one you can't trust.
+
+There are two different questions inside "does it help?", and they need two
+different methods.
+
+<CardGroup cols={2}>
+  <Card title="Retrieval quality" icon="magnifying-glass">
+    Does recall find the **right** memory? Measured with reproducible
+    benchmarks - LoCoMo recall@10 ≈ 94.5%, multilingual top-10 ≈ 99.2%.
+  </Card>
+  <Card title="Outcome impact" icon="scale-balanced">
+    Does **using** memory change outcomes? Measured by Earned Memory, joining
+    each surfaced lesson to the outcome of the turn it was active in.
+  </Card>
+</CardGroup>
+
+## Earned Memory - three honest layers
+
+PMB joins each surfaced lesson to the turn's outcome (tests pass/fail,
+red→green, build, deploy - no LLM) and reports effectiveness at three levels of
+rigor, refusing to overclaim at each one.
+
+<Steps>
+  <Step title="Associational lift (weakest)" icon="chart-simple">
+    `success_rate(lesson active)` minus `success_rate(no lesson)`. Useful first
+    look, but **confounded**: lessons surface on harder turns, so a helpful
+    lesson can show negative lift. A flag for review, never ground truth.
+  </Step>
+  <Step title="Statistical honesty" icon="wave-square">
+    Each lesson carries a **95% Wilson confidence interval** and a conservative
+    verdict - `useful`/`harmful` only when the CI clears the baseline **and**
+    n ≥ `min_n`; otherwise `unverified` or `insufficient`. An n=1 fluke can
+    never read as a real effect.
+  </Step>
+  <Step title="Within-lesson causal read (strongest)" icon="code-branch">
+    The cleanest control without randomization: compare the **same lesson** when
+    **followed** vs **ignored**. Both arms share the same trigger population, so
+    it holds the surfacing trigger fixed.
+  </Step>
+</Steps>
+
+## What PMB will not do
+
+<Warning>
+  An untrustworthy metric never drives behaviour. Earned Memory is
+  measurement-only: it does not feed ranking or decay until the outcome signal
+  is dense enough to trust. PMB would rather show you `insufficient` than let a
+  flattering-but-wrong number quietly re-weight your memory.
+</Warning>
+
+## Run it on your own data
+
+```bash
+pmb health lessons-impact -w 90
+```
+
+<Note>
+  Seeing `signal: insufficient` early is the honest answer, **not a bug** -
+  outcome turns are rare, so a young workspace simply hasn't earned a verdict
+  yet. A lesson only earns "useful"/"helps" once the statistics back it.
+</Note>

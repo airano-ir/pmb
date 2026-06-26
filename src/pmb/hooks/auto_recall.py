@@ -761,9 +761,22 @@ def run_auto_context(
     # explicit intent we pull a bigger window; otherwise just 3.
     try:
         limit = lessons_limit if Intent.LESSONS_QUERY in intents else 3
-        lessons = engine.find_lessons(query=msg, limit=limit)
+        project_scope = None
+        if res.project:
+            project_scope = (res.project.get("entity") or {}).get("name")
+        try:
+            lessons = engine.find_lessons(
+                query=msg, limit=limit, project=project_scope,
+            )
+        except TypeError:
+            # Compatibility with light test doubles / older engines.
+            lessons = engine.find_lessons(query=msg, limit=limit)
         if lessons:
             res.lessons = lessons
+            if res.project is not None:
+                # project_overview() is exhaustive when called directly;
+                # automatic injection is intentionally message-specific.
+                res.project["lessons"] = lessons
             if log_surfaces:
                 try:
                     engine._log_lesson_surfaces(
@@ -771,8 +784,11 @@ def run_auto_context(
                     )
                 except Exception:
                     pass
+        elif res.project is not None:
+            res.project["lessons"] = []
     except Exception:
-        pass
+        if res.project is not None:
+            res.project["lessons"] = []
 
     # Decisions (the "why we did X" rationale): always run when enabled.
     # Surfacing past decisions next to lessons means "before you do this,

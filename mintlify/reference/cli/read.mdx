@@ -1,0 +1,99 @@
+---
+title: "Recall & explore"
+description: "Search memory, explain the ranking, and browse what PMB knows - all offline."
+icon: "magnifying-glass"
+---
+
+Most reading is automatic (hooks call `prepare`/`recall` for you). These are for
+inspection and one-off lookups from the terminal.
+
+## Search
+
+### `pmb recall`
+Search memory. Each hit shows source, confidence, freshness, and markers for lessons and failures.
+
+```bash
+pmb recall "where do I live now" -k 5
+```
+
+### `pmb why`
+Explain the ranking - which PAMVR rules fired and each multiplier.
+
+```bash
+pmb why "what port did we choose"
+```
+
+### `pmb overview`
+Structured "what do I know about X?" - facts, decisions, lessons, goals, timeline. Also an MCP tool.
+
+```bash
+pmb overview "authentication"
+```
+
+## Browse
+
+### `pmb timeline`
+Chronological, day-grouped view. Flags: `--days`, `--type`, `--newest-first`.
+
+```bash
+pmb timeline --days 7
+```
+
+### `pmb insights`
+Analytics: totals, type breakdown, weekly growth, top topics, lessons/goals.
+
+```bash
+pmb insights
+```
+
+### `pmb digest`
+Recap of recent memories: `today` / `week` / `month` (or `--days N`).
+
+```bash
+pmb digest week
+```
+
+### `pmb audit`
+"What does PMB know about me?" - grouped, read-only view plus memory-health signals.
+
+```bash
+pmb audit
+```
+
+### `pmb lessons`
+List the durable lessons & failures (procedural memory).
+
+```bash
+pmb lessons
+```
+
+### `pmb reminders`
+Goals that are overdue or due soon. Flags: `--within N`, `--all`.
+
+```bash
+pmb reminders --within 7
+```
+
+### `pmb list`
+Recent events. Flags: `-n 20`, `--type T`.
+
+```bash
+pmb list -n 20 --type decision
+```
+
+### `pmb stats`
+Workspace stats.
+
+```bash
+pmb stats
+```
+
+## Graph
+
+### `pmb graph`
+Inspect the entity/association graph: `stats` / `top` / `neighbors` / `rebuild`.
+
+```bash
+pmb graph top
+pmb graph neighbors "auth"
+```

@@ -58,13 +58,24 @@ def register_all(mcp, engine):
         """
         pack = engine.recall_scoped(query=query, top_k=top_k, project=project or None)
         out = pack.to_dict()
+        project_name = project or None
+        det = None
+        if project_name is None:
+            try:
+                det = engine.detect_project_in_text(query)
+                if det:
+                    project_name = det["name"]
+            except Exception:
+                pass
         # Auto-surface relevant lessons. The agent often ignores lessons
         # even though they're the most actionable memory. By piggy-backing
         # on every recall(), lessons become impossible to miss. Each
         # surfaced lesson gets a `surface_id` - agent can later call
         # mark_lesson_followed(surface_id) to confirm follow-through.
         try:
-            lessons = engine.find_lessons(query=query, limit=3)
+            lessons = engine.find_lessons(
+                query=query, limit=3, project=project_name,
+            )
             if lessons:
                 engine._log_lesson_surfaces(lessons, query=query, source="recall")
                 out["lessons"] = lessons
@@ -74,16 +85,12 @@ def register_all(mcp, engine):
         # project. ONE call gives the agent the full project context
         # without it having to think "should I call project_overview".
         try:
-            det = engine.detect_project_in_text(query)
+            det = det or engine.detect_project_in_text(query)
             if det:
                 ov = engine.project_overview(det["name"])
-                # Also surface-log any lessons inside the overview so
-                # follow-tracking works for them too.
-                ov_lessons = ov.get("lessons") or []
-                if ov_lessons:
-                    engine._log_lesson_surfaces(
-                        ov_lessons, query=query, source="recall.project_context",
-                    )
+                # Direct project_overview() stays exhaustive. Automatically
+                # attached context should contain only query-matched lessons.
+                ov["lessons"] = lessons if project_name else []
                 out["project_context"] = ov
         except Exception:
             pass
@@ -174,19 +181,17 @@ def register_all(mcp, engine):
         Fast path: ~10-20ms total (SQL only, no LLM, no embedding).
         """
         out: dict = {"message_excerpt": (message or "")[:120]}
+        project_name: str | None = None
+        project_context: dict | None = None
         # 1. Project detection - gives the full project_overview + active
         #    narrative arcs (the "bigger story" the project is currently
         #    living in).
         try:
             det = engine.detect_project_in_text(message)
             if det:
+                project_name = det["name"]
                 ov = engine.project_overview(det["name"])
-                lessons_in_ov = ov.get("lessons") or []
-                if lessons_in_ov:
-                    engine._log_lesson_surfaces(
-                        lessons_in_ov, query=message,
-                        source="prepare.project_context",
-                    )
+                project_context = ov
                 out["project_context"] = ov
                 # Active narrative arcs that include events from this project.
                 try:
@@ -199,28 +204,43 @@ def register_all(mcp, engine):
             pass
         # 2. Lessons matching the message - even without a clear project.
         try:
-            ls = engine.find_lessons(query=message, limit=5)
+            ls = engine.find_lessons(
+                query=message,
+                limit=3 if project_name else 5,
+                project=project_name,
+            )
             if ls:
-                engine._log_lesson_surfaces(
-                    ls, query=message, source="prepare.lessons",
+                source = (
+                    "prepare.project_context" if project_name
+                    else "prepare.lessons"
                 )
-                out["lessons"] = ls
+                engine._log_lesson_surfaces(
+                    ls, query=message, source=source,
+                )
+                if project_context is not None:
+                    project_context["lessons"] = ls
+                else:
+                    out["lessons"] = ls
+            elif project_context is not None:
+                project_context["lessons"] = []
         except Exception:
             pass
         # 3. Recent activity for session continuity.
-        try:
-            act = engine.recent_activity(minutes=1440.0, limit=8)
-            if act:
-                out["recent_activity"] = act
-        except Exception:
-            pass
+        if project_name is None:
+            try:
+                act = engine.recent_activity(minutes=1440.0, limit=8)
+                if act:
+                    out["recent_activity"] = act
+            except Exception:
+                pass
         # 4. Open goals.
-        try:
-            goals = engine.list_goals(status="in_progress", limit=5)
-            if goals:
-                out["open_goals"] = goals
-        except Exception:
-            pass
+        if project_name is None:
+            try:
+                goals = engine.list_goals(status="in_progress", limit=5)
+                if goals:
+                    out["open_goals"] = goals
+            except Exception:
+                pass
         # If literally nothing matched, signal it explicitly so the agent
         # doesn't sit there waiting for hidden context.
         if len(out) == 1:
@@ -419,7 +439,11 @@ def register_all(mcp, engine):
         return _li(engine, window_days=window_days)
 
     @mcp.tool()
-    def find_lessons(query: str = "", limit: int = 5) -> list[dict]:
+    def find_lessons(
+        query: str = "",
+        limit: int = 5,
+        project: str = "",
+    ) -> list[dict]:
         """Pull procedural lessons (project rules / gotchas) relevant to a
         topic. Use this BEFORE making a project-shaping choice - picking a
         library, setting up tooling, choosing an approach - to see what
@@ -436,8 +460,12 @@ def register_all(mcp, engine):
         Args:
             query: topic to filter by (empty = recent lessons across all projects)
             limit: max lessons to return (default 5)
+            project: optional project name; explicit lessons from other projects
+                     are excluded while generic cross-project rules remain
         """
-        lessons = engine.find_lessons(query=query, limit=limit)
+        lessons = engine.find_lessons(
+            query=query, limit=limit, project=project or None,
+        )
         if lessons:
             engine._log_lesson_surfaces(
                 lessons, query=query, source="find_lessons",
@@ -449,6 +477,7 @@ def register_all(mcp, engine):
         surface_id: int,
         followed: bool = True,
         note: str | None = None,
+        applicable: bool = True,
     ) -> dict:
         """Confirm whether a previously surfaced lesson actually changed
         your behaviour on the current task. Call this AFTER acting on a
@@ -459,7 +488,12 @@ def register_all(mcp, engine):
             surface_id: the `surface_id` field returned with the lesson
             followed: True if you followed the lesson, False if ignored
             note: optional one-line explanation (esp. useful for ignored)
+            applicable: False if the lesson was unrelated to this task
         """
+        if not applicable:
+            return engine.mark_lesson_not_applicable(
+                surface_id=surface_id, note=note,
+            )
         return engine.mark_lesson_followed(
             surface_id=surface_id, followed=followed, note=note,
         )
@@ -541,6 +575,8 @@ def register_all(mcp, engine):
         Schema for `items` - list of operation dicts, each with a `type`:
 
           {"type": "fact",      "content": "...", "importance": 0.7}
+          {"type": "lesson",    "content": "...", "project": "PMB"}
+                                 # project is optional; omit for global rules
           {"type": "fact_tree", "main": "...", "subfacts": ["...", "..."],
                                  "importance": 0.9}
           {"type": "goal",      "title": "...", "status": "in_progress",
@@ -1193,4 +1229,3 @@ def register_all(mcp, engine):
             "source": engine.workspace.source,
             "db_path": str(engine.workspace.db_path),
         }
-

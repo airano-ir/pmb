@@ -13,10 +13,11 @@
   --pmb-muted: #5b6776;
   --pmb-line: #e3e8ef;
   --pmb-line-soft: #eef1f6;
-  --pmb-accent: #4f46e5;
-  --pmb-accent-strong: #4338ca;
+  --pmb-accent: #6F62D9;
+  --pmb-accent-strong: #574BB0;
   --pmb-accent-contrast: #ffffff;
-  --pmb-accent-soft: #eef2ff;
+  --pmb-accent-soft: rgba(139, 127, 240, 0.10);
+  --pmb-accent-line: rgba(111, 98, 217, 0.35);
   --pmb-cyan: #0e9bbd;
   --pmb-green: #0f9d76;
   --pmb-amber: #c2770b;
@@ -42,39 +43,40 @@
   --md-footer-fg-color--lighter: #93a0b1;
 }
 
-/* ---- Dark (slate) ------------------------------------------------------- */
+/* ---- Dark (slate) — PMB design system ----------------------------------- */
 [data-md-color-scheme="slate"] {
-  --pmb-bg: #0b0e16;
-  --pmb-panel: #141a27;
-  --pmb-panel-soft: #10151f;
-  --pmb-ink: #e7edf6;
-  --pmb-muted: #9aa6b8;
-  --pmb-line: #232c3d;
-  --pmb-line-soft: #1b2231;
-  --pmb-accent: #8b8cf7;
-  --pmb-accent-strong: #a5b4fc;
-  --pmb-accent-contrast: #0b0e16;
-  --pmb-accent-soft: rgba(129, 140, 248, 0.14);
-  --pmb-cyan: #34d3ee;
-  --pmb-green: #34d399;
-  --pmb-amber: #fbbf24;
-  --pmb-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 14px 34px rgba(0, 0, 0, 0.45);
-  --pmb-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 24px rgba(0, 0, 0, 0.35);
-  --pmb-hero-grad: linear-gradient(180deg, #111726 0%, #0b0e16 100%);
+  --pmb-bg: #0B0D13;
+  --pmb-panel: #15171F;
+  --pmb-panel-soft: #11131A;
+  --pmb-ink: #EBEEF5;
+  --pmb-muted: #9DA1AD;
+  --pmb-line: rgba(255, 255, 255, 0.10);
+  --pmb-line-soft: rgba(255, 255, 255, 0.06);
+  --pmb-accent: #8B7FF0;
+  --pmb-accent-strong: #B4ABF6;
+  --pmb-accent-contrast: #0B0D13;
+  --pmb-accent-soft: rgba(139, 127, 240, 0.16);
+  --pmb-accent-line: rgba(139, 127, 240, 0.40);
+  --pmb-cyan: #7EB9C4;
+  --pmb-green: #5DCAA5;
+  --pmb-amber: #E1B340;
+  --pmb-shadow: 0 16px 40px rgba(0, 0, 0, 0.50);
+  --pmb-shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.35);
+  --pmb-hero-grad: linear-gradient(180deg, #15171F 0%, #0B0D13 100%);
 
   --md-default-bg-color: var(--pmb-bg);
   --md-default-fg-color: var(--pmb-ink);
   --md-default-fg-color--light: var(--pmb-muted);
-  --md-default-fg-color--lighter: #6b7789;
+  --md-default-fg-color--lighter: #6b7280;
   --md-typeset-color: var(--pmb-ink);
   --md-typeset-a-color: var(--pmb-accent);
   --md-accent-fg-color: var(--pmb-accent-strong);
-  --md-code-bg-color: #0f1521;
-  --md-code-fg-color: #d7e0ec;
-  --md-primary-fg-color: #0c111b;
+  --md-code-bg-color: #0F1117;
+  --md-code-fg-color: #D7E0EC;
+  --md-primary-fg-color: #0B0D13;
   --md-primary-bg-color: var(--pmb-ink);
-  --md-footer-bg-color: #0c111b;
-  --md-footer-bg-color--dark: #090d14;
+  --md-footer-bg-color: #0B0D13;
+  --md-footer-bg-color--dark: #07080C;
 }
 
 /* ---- Document ----------------------------------------------------------- */
@@ -269,6 +271,7 @@ html {
 .md-typeset .hero {
   display: grid;
   gap: 1rem;
+  min-width: 0;
   margin: 0 0 1.6rem;
   padding: clamp(1.2rem, 3vw, 2.2rem) clamp(1.2rem, 3vw, 2.2rem) 1.9rem;
   border: 1px solid var(--pmb-line);
@@ -296,7 +299,9 @@ html {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  width: max-content;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0.28rem 0.7rem;
   border: 1px solid var(--pmb-line);
   border-radius: 999px;
@@ -352,6 +357,25 @@ html {
   color: var(--pmb-muted);
   font-size: 0.76rem;
   line-height: 1.45;
+}
+
+/* ---- Product demo (home) ------------------------------------------------ */
+.md-typeset .pmb-demo {
+  overflow: hidden;
+  margin: 1.15rem 0 1.4rem;
+  padding: 0.6rem;
+  border: 1px solid var(--pmb-line);
+  border-radius: 14px;
+  background: var(--pmb-panel-soft);
+  box-shadow: var(--pmb-shadow);
+}
+
+.md-typeset .pmb-demo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  border-radius: 9px;
 }
 
 /* ---- Buttons ------------------------------------------------------------ */
@@ -703,6 +727,11 @@ html {
     font-size: 0.95rem;
   }
 
+  .md-typeset .hero__eyebrow {
+    line-height: 1.25;
+    white-space: normal;
+  }
+
   .md-typeset .hero__actions .md-button {
     width: 100%;
     text-align: center;
@@ -714,5 +743,93 @@ html {
   .md-typeset .pmb-cards,
   .md-typeset .grid.cards > ul {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Header logo --------------------------------------------------------- */
+/* Ship the black mark (visible on the white light-mode header); invert it to
+   white on the dark (slate) header so it stays legible in both themes. */
+[data-md-color-scheme="slate"] .md-header .md-logo img,
+[data-md-color-scheme="slate"] .md-nav__button.md-logo img {
+  filter: invert(1);
+}
+
+/* ==========================================================================
+   PMB design system — motion + liquid glass
+   transform/opacity only, 160-360ms, one shared ease. Reduced-motion safe.
+   Scroll-reveal classes are driven by javascripts/pmb-anim.js.
+   ========================================================================== */
+
+html { scroll-behavior: smooth; }
+
+/* Liquid-glass header on the dark theme (translucent + blur). */
+[data-md-color-scheme="slate"] .md-header {
+  background: rgba(11, 13, 19, 0.72);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  border-bottom: 1px solid var(--pmb-line);
+}
+
+/* Soft violet ring on card hover (adds to the existing lift). */
+[data-md-color-scheme="slate"] .md-typeset .grid.cards > ul > li:hover,
+[data-md-color-scheme="slate"] .md-typeset .pmb-cards > .pmb-card:hover {
+  box-shadow: var(--pmb-shadow), 0 0 0 1px var(--pmb-accent-line);
+}
+
+/* Animated underline on body links. */
+.md-typeset a:not(.md-button):not(.pmb-card):not(.headerlink) {
+  background-image: linear-gradient(var(--pmb-accent), var(--pmb-accent));
+  background-size: 0% 1px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size 220ms cubic-bezier(.2, .7, .2, 1);
+}
+.md-typeset a:not(.md-button):not(.pmb-card):not(.headerlink):hover {
+  background-size: 100% 1px;
+}
+
+/* Scroll-reveal: blocks rise + fade in as they enter the viewport. */
+.pmb-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity .6s cubic-bezier(.2, .7, .2, 1),
+              transform .6s cubic-bezier(.2, .7, .2, 1);
+  will-change: opacity, transform;
+}
+.pmb-reveal.pmb-in { opacity: 1; transform: none; }
+
+/* Gentle page-enter fade on navigation. */
+.md-content { animation: pmbContentIn .5s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes pmbContentIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Hero: a slow violet glow behind the headline (dark theme). */
+[data-md-color-scheme="slate"] .md-typeset .hero {
+  position: relative;
+  overflow: hidden;
+}
+[data-md-color-scheme="slate"] .md-typeset .hero::after {
+  content: "";
+  position: absolute;
+  top: -45%; right: -12%;
+  width: 62%; height: 130%;
+  background: radial-gradient(closest-side, rgba(139, 127, 240, .22), transparent 70%);
+  animation: pmbGlow 6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes pmbGlow { 0%, 100% { opacity: .45; } 50% { opacity: .9; } }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .pmb-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .md-content,
+  [data-md-color-scheme="slate"] .md-typeset .hero::after {
+    animation: none !important;
   }
 }

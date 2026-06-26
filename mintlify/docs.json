@@ -1,0 +1,100 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "PMB",
+  "description": "Local-first memory for your AI coding agent.",
+  "colors": {
+    "primary": "#8B7FF0",
+    "light": "#B4ABF6",
+    "dark": "#8B7FF0"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/black.svg",
+    "dark": "/logo/white.svg",
+    "href": "https://github.com/oleksiijko/pmb"
+  },
+  "appearance": {
+    "default": "dark"
+  },
+  "fonts": {
+    "heading": { "family": "Inter" },
+    "body": { "family": "Inter" }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get started",
+        "icon": "rocket",
+        "pages": ["introduction", "quickstart"]
+      },
+      {
+        "group": "Guides",
+        "icon": "book-open",
+        "pages": [
+          "guides/connect",
+          "guides/ingest",
+          "guides/dashboard",
+          "guides/deleting-memories",
+          "guides/team",
+          "guides/ollama",
+          "guides/troubleshooting"
+        ]
+      },
+      {
+        "group": "Concepts",
+        "icon": "brain",
+        "pages": [
+          "concepts/how-it-works",
+          "concepts/memory-model",
+          "concepts/core-engine",
+          "concepts/architecture",
+          "concepts/measuring-impact",
+          "concepts/privacy-and-security"
+        ]
+      },
+      {
+        "group": "CLI reference",
+        "icon": "terminal",
+        "pages": [
+          "reference/cli/setup-connect",
+          "reference/cli/write",
+          "reference/cli/read",
+          "reference/cli/manage",
+          "reference/cli/hooks",
+          "reference/cli/config"
+        ]
+      },
+      {
+        "group": "MCP & agents",
+        "icon": "plug",
+        "pages": ["reference/mcp-tools", "reference/configuration"]
+      },
+      {
+        "group": "Contributing",
+        "icon": "code-pull-request",
+        "pages": [
+          "contributing/contributing",
+          "contributing/adding-a-language",
+          "contributing/roadmap"
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      { "label": "GitHub", "href": "https://github.com/oleksiijko/pmb" }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get started",
+      "href": "/quickstart"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/oleksiijko/pmb",
+      "linkedin": "https://www.linkedin.com/in/oleksiijko/"
+    }
+  }
+}

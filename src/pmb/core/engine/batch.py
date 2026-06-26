@@ -483,6 +483,10 @@ class BatchMixin:
                         meta = dict(item.get("metadata") or {})
                         meta.setdefault("source", "lesson")
                         meta["kind"] = t
+                        project = str(item.get("project") or "").strip()
+                        if project:
+                            meta.setdefault("project", project)
+                            meta.setdefault("project_name", project)
                         ulid = self.record_fact(
                             content_in,
                             importance=float(item.get("importance", 0.85)),
@@ -739,4 +743,3 @@ class BatchMixin:
         # to record_event → _index_event_in_graph below, so lookups hit.
         for text, ext in zip(cleaned_texts, results):
             self._extract_cache[text] = ext
-

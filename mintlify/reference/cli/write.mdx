@@ -1,0 +1,100 @@
+---
+title: "Capture & track"
+description: "Write memory from the terminal, import existing history, and layer a semantic 'why' over your code."
+icon: "pen"
+---
+
+## Capture memory
+
+### `pmb note`
+Jot a memory from the terminal. `--pin` keeps it forever; `--ttl 30d` auto-expires it.
+
+```bash
+pmb note "decided to use Postgres for JSONB" --pin
+```
+
+### `pmb learn`
+Record a durable lesson. `--failed` records a failure to avoid repeating.
+
+```bash
+pmb learn "always run make fmt before committing"
+```
+
+### `pmb fact`
+Record a standalone fact. `--ttl 30d` optional.
+
+```bash
+pmb fact "the staging DB is read-only"
+```
+
+### `pmb remember`
+Store a question / answer pair.
+
+```bash
+pmb remember "deploy command" "make deploy ENV=prod"
+```
+
+### `pmb import`
+Import existing history and rebuild the graph after. Sources: `chatgpt`, `claude`, `mem0`, `markdown` (Obsidian vault).
+
+```bash
+pmb import chatgpt ~/Downloads/conversations.json
+```
+
+### `pmb watch`
+Auto-capture new paragraphs from a notes file or folder. `--once` for cron.
+
+```bash
+pmb watch ~/notes/daily.md
+```
+
+## Project tracking
+
+A semantic layer over `pmb index project`: the structural index says which symbols
+exist, this says **why** a file exists and **why** it changed. Local, idempotent.
+
+### `pmb track changes`
+Summarise the intent of new git commits and link it to the files touched. Idempotent via a per-repo cursor. Flags: `--since`, `--max-commits`, `--backend`.
+
+```bash
+pmb track changes
+```
+
+### `pmb track modules`
+A one-line "what this file does" per indexed file. Run `pmb index project` first. Flags: `--limit`, `--force`.
+
+```bash
+pmb index project . && pmb track modules
+```
+
+### `pmb track install`
+Install a git post-commit hook so `track changes` runs automatically (background, non-blocking, never clobbers an existing hook).
+
+```bash
+pmb track install
+```
+
+## Resume note
+
+A committable markdown snapshot of "where we are now", sourced from PMB's typed memory.
+
+### `pmb resume save`
+Write the resume note now. `--path .pmb/resume.md` to choose the location.
+
+```bash
+pmb resume save
+```
+
+### `pmb resume show`
+Print the current resume note.
+
+```bash
+pmb resume show
+```
+
+### `pmb resume install`
+Enable auto-refresh at every turn end (Stop hook). Hand-edited additions below the `PMB-RESUME-MARKER` line are preserved across regenerations.
+
+```bash
+pmb resume install
+```

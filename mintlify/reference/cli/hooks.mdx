@@ -1,0 +1,73 @@
+---
+title: "Hooks & ambient memory"
+description: "Force-feed memory at the protocol level - so it works without the model remembering to call anything."
+icon: "wand-magic-sparkles"
+---
+
+Hooks make memory work without the model remembering to act.
+`pmb hooks install claude-code` wires all four lifecycle hooks; Codex and
+MCP-only hosts get the equivalent via their own mechanisms.
+
+## Install & inspect
+
+### `pmb hooks install <agent>`
+Wire the lifecycle hooks. Claude Code: UserPromptSubmit + PostToolUse +
+SessionStart + Stop. Codex: a `notify` → `pmb codex-notify`.
+
+### `pmb hooks list`
+Show which hooks are installed.
+
+### `pmb hooks capabilities`
+What ambient mechanism each agent supports: `hooks` (Claude Code) / `rollout`
+(Codex) / `mcp-only` (git observer).
+
+### `pmb hooks uninstall <agent>`
+Remove the hooks.
+
+## Preview what hooks do
+
+### `pmb auto-context "..."`
+Preview the per-turn memory a UserPromptSubmit hook would inject.
+
+### `pmb session-restore [-m MIN]`
+Preview the "where you left off" digest a SessionStart hook injects after a
+compaction.
+
+### `pmb lesson-followcheck --dry-run`
+Preview deterministic follow-through scoring for surfaced lessons.
+
+```bash
+pmb auto-context "fix the pricing bug"
+pmb session-restore -m 180
+```
+
+## Ambient auto-write
+
+Ambient write fills the gap when the agent forgets to record its work. It's
+**on by default**, never duplicates the agent's own `record_*` calls, and only
+journals a turn that clears an outcome bar (tests passed, a failure fixed, a
+deploy ran).
+
+### `pmb autowrite [--dry-run]`
+Ambient auto-write for the current turn. <Tooltip tip="LLM only if autowrite.synthesizer is an LLM backend; the default template needs no model">LLM optional</Tooltip>
+
+### `pmb ambient-watch <dir>`
+Ambient auto-write for MCP-only hosts (Cursor/Zed/VS Code): poll git, auto-write
+once the project goes idle.
+
+### `pmb forget-auto [--minutes N]`
+Archive memory the ambient layer wrote itself (`source=autowrite`). Reversible.
+
+<Note>
+  `pmb track-action` and `pmb codex-notify` are hook-invoked (you don't run them
+  by hand) - the PostToolUse journal and the Codex turn-complete bridge.
+</Note>
+
+## Repeat-prevention
+
+When a message reads as pushback (profanity, ALL-CAPS, a repeat-word plus a
+negated action), PMB records a **draft lesson on the first complaint** so the
+rule exists when it's needed - not after the seventh time. If a later message or
+tool call strongly overlaps a known rule or past failure, the guard surfaces it
+loudly, even inside an autonomous tool loop. Tune via `auto_recall.*` and
+`hooks.pretool_guard`.

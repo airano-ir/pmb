@@ -1,0 +1,47 @@
+---
+title: "Team & sync"
+description: "Share one memory across machines or a team - git-synced workspaces, or an optional HTTP MCP server."
+icon: "users"
+---
+
+## Sync a workspace over git
+
+The simplest cross-device / backup path - your memory is just files, so git
+moves them:
+
+```bash
+pmb workspace init --remote git@github.com:me/pmb-memory.git
+pmb workspace push      # back up / share
+pmb workspace pull      # on another machine
+pmb workspace status
+```
+
+For a public remote, encrypt into one portable bundle:
+
+```bash
+pip install 'pmb-ai[crypto]'
+pmb workspace export memory.pmb        # scrypt + AES/HMAC
+pmb workspace import memory.pmb team   # decrypt into a local workspace
+```
+
+## Shared HTTP server (team mode)
+
+Expose one warm server to remote agents:
+
+```bash
+pmb mcp serve --transport streamable-http --host 0.0.0.0 --bearer-token <secret>
+```
+
+<Warning>
+  Team mode is the **only** mode that should listen beyond localhost. The bearer
+  token is the boundary - set `PMB_MCP_BEARER_TOKEN` and put the server behind a
+  private network (Tailscale) or an SSH tunnel.
+</Warning>
+
+## Point several agents at one memory
+
+```bash
+pmb connect claude-code --workspace personal
+pmb connect cursor      --workspace personal
+# both read/write the same workspace; SQLite WAL handles concurrent writes
+```

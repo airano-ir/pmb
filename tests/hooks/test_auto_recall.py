@@ -260,8 +260,10 @@ class FakeEngine:
         self.calls.append(f"list_goals({status!r})")
         return self.goals_result
 
-    def find_lessons(self, query="", limit=5):
-        self.calls.append(f"find_lessons({query[:30]!r}, limit={limit})")
+    def find_lessons(self, query="", limit=5, project=None):
+        self.calls.append(
+            f"find_lessons({query[:30]!r}, limit={limit}, project={project!r})"
+        )
         return self.lessons_result
 
     def find_decisions(self, query="", limit=3):
@@ -355,10 +357,13 @@ def test_dispatch_project_prep_full_pipeline():
         project_overview_result={
             "entity": {"name": "PMB", "n_mentions": 42},
             "key_facts": [{"content": "uses paraphrase-multilingual-MiniLM-L12-v2"}],
-            "lessons": [{"content": "use pnpm, never npm", "surface_id": 1}],
+            "lessons": [{"content": "unrelated broad project lesson", "surface_id": 9}],
             "decisions": [{"content": "dropped LanceDB"}],
             "open_goals": [{"title": "ship v1"}],
         },
+        lessons_result=[
+            {"content": "run the recall regression tests", "surface_id": 1},
+        ],
         arcs_result=[{"title": "auth refactor", "n_events": 5}],
     )
     res = run_auto_context(eng, "fix recall bug in PMB")
@@ -368,7 +373,8 @@ def test_dispatch_project_prep_full_pipeline():
     # Format check.
     text = format_context(res)
     assert "PMB" in text
-    assert "use pnpm" in text
+    assert "run the recall regression tests" in text
+    assert "unrelated broad project lesson" not in text
     assert "surface_id=1" in text
 
 

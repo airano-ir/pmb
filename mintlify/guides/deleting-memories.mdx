@@ -1,0 +1,43 @@
+---
+title: "Deleting memories"
+description: "Archive, restore, or permanently purge - soft delete by default, hard delete when you mean it."
+icon: "trash"
+---
+
+## Soft delete vs hard delete
+
+<CardGroup cols={2}>
+  <Card title="Archive (soft)" icon="box-archive">
+    Hides a memory from recall but keeps the row - fully **reversible**. The
+    default for `forget` / `delete`.
+  </Card>
+  <Card title="Purge (hard)" icon="trash">
+    Removes the row, its search vector, and graph links - **not** reversible.
+    `delete --hard` only.
+  </Card>
+</CardGroup>
+
+## Commands
+
+```bash
+pmb forget <ulid>            # archive one memory (reversible)
+pmb delete <ulid...>         # archive after preview + confirmation
+pmb delete <ulid...> --hard  # permanently purge after confirmation
+pmb restore <ulid>           # bring back a soft-deleted / archived memory
+pmb forget-topic project-x --dry-run   # archive everything about a topic
+```
+
+## Clean up automatic writes
+
+If an untrusted session or a noisy agent run may have polluted memory, archive
+what the ambient layer wrote itself:
+
+```bash
+pmb forget-auto --minutes 120   # archive source=autowrite from the last 2h
+```
+
+<Note>
+  Set an expiry instead of deleting: `pmb ttl <ulid> 30d`, then
+  `pmb prune-expired` (from cron) archives anything past its TTL. Pinned
+  memories (`pmb pin <ulid>`) are never auto-archived.
+</Note>

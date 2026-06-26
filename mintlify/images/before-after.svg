@@ -1,0 +1,45 @@
+<svg viewBox="0 0 1040 480" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, -apple-system, sans-serif" role="img" aria-label="Before and after: the same prompt to an AI coding agent, without memory it asks clarifying questions, with PMB it recalls the answer in 6ms.">
+  <rect width="1040" height="480" rx="18" fill="#0B0D13"/>
+
+  <text x="520" y="50" text-anchor="middle" fill="#E9EAEF" font-size="27" font-weight="600">Same prompt. The difference is memory.</text>
+  <text x="520" y="78" text-anchor="middle" fill="#9A9CA6" font-size="14">PMB · local-first memory for your AI coding agent</text>
+
+  <g transform="translate(40,104)">
+    <rect width="460" height="348" rx="14" fill="#15171F" stroke="#262932" stroke-width="1"/>
+    <circle cx="24" cy="26" r="5" fill="#3A3D47"/>
+    <circle cx="42" cy="26" r="5" fill="#3A3D47"/>
+    <circle cx="60" cy="26" r="5" fill="#3A3D47"/>
+    <text x="436" y="31" text-anchor="end" fill="#E2737B" font-size="12" font-weight="500" letter-spacing="0.8">WITHOUT MEMORY</text>
+    <line x1="0" y1="52" x2="460" y2="52" stroke="#262932" stroke-width="1"/>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14.5">
+      <text x="26" y="92" fill="#5DCAA5">you ▸ <tspan fill="#E9EAEF">fix the LoadGuard pricing bug</tspan></text>
+      <text x="26" y="114" fill="#E9EAEF">      from last Tuesday</text>
+      <text x="26" y="158" fill="#8B7FF0">ai  ▸ <tspan fill="#C2C4CC">which file is that in?</tspan></text>
+      <text x="26" y="186" fill="#8B7FF0">ai  ▸ <tspan fill="#C2C4CC">what was the bug exactly?</tspan></text>
+      <text x="26" y="214" fill="#8B7FF0">ai  ▸ <tspan fill="#C2C4CC">can you paste the code?</tspan></text>
+    </g>
+    <text x="26" y="300" fill="#6E707A" font-size="13.5" font-family="ui-monospace, Menlo, monospace">↳ you re-explain. again.</text>
+  </g>
+
+  <g transform="translate(540,104)">
+    <rect width="460" height="348" rx="14" fill="#15171F" stroke="#8B7FF0" stroke-width="1.5" stroke-opacity="0.55"/>
+    <circle cx="24" cy="26" r="5" fill="#3A3D47"/>
+    <circle cx="42" cy="26" r="5" fill="#3A3D47"/>
+    <circle cx="60" cy="26" r="5" fill="#3A3D47"/>
+    <text x="436" y="31" text-anchor="end" fill="#8B7FF0" font-size="12" font-weight="500" letter-spacing="0.8">WITH PMB</text>
+    <line x1="0" y1="52" x2="460" y2="52" stroke="#262932" stroke-width="1"/>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14.5">
+      <text x="26" y="92" fill="#5DCAA5">you ▸ <tspan fill="#E9EAEF">fix the LoadGuard pricing bug</tspan></text>
+      <text x="26" y="114" fill="#E9EAEF">      from last Tuesday</text>
+      <text x="26" y="158" fill="#8B7FF0">ai  ▸ <tspan fill="#C2C4CC">recalled in 6ms →</tspan></text>
+      <text x="26" y="184" fill="#C2C4CC">      verdict-policy.ts:142, the bundle</text>
+      <text x="26" y="208" fill="#C2C4CC">      fallback dropped below the 25%</text>
+      <text x="26" y="232" fill="#C2C4CC">      rate-floor. restoring the guard</text>
+      <text x="26" y="256" fill="#C2C4CC">      per the lesson you saved Tuesday.</text>
+    </g>
+    <g transform="translate(26,288)">
+      <rect width="150" height="26" rx="13" fill="#8B7FF0" fill-opacity="0.14"/>
+      <text x="75" y="18" text-anchor="middle" fill="#B9B6F2" font-size="12.5" font-weight="500">✓ recalled · 6 ms</text>
+    </g>
+  </g>
+</svg>

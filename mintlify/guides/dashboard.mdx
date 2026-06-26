@@ -1,0 +1,50 @@
+---
+title: "The dashboard"
+description: "A local web UI over everything PMB captured - your memory as a live graph and timeline."
+icon: "chart-network"
+---
+
+```bash
+pmb dashboard   # http://127.0.0.1:8765
+```
+
+It binds to `127.0.0.1` only - nothing leaves your machine.
+
+<Frame caption="The Map tab: every entity and connection as a live, force-directed graph.">
+  <img src="/images/dashboard-map.png" alt="PMB dashboard - Map view" />
+</Frame>
+
+## The tabs
+
+<CardGroup cols={2}>
+  <Card title="Map" icon="diagram-project">
+    Every entity and connection as a live force-directed graph - people, files,
+    projects, decisions; color by type, size by degree.
+  </Card>
+  <Card title="Timeline" icon="timeline">
+    Your memory as a journal, git-graph by project, newest first.
+  </Card>
+  <Card title="Lessons" icon="list-check">
+    Per-rule follow-rate and dead-lesson detection - see which rules pull weight.
+  </Card>
+  <Card title="Recall" icon="magnifying-glass">
+    A ranker debugger: run a query and see why each result scored as it did.
+  </Card>
+  <Card title="Duplicates" icon="clone">
+    Borderline duplicate pairs, with inline merge.
+  </Card>
+  <Card title="Performance" icon="gauge-high">
+    Per-tool latency from the MCP telemetry.
+  </Card>
+</CardGroup>
+
+Plus **Overview**, **Entities**, and **Arcs** (narrative threads).
+
+<Frame caption="The Timeline tab: your memory as a journal, git-graphed by project, newest first.">
+  <img src="/images/dashboard-timeline.png" alt="PMB dashboard - Timeline view" />
+</Frame>
+
+<Warning>
+  The dashboard and the MCP HTTP server both default to port `8765` - if you run
+  both, give one a different port.
+</Warning>

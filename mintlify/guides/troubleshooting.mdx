@@ -1,0 +1,61 @@
+---
+title: "Troubleshooting"
+description: "The usual suspects - cold start, the daemon, empty recall, and how to diagnose."
+icon: "wrench"
+---
+
+Start here - it diagnoses the install and runtime state:
+
+```bash
+pmb doctor
+```
+
+## First recall is slow
+
+The first recall after a fresh boot loads the embedding model (~1-2s, the model
+is ~450MB). Warm it once:
+
+```bash
+pmb warmup
+```
+
+The daemon also prewarms in the background on boot. Subsequent recalls are
+~35ms warm.
+
+## Recall returns nothing
+
+<AccordionGroup>
+  <Accordion title="The daemon isn't running">
+    Intents/extraction are warm-only. `pmb daemon status`; start it with
+    `pmb daemon start` (or `pmb setup`, which pins it warm).
+  </Accordion>
+  <Accordion title="Nothing's stored yet">
+    `pmb stats` to check counts. A young workspace is genuinely empty - index a
+    project (`pmb index project .`) or capture a few notes.
+  </Accordion>
+  <Accordion title="The query was filtered as trivial">
+    Auto-recall stays quiet on trivial messages by design. Use `pmb recall "…"`
+    directly from the terminal to bypass the gate.
+  </Accordion>
+</AccordionGroup>
+
+## Port already in use
+
+The dashboard and the MCP HTTP server both default to `8765`. Run one on another
+port, e.g. `pmb dashboard --port 18888`.
+
+## Stray / duplicate warm processes
+
+```bash
+pmb daemon kill-all   # stop the daemon + kill registered PMB processes, clear registry
+pmb setup             # re-wire cleanly
+```
+
+## Still stuck?
+
+```bash
+pmb doctor --strict   # non-zero exit on real problems
+```
+
+Open an issue on [GitHub](https://github.com/oleksiijko/pmb) with the `doctor`
+output.

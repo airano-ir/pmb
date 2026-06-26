@@ -167,6 +167,7 @@ class LessonsMixin:
         """
         import sqlite3
         import time as _t
+
         from pmb.core.text_match import distinctive_tokens, is_strong
 
         msg = (message or "").strip()
@@ -431,7 +432,7 @@ class LessonsMixin:
                 f"lesson follow-through {lt*100:.0f}% of {n_app} applicable"
                 + (f" ({n_na} of {n_surf} surfaced weren't relevant)" if n_na else "")
                 + " - ensure the lesson-followcheck Stop hook is active, or "
-                "call mark_lesson_followed(surface_id, True/False) after acting."
+                "call mark_lesson_followed after acting."
             )
         if not problems:
             return None
@@ -523,6 +524,7 @@ class LessonsMixin:
         IDF machinery here. Returns [{ulid, content, kind, source, match_text}].
         """
         import sqlite3
+
         from pmb.core.text_match import distinctive_tokens
         ws = self.workspace.id
         with sqlite3.connect(self.workspace.db_path) as conn:
@@ -568,7 +570,12 @@ class LessonsMixin:
         ranked = sorted(items, key=lambda it: -it.get("_ov", 0))
         return [it for it in ranked if it.get("_ov", 0) > 0][:limit]
 
-    def find_lessons(self, query: str = "", limit: int = 5) -> list[dict]:
+    def find_lessons(
+        self,
+        query: str = "",
+        limit: int = 5,
+        project: str | None = None,
+    ) -> list[dict]:
         """Return procedural lessons relevant to a query (or all recent
         lessons if query is empty). A "lesson" is an event with
         `metadata.kind == 'lesson'` or `event_type == 'lesson'` - it captures
@@ -634,6 +641,53 @@ class LessonsMixin:
                 "importance": r["importance"],
                 "metadata": md,
             })
+        if project:
+            project_lc = project.strip().lower()
+            scoped: list[dict] = []
+            for it in items:
+                md = it.get("metadata") or {}
+                explicit = [
+                    md.get("project_name"),
+                    md.get("project"),
+                    md.get("project_path"),
+                ]
+                explicit = [str(x).lower() for x in explicit if x]
+                if explicit:
+                    if any(project_lc in x for x in explicit):
+                        scoped.append(it)
+                    continue
+
+                # Older lessons often predate structured project metadata but
+                # carry a clear leading scope label: "LoadGuard ...",
+                # "ApplyPilot ...", "PMB ...". Drop a lesson only when a
+                # *different* known project is named near the start; generic
+                # cross-project rules remain eligible.
+                mentions = self.projects_in_text(
+                    it.get("content") or "", min_mentions=1,
+                )
+                qualified = [
+                    m for m in mentions
+                    if (
+                        bool(m.get("current_workspace"))
+                        or bool(m.get("projectish_spelling"))
+                        or int(m.get("n_mentions") or 0) >= 3
+                        or (m.get("kind") or "").lower()
+                        in {"project", "repo", "repository", "product", "app"}
+                    )
+                ]
+                # The first qualified project mention is the lesson's scope.
+                # Thus "PMB rule ... LoadGuard example" stays with PMB, while
+                # "ApplyPilot ... PMB server" remains an ApplyPilot lesson.
+                primary = min(
+                    qualified,
+                    key=lambda m: int(m.get("position") or 0),
+                    default=None,
+                )
+                if primary and (primary.get("name") or "").lower() != project_lc:
+                    continue
+                scoped.append(it)
+            items = scoped
+
         if not query.strip():
             return [_trim_item(it) for it in items[:limit]]
         # Relevance gate, using the SAME tokenizer + stopwords as followcheck
@@ -761,7 +815,9 @@ class LessonsMixin:
             try:
                 with _sql.connect(self.workspace.db_path) as _c9:
                     for u, surf, flw in _c9.execute(
-                        "SELECT lesson_ulid, COUNT(*), "
+                        "SELECT lesson_ulid, "
+                        "SUM(CASE WHEN followed IS NULL OR followed != -1 "
+                        "THEN 1 ELSE 0 END), "
                         "SUM(CASE WHEN followed=1 THEN 1 ELSE 0 END) "
                         "FROM lesson_surfaces WHERE workspace_id=? "
                         "GROUP BY lesson_ulid", (self.workspace.id,)):
@@ -951,4 +1007,3 @@ class LessonsMixin:
                 "recent_unconfirmed_surfaces failed", exc_info=True
             )
         return out
-

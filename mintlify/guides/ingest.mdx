@@ -1,0 +1,51 @@
+---
+title: "Ingest your project"
+description: "Feed PMB your codebase, PDFs, and existing chat history - so the agent starts informed."
+icon: "file-import"
+---
+
+## Index the codebase
+
+```bash
+pmb index project .        # scan files + symbols for project-aware recall
+pmb track modules          # one-line "what this file does" per file
+pmb track changes          # summarise the INTENT of new commits (the "why")
+pmb track install          # run track changes automatically after each commit
+```
+
+<Tip>
+  The agent reads this back with the `project_structure(name)` MCP tool -
+  languages, files grouped by directory (purpose + symbol count), key modules,
+  and recent change intents - no filesystem scan.
+</Tip>
+
+## Index PDFs
+
+```bash
+pmb index pdf paper.pdf        # extract + chunk + embed
+pmb index pdf ~/docs --recurse # a whole directory
+```
+
+## Import existing history
+
+Bring memory from elsewhere and rebuild the graph after:
+
+```bash
+pmb import chatgpt ~/Downloads/conversations.json
+pmb import claude  export.json
+pmb import markdown ~/notes/         # an Obsidian vault
+pmb import mem0    export.json
+```
+
+<Note>
+  Keep imported third-party histories in a **separate workspace** until you trust
+  the resulting facts and lessons - see [Privacy & security](/concepts/privacy-and-security).
+</Note>
+
+## Capture as you go
+
+```bash
+pmb note "decided to use Postgres for JSONB" --pin
+pmb learn "always run make fmt before committing"
+pmb watch ~/notes/daily.md          # auto-capture new paragraphs
+```

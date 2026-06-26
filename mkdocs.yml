@@ -2,7 +2,7 @@
 # .github/workflows/docs.yml. Enable once: Settings -> Pages -> Source: GitHub
 # Actions. Site: https://oleksiijko.github.io/pmb/
 site_name: PMB
-site_description: Local-first memory infrastructure for AI coding agents, with fast recall, local storage, and agent-native workflows.
+site_description: Local-first persistent memory for AI coding agents, with SQLite as the source of truth, no cloud, and measurable impact.
 site_url: https://oleksiijko.github.io/pmb/
 repo_url: https://github.com/oleksiijko/pmb
 repo_name: oleksiijko/pmb
@@ -11,26 +11,24 @@ copyright: Apache-2.0 licensed. Local-first. You own every byte.
 
 theme:
   name: material
-  logo: assets/logo.png
-  favicon: assets/logo.png
+  logo: assets/PMB_LOGO_BLACK.svg
+  favicon: assets/PMB_LOGO_BLACK.svg
   font:
     text: Inter
     code: JetBrains Mono
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: white
-      accent: blue
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
+    - scheme: slate
       primary: black
-      accent: blue
+      accent: deep purple
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
+    - scheme: default
+      primary: white
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
   features:
     - navigation.instant
     - navigation.instant.progress

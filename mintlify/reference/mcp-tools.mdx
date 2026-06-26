@@ -1,0 +1,77 @@
+---
+title: "Agents & MCP tools"
+description: "Which agents PMB supports, and the core-10 tools an agent sees by default."
+icon: "plug"
+---
+
+## Supported agents
+
+`pmb connect <agent>` wires 9 agents, in three tiers by integration depth.
+
+<CardGroup cols={3}>
+  <Card title="Full hooks" icon="wand-magic-sparkles">
+    **Claude Code** - all 4 lifecycle hooks: auto-recall before each message,
+    ambient write, session restore, follow-through.
+  </Card>
+  <Card title="Ambient hooks" icon="feather">
+    **Codex** (OpenAI) - MCP plus ambient write (rollout + notify); no per-turn
+    read hook, so it inherits the default tool surface.
+  </Card>
+  <Card title="MCP only" icon="plug">
+    **Cursor · Windsurf · Gemini CLI · VS Code · Zed · OpenCode · Continue** -
+    memory via tools; ambient optional via a git observer.
+  </Card>
+</CardGroup>
+
+<Note>
+  Only Claude Code and Codex install hooks. The rest are pure MCP: memory works,
+  but the agent "remembers" via explicit tool calls and the rules appended to
+  `CLAUDE.md` / `AGENTS.md`, not automatically before each turn.
+</Note>
+
+## Tool profiles
+
+PMB trims the tool list so a fresh agent isn't drowned in choices. Set
+`PMB_TOOL_PROFILE`, or let `pmb connect` pick one.
+
+| Profile | Tools | For |
+| --- | --- | --- |
+| `minimal` | 10 | **The default.** The core memory loop. |
+| `lean` | 30 | `default` minus hook-covered browse tools. |
+| `default` | 34 | Fuller day-to-day set. Opt in. |
+| `full` | ~65 | Everything, incl. maintenance/admin. |
+
+## The core-10 (default surface)
+
+<Columns cols={2}>
+  <Card title="prepare" icon="bolt">
+    One read-first call at task start: project context, lessons, recent
+    activity, open goals.
+  </Card>
+  <Card title="recall" icon="magnifying-glass">
+    Hybrid semantic + lexical search over memory.
+  </Card>
+  <Card title="record_batch" icon="floppy-disk">
+    The single write path - facts, goals, activities in one call.
+  </Card>
+  <Card title="record_keyed_fact" icon="key">
+    Upsert a mutable personal attribute (city, employer…).
+  </Card>
+  <Card title="find_lessons / mark_lesson_followed" icon="list-check">
+    Surface procedural rules and close the self-improvement loop.
+  </Card>
+  <Card title="project_overview" icon="diagram-project">
+    Graph-driven full context for a named project.
+  </Card>
+  <Card title="session_brief" icon="rotate">
+    Re-orient after your context compacted.
+  </Card>
+  <Card title="list_goals / update_goal" icon="bullseye">
+    See and move what's in flight.
+  </Card>
+</Columns>
+
+<Tip>
+  Everything outside the core-10 is one flag away (`PMB_TOOL_PROFILE=default` or
+  `full`). Hidden tools are still callable from the CLI.
+</Tip>

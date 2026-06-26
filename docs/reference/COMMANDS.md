@@ -8,7 +8,7 @@ pmb connect --help
 ```
 
 Every command is **fully offline** unless tagged
-<span class="pmb-tag pmb-tag--llm">LLM</span> — the few commands that need an LLM
+<span class="pmb-tag pmb-tag--llm">LLM</span> - the few commands that need an LLM
 backend (Claude CLI / `ANTHROPIC_API_KEY` / Ollama, see
 [LLM-powered commands](#llm-powered-commands)). A
 <span class="pmb-tag pmb-tag--llm">LLM optional</span> tag means the command runs

@@ -109,6 +109,7 @@ _SHORT_DESC: dict[str, str] = {
         "items in ONE call (each ~3-5s of agent thinking saved vs separate "
         "record_* calls). items: list of dicts, each with a `type`: "
         "fact{content,importance} | fact_tree{main,subfacts[],importance} | "
+        "lesson{content,project?} | "
         "goal{title,status,due_at} | plan{title} (future intent) | "
         "activity{content,kind} | milestone{chain_name,title,state}. ONE "
         "record_batch per turn; use ABSOLUTE dates."
@@ -200,13 +201,17 @@ _SHORT_DESC: dict[str, str] = {
         "goals, recent activity, related entities."
     ),
     "find_lessons": (
-        "Standalone 'what procedural rules apply to X'. find_lessons(query) → "
-        "lessons with surface_id. FOLLOW them, then mark_lesson_followed."
+        "Standalone 'what procedural rules apply to X'. "
+        "find_lessons(query, project?) → lessons with surface_id; project scope "
+        "excludes explicit lessons from other projects while retaining generic "
+        "rules. FOLLOW them, then mark_lesson_followed."
     ),
     "mark_lesson_followed": (
         "Report whether a surfaced lesson changed your behaviour. "
-        "mark_lesson_followed(surface_id, followed=True|False, note='...'). "
-        "Call after acting on a lesson - powers the self-improvement loop."
+        "mark_lesson_followed(surface_id, followed=True|False, note='...', "
+        "applicable=True|False). Use applicable=False when the lesson was "
+        "irrelevant, not followed=False. Call after acting on a lesson - "
+        "powers the self-improvement loop."
     ),
     "overview": (
         "Structured 'what do I know about <topic>'. overview(topic) → facts, "
@@ -282,5 +287,3 @@ def _maybe_tool(mcp_instance, tool_name: str):
     def _noop(fn):
         return fn
     return _noop
-
-

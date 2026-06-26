@@ -195,11 +195,12 @@ def build_session_restore(
         )
         buf.append(
             "    mark_lesson_followed(surface_id=<id>, "
-            "followed=True|False, note=\"<one line: what you did>\")"
+            "followed=True|False, applicable=True|False, "
+            "note=\"<one line: what you did>\")"
         )
         buf.append(
-            "  Be honest - followed=False with a note is BETTER than not "
-            "calling at all. Unmarked ids count as ignored on the dashboard."
+            "  Use applicable=False for an irrelevant lesson; followed=False "
+            "means it applied but you chose not to follow it."
         )
 
     buf.append("")
@@ -215,6 +216,7 @@ def build_session_restore(
     try:
         if bool(engine.config.get("memory_delta.enabled")):
             import sqlite3
+
             from pmb.memo.ledger import ensure_table, rehydrate
             sid = (getattr(engine, "session_id", None)
                    or getattr(engine, "_session_id", None) or "")
