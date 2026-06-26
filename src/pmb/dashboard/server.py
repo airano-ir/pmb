@@ -136,6 +136,10 @@ def make_handler(engine):
                     days = float((qs.get("days") or ["7"])[0])
                     self._send_json(self._handle_adherence(days))
                     return
+                if route == "/api/activity":
+                    days = int((qs.get("days") or ["90"])[0])
+                    self._send_json(self._handle_activity(days))
+                    return
                 self.send_error(404)
             except Exception as e:
                 log.exception("GET %s failed", route)
@@ -240,6 +244,35 @@ def make_handler(engine):
                 }
                 for e in evs
             ]
+
+        def _handle_activity(self, days: int) -> dict:
+            """Events-per-day for the Overview activity chart (record peaks).
+            Reuses the Engine API (no raw schema assumptions) and buckets in
+            Python — the active-event count is small enough for a dashboard."""
+            import time as _t
+            from collections import Counter
+            since = _t.time() - max(1, days) * 86400
+            evs = engine.events.list_active(engine.workspace.id, limit=100000)
+            per_day: Counter = Counter()
+            per_type: Counter = Counter()
+            for e in evs:
+                ts = getattr(e, "timestamp", None)
+                if ts is None or ts < since:
+                    continue
+                per_day[_t.strftime("%Y-%m-%d", _t.localtime(ts))] += 1
+                per_type[e.event_type or "other"] += 1
+            series = [{"day": d, "n": per_day[d]} for d in sorted(per_day)]
+            by_type = sorted(
+                ({"type": k, "n": v} for k, v in per_type.items()),
+                key=lambda x: -x["n"],
+            )
+            return {
+                "days": days,
+                "total": sum(per_day.values()),
+                "peak": max(per_day.values(), default=0),
+                "series": series,
+                "by_type": by_type,
+            }
 
         def _handle_lesson_stats(self, days: float) -> dict:
             """Self-improvement loop dashboard data."""

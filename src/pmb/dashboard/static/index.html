@@ -781,6 +781,10 @@
     <div class="over-grid" id="stats-grid">…</div>
   </div>
   <div class="panel">
+    <h2>Activity<span class="sub">records over time · last 90 days</span></h2>
+    <div id="activity-chart"><div class="empty">Loading…</div></div>
+  </div>
+  <div class="panel">
     <h2>Entity types<span class="sub">by mentions</span></h2>
     <div class="bars" id="overview-bars"></div>
   </div>
@@ -2247,6 +2251,31 @@ async function loadOverview(){
       <span class="track"><span class="fill" style="--s:${(n/max).toFixed(3)};background:linear-gradient(90deg,${c},transparent 160%);animation-delay:${i*60}ms"></span></span>
       <span class="v">${n}</span></div>`;
   }).join('') : '<div class="empty">No entities yet.</div>';
+  // Records-over-time activity chart (record peaks).
+  const act = await api('/api/activity?days=90').catch(_=>({series:[]}));
+  renderActivityChart(act);
+}
+
+function renderActivityChart(act){
+  const el = $('#activity-chart'); if(!el) return;
+  const series = (act && act.series) || [];
+  if(!series.length){ el.innerHTML = '<div class="empty">No activity in the window yet.</div>'; return; }
+  const W=900, H=150, pad=6, base=14;
+  const max = Math.max(1, ...series.map(d=>d.n)), bw=(W-pad*2)/series.length;
+  const bars = series.map((d,i)=>{
+    const h = Math.max(2,(d.n/max)*(H-pad*2-base));
+    const x = pad+i*bw, y = H-pad-h-base+2;
+    return `<rect x="${(x+bw*0.14).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1,bw*0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="var(--accent)" opacity="0.85"><title>${d.day}: ${d.n}</title></rect>`;
+  }).join('');
+  const mono = 'font-family:var(--mono);font-variant-numeric:tabular-nums';
+  el.innerHTML = `
+    <div style="display:flex;gap:28px;align-items:baseline;margin-bottom:10px">
+      <div><span style="${mono};font-size:26px;color:var(--ink)">${act.total||0}</span>
+        <span style="color:var(--faint);font-size:11px;margin-left:6px">records · last ${act.days||90}d</span></div>
+      <div><span style="${mono};font-size:18px;color:var(--accent)">${act.peak||0}</span>
+        <span style="color:var(--faint);font-size:11px;margin-left:6px">peak / day</span></div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="150" preserveAspectRatio="none" style="display:block;overflow:visible">${bars}</svg>`;
 }
 
 /* ============= ENTITIES ============= */
