@@ -16,7 +16,7 @@
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-475569.svg)](https://github.com/oleksiijko/pmb/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-native-purple.svg)](https://modelcontextprotocol.io)
-[![MCP Registry](https://img.shields.io/badge/MCP_Registry-pmb--ai-8B7FF0?logo=modelcontextprotocol&logoColor=white)](https://github.com/mcp/oleksiijko/pmb-ai)
+[![GitHub MCP Registry](https://img.shields.io/badge/GitHub_MCP_Registry-listed-8B7FF0?logo=modelcontextprotocol&logoColor=white)](https://github.com/mcp/oleksiijko/pmb-ai)
 
 <img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-map.gif" width="720" alt="PMB - your project's memory as a live graph">
 
