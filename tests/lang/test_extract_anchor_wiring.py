@@ -6,8 +6,6 @@ from __future__ import annotations
 import json
 import sqlite3
 
-import pytest
-
 from pmb.core.engine import Engine
 
 
@@ -38,9 +36,6 @@ def test_anchor_keyed_off_by_default(tmp_pmb_home, tmp_workspace_dir):
     assert _current_city(eng) is None, "must not extract when extract.anchor_keyed is off"
 
 
-# platform_sensitive: anchor margin extraction is embedder float-sensitive on
-# macOS arm64; gates on the Linux reference runner.
-@pytest.mark.platform_sensitive
 def test_anchor_keyed_creates_fact_with_confidence(tmp_pmb_home, tmp_workspace_dir):
     eng = _warm(tmp_workspace_dir, tmp_pmb_home, **{"extract.anchor_keyed": True})
     eng._anchor_promote_keyed("Ich wohne in Berlin", {"keyed_fact_subject": "user"}, 0.7)
@@ -90,9 +85,6 @@ def test_anchor_negation_keeps_unrelated_value(tmp_pmb_home, tmp_workspace_dir):
 # ── B3: non-English first-person flag via the about_self anchor ───────────────
 
 
-# platform_sensitive: the about_self anchor margin flips on macOS arm64; gates
-# on the Linux reference runner.
-@pytest.mark.platform_sensitive
 def test_b3_anchor_first_person_non_english(tmp_pmb_home, tmp_workspace_dir):
     eng = _warm(tmp_workspace_dir, tmp_pmb_home, **{"extract.anchor_keyed": True})
     # German self-statement: no English/RU lexical first-person marker, so the

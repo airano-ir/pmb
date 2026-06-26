@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from pmb.core.engine import Engine
 
 # ----------------------------------------------------------------------
@@ -125,9 +123,6 @@ def test_reflection_bridges_multihop_query(tmp_pmb_home, tmp_workspace_dir):
     )
 
 
-# platform_sensitive: the unreflected-candidate count varies with embedder dedup
-# on macOS arm64; deterministic + green on the Linux reference runner.
-@pytest.mark.platform_sensitive
 def test_reflect_batch_picks_unreflected(tmp_pmb_home, tmp_workspace_dir):
     eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home)
     a = eng.record_fact("FactA: thing A happened")

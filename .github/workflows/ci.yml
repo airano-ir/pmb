@@ -92,17 +92,7 @@ jobs:
 
       # The whole suite, minus quarantined load-flaky tests (run below).
       - name: Full test suite
-        shell: bash
-        run: |
-          # platform_sensitive tests are numerically/timing platform-dependent
-          # (embedder float-variance, runner-load timing). They GATE on the Linux
-          # reference runner (and the coverage job); on Windows/macOS they're
-          # skipped so cross-platform float/timing noise can't redden the matrix.
-          MARK="not quarantined"
-          if [ "$RUNNER_OS" != "Linux" ]; then
-            MARK="not quarantined and not platform_sensitive"
-          fi
-          pytest tests/ -q --tb=short -m "$MARK"
+        run: pytest tests/ -q --tb=short -m "not quarantined"
 
   # --------------------------------------------------------------
   # Coverage — single cell (tracing slows the matrix). Enforces a
