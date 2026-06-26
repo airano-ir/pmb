@@ -92,8 +92,8 @@ _HELP_COMMAND_PANELS: list[tuple[str, list[str]]] = [
         "regraph", "repair-keyed", "rehearse", "consolidate", "reflect",
         "arcs", "feedback", "migrate-workspaces", "schedule"]),
     ("Workspaces & data", [
-        "init", "workspaces", "stats", "list", "export", "dashboard", "tui",
-        "tune", "warmup"]),
+        "init", "workspaces", "stats", "list", "export", "dashboard",
+        "warmup"]),
     ("Agent internals", [
         "prepare-context", "auto-context", "session-restore",
         "lesson-followcheck", "track-action", "autowrite"]),
