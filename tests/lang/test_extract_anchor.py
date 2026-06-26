@@ -7,8 +7,6 @@ ambiguous span yields NO keyed fact rather than a wrong one.
 """
 from __future__ import annotations
 
-import pytest
-
 from pmb.core.engine import Engine
 from pmb.reasoning.extract_anchor import extract_keyed_anchor
 
@@ -23,9 +21,6 @@ def _has(cands, attr, value):
     return any(c.attr == attr and c.value == value for c in cands)
 
 
-# platform_sensitive: a 1-of-8 embedder margin flip on macOS arm64; this same
-# file ALSO gates (blocking) on the Linux packs-off-ratchet job.
-@pytest.mark.platform_sensitive
 def test_keyed_extraction_multilingual(tmp_pmb_home, tmp_workspace_dir):
     eng = _warm_engine(tmp_workspace_dir, tmp_pmb_home)
     must = [

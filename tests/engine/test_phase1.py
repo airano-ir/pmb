@@ -127,9 +127,6 @@ def test_eventstore_stats(tmp_pmb_home, tmp_workspace_dir):
 # Engine end-to-end
 # ---------------------------------------------------------------------------
 
-# platform_sensitive: rank-1 among 3 short facts is embedder float-sensitive on
-# macOS arm64; recall correctness still gates on the Linux reference runner.
-@pytest.mark.platform_sensitive
 def test_engine_remember_and_recall(tmp_pmb_home, tmp_workspace_dir):
     eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home)
 
