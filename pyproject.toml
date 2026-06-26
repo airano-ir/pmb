@@ -136,4 +136,5 @@ markers = [
     "perf: latency / throughput smoke — excluded on memory-constrained runners.",
     "property: hypothesis property-based test.",
     "eval: memory-quality recall regression gate (top-1/top-3 floors, real deterministic embedder).",
+    "platform_sensitive: numerically/timing platform-dependent (embedder float-variance, runner-load timing). Gates on the Linux reference runner + coverage job; the CI matrix skips it on Windows/macOS so cross-platform noise can't redden the build. MUST carry a one-line root-cause note next to the marker.",
 ]
