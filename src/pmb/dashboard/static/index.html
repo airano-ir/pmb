@@ -132,6 +132,28 @@
   .ld-dots i:nth-child(2){animation-delay:.16s}
   .ld-dots i:nth-child(3){animation-delay:.32s}
   @keyframes lddot{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-6px)}}
+  /* Per-tab loader — covers the content area while a heavy/growing tab fetches. */
+  main{position:relative}
+  #vloader{position:absolute;inset:0;z-index:60;display:grid;place-items:center;
+    background:rgba(11,13,19,.74);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+    opacity:0;visibility:hidden;transition:opacity .25s var(--ease),visibility .25s var(--ease)}
+  #vloader.on{opacity:1;visibility:visible}
+  #vloader .vl-mark{animation:ldpulse 1.6s var(--ease) infinite}
+  /* Custom confirm dialog — design-system styled, replaces native confirm(). */
+  .modal-ov{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:24px;
+    background:rgba(7,8,12,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    opacity:0;transition:opacity .2s var(--ease)}
+  .modal-ov.on{opacity:1}
+  .modal{background:var(--surface);border:1px solid var(--glass-border);border-radius:16px;
+    padding:22px 22px 18px;max-width:400px;width:100%;
+    box-shadow:0 24px 70px rgba(0,0,0,.55),inset 0 1px 0 var(--glass-highlight);
+    transform:translateY(10px) scale(.97);transition:transform .2s var(--ease)}
+  .modal-ov.on .modal{transform:none}
+  .modal h3{font-family:var(--sans);font-size:15.5px;font-weight:700;margin:0 0 9px;color:var(--ink)}
+  .modal h3 code{font-family:var(--mono);font-size:13px;color:var(--accent);
+    background:rgba(139,127,240,.15);padding:1px 6px;border-radius:6px}
+  .modal p{font-size:13px;line-height:1.55;color:var(--dim);margin:0 0 18px;white-space:pre-line}
+  .modal-actions{display:flex;gap:9px;justify-content:flex-end}
   nav.tabs{display:flex;flex-direction:column;gap:2px;width:100%;
     overflow:visible;scrollbar-width:none}
   nav.tabs::-webkit-scrollbar{display:none}
@@ -213,14 +235,14 @@
     border:1px solid var(--hairline);border-radius:10px;color:var(--ink);
     font-family:var(--mono);font-size:12.5px;padding:9px 12px 9px 34px;outline:none;
     transition:border-color var(--t-fast) var(--ease)}
-  .search-mini input:focus-visible{border-color:rgba(255,212,121,.5)}
+  .search-mini input:focus-visible{border-color:rgba(139,127,240,.5)}
   .search-mini svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.5}
   .viewtoggle{display:flex;gap:1px;background:var(--glass);border:1px solid var(--hairline);
     border-radius:10px;padding:3px;backdrop-filter:blur(10px)}
   .viewtoggle button{background:none;border:none;color:var(--dim);font-family:var(--mono);
     font-size:11px;padding:6px 11px;border-radius:7px;cursor:pointer;
     transition:color var(--t-fast),background var(--t-fast)}
-  .viewtoggle button.on{background:rgba(255,212,121,.15);color:var(--amber)}
+  .viewtoggle button.on{background:rgba(139,127,240,.16);color:var(--accent)}
   .viewtoggle button:hover:not(.on){color:var(--ink)}
   .legend{position:absolute;left:14px;bottom:14px;display:flex;flex-wrap:wrap;gap:6px;
     max-width:55%;z-index:3}
@@ -291,7 +313,7 @@
   .metrics-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
   .metric{background:rgba(255,255,255,.03);border:1px solid var(--hairline);
     border-radius:var(--r);padding:11px 13px}
-  .metric .n{font-family:var(--serif);font-size:28px;line-height:1;color:var(--amber)}
+  .metric .n{font-family:var(--serif);font-size:28px;line-height:1;color:var(--accent)}
   .metric.cyan .n{color:var(--cyan)}
   .metric .l{color:var(--dim);font-size:10px;letter-spacing:.14em;
     text-transform:uppercase;margin-top:5px}
@@ -497,7 +519,7 @@
   .stat-card .v.cyan{color:var(--accent)} .stat-card .v.rose{color:var(--ink)}
   .stat-card .l{color:var(--dim);font-size:10.5px;letter-spacing:.14em;
     text-transform:uppercase;margin-top:7px;font-weight:500}
-  .stat-card .v.amber{color:#E1B340}
+  .stat-card .v.amber{color:var(--accent)}
   .stat-card .v.dim{color:var(--faint)}
 
   /* LESSONS tab — self-improvement loop */
@@ -579,7 +601,7 @@
     border-bottom:1px solid var(--hairline);font-weight:500;font-size:10px;
     letter-spacing:.16em;text-transform:uppercase}
   td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
-  tr:hover td{background:rgba(255,212,121,.025)}
+  tr:hover td{background:rgba(139,127,240,.03)}
   .ulid{font-family:var(--mono);font-size:11px;color:var(--faint);cursor:pointer;
     transition:color var(--t-fast)}
   .ulid:hover{color:var(--cyan)}
@@ -786,6 +808,7 @@
 </header>
 
 <main>
+<div id="vloader" aria-hidden="true"><div class="vl-mark"><svg width="42" height="42" viewBox="0 0 107 106" fill="none"><mask id="vlpmb" maskUnits="userSpaceOnUse" x="17" y="0" width="90" height="90" style="mask-type:alpha"><rect x="21" y="4" width="82" height="82" rx="15" stroke="#fff" stroke-width="8"/></mask><g mask="url(#vlpmb)"><rect x="17" y="23" width="68" height="67" fill="#fff"/><rect x="85" y="27" width="76" height="63" fill="#fff"/><rect x="17" y="-39" width="90" height="63" fill="#fff"/><rect x="84" y="-12" width="28" height="63" fill="#fff"/></g><rect x="4" y="20" width="82" height="82" rx="15" stroke="#fff" stroke-width="8"/></svg></div></div>
 
 <!-- MAP -->
 <section id="tab-map" class="view" role="tabpanel">
@@ -1067,12 +1090,37 @@ const dayLabel = ts=> new Date(ts*1000).toLocaleDateString(undefined,
 
 async function api(p,o){return (await fetch(p,o||{})).json();}
 
+// Custom confirm dialog, design-system styled — replaces the native confirm().
+// Returns a Promise<boolean>; Enter = confirm, Esc / backdrop = cancel.
+function confirmModal(title, message, opts){
+  opts = opts || {};
+  return new Promise(resolve=>{
+    const ov = document.createElement('div');
+    ov.className = 'modal-ov';
+    ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true"><h3>'+title+'</h3>'+
+      '<p>'+message+'</p><div class="modal-actions">'+
+      '<button class="btn modal-cancel" type="button">'+(opts.cancel||'Cancel')+'</button>'+
+      '<button class="btn primary modal-ok" type="button">'+(opts.ok||'Run')+'</button></div></div>';
+    document.body.appendChild(ov);
+    requestAnimationFrame(()=>ov.classList.add('on'));
+    let done = false;
+    const close = (val)=>{ if(done) return; done = true; ov.classList.remove('on');
+      document.removeEventListener('keydown', onKey); setTimeout(()=>ov.remove(), 200); resolve(val); };
+    const onKey = (e)=>{ if(e.key==='Escape') close(false); else if(e.key==='Enter') close(true); };
+    ov.querySelector('.modal-ok').addEventListener('click', ()=>close(true));
+    ov.querySelector('.modal-cancel').addEventListener('click', ()=>close(false));
+    ov.addEventListener('click', e=>{ if(e.target===ov) close(false); });
+    document.addEventListener('keydown', onKey);
+    setTimeout(()=>ov.querySelector('.modal-ok').focus(), 30);
+  });
+}
+
 // Run a whitelisted maintenance command on the server (POST /api/run). Heavy
 // or LLM-backed jobs (arcs, reindex, consolidate, reflect) ask for confirmation
 // and may take a while; the button shows live status, then refreshes the tab.
 async function runCmd(cmd, btn, after){
   const SLOW = {arcs:1, reindex:1, consolidate:1, reflect:1};
-  if(SLOW[cmd] && !confirm('Run `pmb '+cmd+'`?\nThis is heavy / LLM-backed and may take a while.')) return;
+  if(SLOW[cmd] && !(await confirmModal('Run <code>pmb '+cmd+'</code>?', 'This command is heavy / LLM-backed and may take a while.'))) return;
   const orig = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = '⟳ Running '+cmd+'…'; }
   try{
@@ -1093,11 +1141,11 @@ async function runCmd(cmd, btn, after){
 let activeTab='map';
 const loaded = {};
 const TAB_LOAD = {
-  map: ()=>{ if(!loaded.map){ loadMap(); loaded.map=true; } else resize(); startLive(); },
-  timeline: ()=>{ if(!loaded.timeline){ loadTimeline(); loaded.timeline=true; }},
+  map: ()=>{ let p; if(!loaded.map){ p=loadMap(); loaded.map=true; } else if(window.network){ network.redraw(); } startLive(); return p; },
+  timeline: ()=>{ if(!loaded.timeline){ loaded.timeline=true; return loadTimeline(); }},
   overview: ()=>loadOverview(),
-  entities: ()=>{ if(!loaded.entities){ loadEntities(''); loaded.entities=true; }},
-  arcs: ()=>{ if(!loaded.arcs){ loadArcs(); loaded.arcs=true; }},
+  entities: ()=>{ if(!loaded.entities){ loaded.entities=true; return loadEntities(''); }},
+  arcs: ()=>{ if(!loaded.arcs){ loaded.arcs=true; return loadArcs(); }},
   lessons: ()=>loadLessons(7),
   adherence: ()=>loadAdherence(7),
   dedup: ()=>loadDedup(),
@@ -1107,13 +1155,21 @@ const TAB_LOAD = {
   settings: ()=>loadSettings(),
 };
 const VALID_TABS = new Set(['map','timeline','overview','entities','arcs','lessons','adherence','dedup','perf','recall','errors','settings']);
-function showTab(name){
+async function showTab(name){
   if(!VALID_TABS.has(name)) name = 'map';
   activeTab = name;
   $$('.tab').forEach(t=>t.classList.toggle('on', t.dataset.tab===name));
   $$('main > section').forEach(s=>s.classList.toggle('hidden', s.id !== 'tab-'+name));
   if(location.hash !== '#'+name) location.hash = name;
-  (TAB_LOAD[name]||(()=>{}))();
+  // Branded loader, but only if the data takes a beat (>160ms). Cached tabs
+  // never flash it; heavy/growing tabs (Map, Lessons…) show it while fetching.
+  const vl = document.getElementById('vloader');
+  // Gate on `ready` so the per-tab loader never stacks on top of the boot
+  // splash (#loader) — during boot only #loader shows, after it only #vloader.
+  const t = (vl && document.body.classList.contains('ready')) ? setTimeout(()=>vl.classList.add('on'), 160) : null;
+  try{ await (TAB_LOAD[name]||(()=>{}))(); }
+  catch(e){ console.error('tab load failed:', name, e); }
+  finally{ if(t) clearTimeout(t); if(vl) vl.classList.remove('on'); }
 }
 $('#tabs').addEventListener('click', e=>{const t=e.target.closest('.tab'); if(t) showTab(t.dataset.tab);});
 window.addEventListener('hashchange', ()=>showTab((location.hash||'#map').slice(1)));
@@ -1129,9 +1185,23 @@ window.addEventListener('hashchange', ()=>showTab((location.hash||'#map').slice(
   if(lbl) lbl.textContent = label;
   // Respect a deep-link hash (`#timeline`, `#overview`, …) on first load.
   const initial = (location.hash||'#map').slice(1);
-  showTab(VALID_TABS.has(initial) ? initial : 'map');
-  // Fade the boot splash once the first view has had a moment to paint.
-  setTimeout(()=>document.body.classList.add('ready'), 500);
+  // FIRST loader = the boot splash (#loader). Kick off the initial tab beneath
+  // it; its per-tab loader stays suppressed until `ready`.
+  const tabP = showTab(VALID_TABS.has(initial) ? initial : 'map');
+  let loading = true;
+  tabP.then(()=>{loading=false;}, ()=>{loading=false;});
+  // Let the splash breathe, then fade it.
+  await new Promise(r=>setTimeout(r, 500));
+  document.body.classList.add('ready');
+  // SECOND loader: ONLY after the splash has fully faded (~0.55s), and ONLY if
+  // the first tab is still loading, hand off to the per-tab loader. Sequential,
+  // never stacked.
+  await new Promise(r=>setTimeout(r, 560));
+  const vl = document.getElementById('vloader');
+  if(loading && vl){
+    vl.classList.add('on');
+    tabP.then(()=>vl.classList.remove('on'), ()=>vl.classList.remove('on'));
+  }
 })();
 
 /* ============= MAP / GRAPH (vis-network) =============
@@ -1656,14 +1726,17 @@ function toggleDemo(){
       demoBaseScale = network.getScale();
       let angle = 0;
       demoTimer = setInterval(() => {
-        angle += 0.0035;
-        const r = 70;  // subtle sway in world coords — not a disorienting loop
+        angle += 0.005;
+        // A FIXED world radius is invisible on a large graph (the bug behind
+        // "demo does nothing"). Scale the radius to the zoom so the on-screen
+        // sweep is a steady ~60px whatever the graph's size.
+        const r = 60 / (demoBaseScale || 1);
         network.moveTo({
           position: {
             x: c.x + Math.cos(angle) * r,
-            y: c.y + Math.sin(angle) * r * 0.5,  // gentle elliptical drift
+            y: c.y + Math.sin(angle) * r * 0.55,  // elliptical drift
           },
-          scale: demoBaseScale * (1 + Math.sin(angle * 0.7) * 0.045),  // slow breathing zoom
+          scale: demoBaseScale * (1 + Math.sin(angle * 0.8) * 0.07),  // visible breathing zoom
         });
       }, 33);
     }, 80);
@@ -2440,7 +2513,7 @@ async function loadEntities(kind){
 async function loadArcs(){
   const arcs = await api('/api/arcs').catch(_=>[]);
   if(!arcs.length){
-    $('#arcs-list').innerHTML = '<div class="empty">No arcs yet. Run <code style="color:var(--amber)">pmb arcs cluster</code> to build them.</div>';
+    $('#arcs-list').innerHTML = '<div class="empty">No arcs yet. Run <code style="color:var(--accent)">pmb arcs cluster</code> to build them.</div>';
     return;
   }
   $('#arcs-list').innerHTML = arcs.map((a,i)=>`
