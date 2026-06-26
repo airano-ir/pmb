@@ -11,7 +11,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/pmb-ai.svg?label=pypi)](https://pypi.org/project/pmb-ai/)
 [![CI](https://github.com/oleksiijko/pmb/actions/workflows/ci.yml/badge.svg)](https://github.com/oleksiijko/pmb/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-online-0f766e.svg)](https://oleksiijko.github.io/pmb/)
+[![Docs](https://img.shields.io/badge/docs-online-8B7FF0.svg)](https://docs.pmbai.dev)
 [![Python](https://img.shields.io/pypi/pyversions/pmb-ai.svg)](https://pypi.org/project/pmb-ai/)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-475569.svg)](https://github.com/oleksiijko/pmb/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
@@ -64,7 +64,7 @@ That's it - your agent now remembers. No account, no keys, nothing leaves your m
 > Same tool - use whichever your install gave you. From npm, `npx pmb-ai setup`
 > runs the full cycle: it installs the Python package, then runs setup.
 
-> **Docs:** [oleksiijko.github.io/pmb](https://oleksiijko.github.io/pmb/) ·
+> **Docs:** [docs.pmbai.dev](https://docs.pmbai.dev) ·
 > [Getting started](docs/guide/getting-started.md) ·
 > [Deleting memories](docs/guide/deleting-memories.md) ·
 > [all documentation](docs/README.md).
