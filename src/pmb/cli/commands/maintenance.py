@@ -414,7 +414,14 @@ def tui():
     Hotkeys: 1-5 switch tabs · / filter · r reload · q quit · ? help
 
     Best-of from k9s / lazygit / mem0 / htop dashboards, terminal-native.
+
+    DEPRECATED: superseded by the web dashboard (`pmb dashboard`).
     """
+    console.print(
+        "[yellow]⚠ `pmb tui` is deprecated[/] - memory, recall, stats, dedup "
+        "and settings now live in the web dashboard. Run [cyan]pmb dashboard[/] and "
+        "use the left nav (Settings replaces Tune). Launching the TUI anyway...\n"
+    )
     eng = Engine()
     try:
         from pmb.cli.tui_workspace import run_workspace_tui
@@ -442,7 +449,14 @@ def tune():
       - dedup.cosine_high (0.92 default - lower = more aggressive merging)
       - embedding.backend (sentence-transformers vs fastembed)
       - mcp.record_batch_async, recall.adaptive_decompose
+
+    DEPRECATED: superseded by the web dashboard's Settings tab (`pmb dashboard`).
     """
+    console.print(
+        "[yellow]⚠ `pmb tune` is deprecated[/] - settings now live in the web "
+        "dashboard: run [cyan]pmb dashboard[/] and open the [b]Settings[/] tab "
+        "(live, schema-validated, with reset). Launching the TUI anyway...\n"
+    )
     eng = Engine()
     try:
         from pmb.cli.tui_config import run_tui
