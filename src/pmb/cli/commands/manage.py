@@ -717,7 +717,8 @@ def setup(
       pmb setup codex --active --yes  # non-interactive
 
     Defaults are already the effective ones (ablation-tuned) - you only need
-    `pmb tune` if you want to change them. Full command list: `docs/COMMANDS.md`.
+    `pmb config set` (or the dashboard Settings tab) to change them. Full
+    command list: `docs/COMMANDS.md`.
     """
     from pmb.cli._common import _PMB_SPINNER, wordmark
     from pmb.cli.connect import (

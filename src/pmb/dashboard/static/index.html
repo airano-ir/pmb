@@ -6,37 +6,54 @@
 <title>PMB · memory</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <style>
   :root{
-    /* Dark, no glow. Liquid-glass surfaces sit on top of a near-black base. */
-    --bg:#08090c; --bg2:#0d0f14; --ink:#ebeef5; --dim:#8e9099; --faint:#5a5d68;
-    --hairline:rgba(255,255,255,.06); --hairline-strong:rgba(255,255,255,.14);
-    /* Liquid-glass tokens: translucent surface + subtle inner highlight + soft edge */
-    --glass-bg:rgba(255,255,255,.04);
-    --glass-bg-strong:rgba(255,255,255,.07);
-    --glass-border:rgba(255,255,255,.09);
-    --glass-highlight:rgba(255,255,255,.14);
+    /* ===== PMB design system (PMB=WEB tokens) — violet brand, mint secondary,
+       near-black surfaces. Legacy var names kept as aliases so the existing
+       2.7k-line stylesheet keeps resolving. ===== */
+    /* Surfaces — recessed → raised */
+    --bg-deep:#07080C; --bg:#0B0D13; --bg2:#15171F;
+    --surface:#15171F; --surface-2:#1B1E28; --surface-3:#232734;
+    --ink:#EBEEF5; --ink-dim:#9DA1AD; --dim:#8E9099; --faint:#5A5D68;
+    --hairline:rgba(255,255,255,.07); --hairline-strong:rgba(255,255,255,.14);
+    /* Liquid-glass */
+    --glass-bg:rgba(255,255,255,.040); --glass-bg-strong:rgba(255,255,255,.070);
+    --glass-border:rgba(255,255,255,.090); --glass-highlight:rgba(255,255,255,.140);
     --glass-shadow:0 12px 36px rgba(0,0,0,.45);
-    /* Single muted accent — no dual amber+cyan, just one cool blue. */
-    --accent:#7ea8ff; --accent-soft:rgba(126,168,255,.18); --accent-dim:#4d6da6;
-    --good:#62c79d; --warn:#d6b86b; --bad:#e07a8b;
-    /* Entity-kind palette — muted, no neon. */
-    --k-person:#88a8d9; --k-project:#7fc4a3; --k-topic:#d4b78a; --k-place:#c3879c;
-    --k-org:#9d8ed0; --k-tool:#7eb9c4; --k-event:#cf9b78; --k-concept:#cc8a8a;
-    --k-tech:#88a8d9; --k-file:#7fc4a3; --k-function:#d4b78a; --k-class:#9d8ed0;
-    --k-import:#7eb9c4; --k-theme:#9d8ed0; --k-other:#90939e;
-    /* Tableau-10 muted — keep cluster identity, no neon. */
-    --c0:#4E79A7; --c1:#F28E2B; --c2:#E15759; --c3:#76B7B2;
-    --c4:#59A14F; --c5:#EDC948; --c6:#B07AA1; --c7:#FF9DA7;
-    --c8:#9C755F; --c9:#BAB0AC; --c10:#86BCB6; --c11:#D7B5A6;
-    --sans:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    /* Violet — the MCP brand accent (replaces the old cool blue) */
+    --violet-100:#E5E1FB; --violet-300:#B4ABF6; --violet:#8B7FF0;
+    --violet-600:#6F62D9; --violet-700:#574BB0;
+    --accent:#8B7FF0; --accent-soft:rgba(139,127,240,.16);
+    --accent-line:rgba(139,127,240,.40); --accent-dim:#5B5288;
+    /* Mint — secondary */
+    --mint:#5DCAA5; --mint-soft:rgba(93,202,165,.14);
+    /* Semantic */
+    --good:#5DCAA5; --warn:#E1B340; --bad:#E07A8B; --info:#7EA8FF;
+    --good-soft:rgba(93,202,165,.14); --warn-soft:rgba(225,179,64,.14);
+    --bad-soft:rgba(224,122,139,.14); --info-soft:rgba(126,168,255,.14);
+    /* Entity-kind ramp — violet↔mint family */
+    --k-decision:#8B7FF0; --k-lesson:#5DCAA5; --k-person:#88A8D9;
+    --k-project:#7FC4A3; --k-file:#9D8ED0; --k-concept:#C9A2E0;
+    --k-tool:#7EB9C4; --k-event:#E1B340; --k-fact:#7EA8FF; --k-other:#90939E;
+    /* legacy kind aliases (existing CSS still references these) */
+    --k-topic:#C9A2E0; --k-place:#C3879C; --k-org:#9D8ED0; --k-tech:#88A8D9;
+    --k-function:#C9A2E0; --k-class:#9D8ED0; --k-import:#7EB9C4; --k-theme:#9D8ED0;
+    /* Cluster palette — distinct hues, re-tinted to the brand family */
+    --c0:#8B7FF0; --c1:#5DCAA5; --c2:#E1B340; --c3:#7EA8FF;
+    --c4:#C9A2E0; --c5:#7EB9C4; --c6:#E07A8B; --c7:#88A8D9;
+    --c8:#7FC4A3; --c9:#B4ABF6; --c10:#9D8ED0; --c11:#C3879C;
+    /* Type — Inter (UI) + JetBrains Mono (data/metrics) */
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-    --serif:var(--sans);  /* legacy alias — old rules just get Manrope */
-    --r:12px; --r-lg:18px;
-    --shadow-2:0 4px 14px rgba(0,0,0,.35); --shadow-3:0 16px 40px rgba(0,0,0,.5);
-    --t-fast:160ms; --t-norm:240ms; --ease:cubic-bezier(.2,.7,.2,1);
+    --serif:var(--sans);
+    /* Radii / shadow / motion */
+    --r-sm:8px; --r:12px; --r-lg:18px; --r-pill:999px;
+    --shadow-1:0 1px 3px rgba(0,0,0,.30); --shadow-2:0 4px 14px rgba(0,0,0,.35);
+    --shadow-3:0 16px 40px rgba(0,0,0,.50);
+    --t-fast:160ms; --t-norm:240ms; --t-slow:360ms;
+    --ease:cubic-bezier(.2,.7,.2,1); --ease-out:cubic-bezier(.16,1,.3,1);
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
@@ -65,45 +82,119 @@
 
   /* Header is normal flow — it takes its own row at the top, and `main`
      fills the rest of the viewport. Nothing under the header overlaps it. */
-  #app{position:relative;z-index:2;height:100vh;display:flex;flex-direction:column}
-  main{flex:1;min-height:0}
+  #app{position:relative;z-index:2;height:100vh;display:flex;flex-direction:row}
+  main{flex:1;min-height:0;min-width:0}
 
   /* HEADER — normal flow row at the top: search on the LEFT, tabs on the
      RIGHT. Fully transparent (no background, no border) so it reads as a
      thin strip of controls over the empty top of the page, not as a
      separate band of chrome. Takes its own height in flex so the graph /
      timeline below it never has to render through it. */
-  header{position:relative;z-index:50;
-    display:flex;align-items:center;gap:18px;
-    padding:14px 18px;background:transparent;flex-shrink:0}
+  header{position:relative;z-index:50;width:216px;flex-shrink:0;height:100vh;
+    display:flex;flex-direction:column;align-items:stretch;gap:12px;
+    padding:16px 12px;background:var(--glass-bg);border-right:1px solid var(--hairline);
+    backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
+    overflow-y:auto;overflow-x:hidden}
+  /* Sidebar brand (top) + doc/repo links (pinned bottom). */
+  .sb-brand{display:flex;align-items:center;gap:9px;padding:2px 8px 6px;text-decoration:none;color:var(--ink)}
+  .sb-brand img{width:24px;height:24px;border-radius:6px}
+  .sb-brand b{font-family:var(--sans);font-weight:700;font-size:15px;letter-spacing:-0.02em}
+  .sb-links{margin-top:auto;display:flex;flex-direction:column;gap:1px;padding-top:8px;border-top:1px solid var(--hairline)}
+  .sb-links a{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;
+    color:var(--dim);text-decoration:none;font-size:12.5px;font-weight:500;
+    transition:color var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
+  .sb-links a:hover{color:var(--ink);background:var(--glass-bg)}
+  .sb-links svg{width:15px;height:15px;flex-shrink:0;opacity:.8}
   /* No brand, no workspace label — declutter. */
   .brand{display:none}
   /* Top-bar search — replaces the floating one inside the map. */
-  .topsearch{position:relative;max-width:380px;justify-self:start}
-  .topsearch input{width:100%;background:var(--glass-bg);
+  .topsearch{position:relative;max-width:none;width:100%}
+  .topsearch input[type=search]{width:100%;background:var(--glass-bg);
     border:1px solid var(--glass-border);color:var(--ink);font-family:var(--sans);
-    font-size:13px;font-weight:500;padding:10px 14px 10px 36px;border-radius:11px;
+    font-size:13px;font-weight:500;padding:10px 14px 10px 40px;border-radius:11px;
     outline:none;backdrop-filter:blur(18px) saturate(160%);
     -webkit-backdrop-filter:blur(18px) saturate(160%);
     box-shadow:inset 0 1px 0 var(--glass-highlight),0 4px 12px rgba(0,0,0,.2);
     transition:border-color var(--t-fast) var(--ease)}
-  .topsearch input:focus-visible{border-color:rgba(126,168,255,.55)}
-  .topsearch svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);
+  .topsearch input[type=search]:focus-visible{border-color:rgba(139,127,240,.55)}
+  .topsearch svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);
     opacity:.55;pointer-events:none}
-  nav.tabs{display:flex;gap:2px;background:var(--glass-bg);
-    border:1px solid var(--glass-border);border-radius:var(--r);padding:3px;
-    backdrop-filter:blur(14px);
-    overflow-x:auto;scrollbar-width:none;
-    margin-left:auto  /* pushes tabs to the far right inside the flex header */}
+  /* Boot loader — branded splash that fades once the first view paints. */
+  #loader{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;
+    background:radial-gradient(60% 55% at 50% 42%,rgba(139,127,240,.12),var(--bg) 72%);
+    transition:opacity .55s var(--ease),visibility .55s var(--ease)}
+  body.ready #loader{opacity:0;visibility:hidden;pointer-events:none}
+  .ld-mark{animation:ldpulse 1.9s var(--ease) infinite}
+  @keyframes ldpulse{0%,100%{transform:scale(1);filter:drop-shadow(0 0 12px rgba(139,127,240,.35))}
+    50%{transform:scale(1.06);filter:drop-shadow(0 0 28px rgba(139,127,240,.7))}}
+  .ld-dots{position:absolute;margin-top:150px;display:flex;gap:7px}
+  .ld-dots i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:lddot 1.25s var(--ease) infinite}
+  .ld-dots i:nth-child(2){animation-delay:.16s}
+  .ld-dots i:nth-child(3){animation-delay:.32s}
+  @keyframes lddot{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-6px)}}
+  /* Per-tab loader — covers the content area while a heavy/growing tab fetches. */
+  main{position:relative}
+  #vloader{position:absolute;inset:0;z-index:60;display:grid;place-items:center;
+    background:rgba(11,13,19,.74);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+    opacity:0;visibility:hidden;transition:opacity .25s var(--ease),visibility .25s var(--ease)}
+  #vloader.on{opacity:1;visibility:visible}
+  #vloader .vl-mark{animation:ldpulse 1.6s var(--ease) infinite}
+  /* Custom confirm dialog — design-system styled, replaces native confirm(). */
+  .modal-ov{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:24px;
+    background:rgba(7,8,12,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    opacity:0;transition:opacity .2s var(--ease)}
+  .modal-ov.on{opacity:1}
+  .modal{background:var(--surface);border:1px solid var(--glass-border);border-radius:16px;
+    padding:22px 22px 18px;max-width:400px;width:100%;
+    box-shadow:0 24px 70px rgba(0,0,0,.55),inset 0 1px 0 var(--glass-highlight);
+    transform:translateY(10px) scale(.97);transition:transform .2s var(--ease)}
+  .modal-ov.on .modal{transform:none}
+  .modal h3{font-family:var(--sans);font-size:15.5px;font-weight:700;margin:0 0 9px;color:var(--ink)}
+  .modal h3 code{font-family:var(--mono);font-size:13px;color:var(--accent);
+    background:rgba(139,127,240,.15);padding:1px 6px;border-radius:6px}
+  .modal p{font-size:13px;line-height:1.55;color:var(--dim);margin:0 0 18px;white-space:pre-line}
+  .modal-actions{display:flex;gap:9px;justify-content:flex-end}
+  nav.tabs{display:flex;flex-direction:column;gap:2px;width:100%;
+    overflow:visible;scrollbar-width:none}
   nav.tabs::-webkit-scrollbar{display:none}
-  .tab{background:none;border:none;color:var(--dim);font-family:var(--sans);
-    font-size:12.5px;font-weight:500;padding:8px 14px;border-radius:9px;cursor:pointer;
+  .tab{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    background:none;border:none;color:var(--dim);font-family:var(--sans);
+    font-size:13px;font-weight:500;padding:9px 12px;border-radius:10px;cursor:pointer;
     letter-spacing:-0.005em;white-space:nowrap;
     transition:color var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
+  .tab svg{width:16px;height:16px;flex-shrink:0;opacity:.85}
+  /* Settings (config editor) */
+  .cfg-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:11px 2px;border-bottom:1px solid var(--hairline)}
+  .cfg-row:last-child{border-bottom:none}
+  .cfg-meta{min-width:0}
+  .cfg-meta code{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+  .cfg-help{color:var(--faint);font-size:11.5px;margin-top:2px;max-width:600px}
+  .cfg-ctrl{flex-shrink:0}
+  .cfg-input{background:var(--surface-3);border:1px solid var(--glass-border);color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:6px 9px;border-radius:8px;outline:none;min-width:96px}
+  .cfg-input:focus-visible{border-color:var(--accent-line)}
+  .cfg-toggle{width:40px;height:22px;border-radius:999px;border:1px solid var(--glass-border);background:var(--surface-3);cursor:pointer;position:relative;padding:0;transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease)}
+  .cfg-toggle span{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--dim);transition:transform var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
+  .cfg-toggle.on{background:var(--accent-soft);border-color:var(--accent-line)}
+  .cfg-toggle.on span{transform:translateX(18px);background:var(--accent)}
   .tab:hover{color:var(--ink)}
   .tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .tab.on{background:var(--glass-bg-strong);color:var(--ink);
     box-shadow:inset 0 0 0 1px var(--glass-highlight),0 1px 3px rgba(0,0,0,.2)}
+  /* Collapsible sidebar — icon-only rail, toggle pinned at the bottom. */
+  header{transition:width var(--t-mid,.25s) var(--ease),padding var(--t-mid,.25s) var(--ease)}
+  .sb-collapse{display:flex;align-items:center;justify-content:flex-end;width:100%;
+    background:none;border:none;color:var(--dim);cursor:pointer;padding:7px 12px;border-radius:10px;
+    transition:color var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
+  .sb-collapse:hover{color:var(--ink);background:var(--glass-bg)}
+  .sb-collapse svg{width:18px;height:18px;transition:transform var(--t-mid,.25s) var(--ease)}
+  body.sb-collapsed header{width:62px;padding-left:8px;padding-right:8px}
+  body.sb-collapsed .sb-brand{justify-content:center;padding-left:0;padding-right:0}
+  body.sb-collapsed .sb-brand b{display:none}
+  body.sb-collapsed .topsearch{display:none}
+  body.sb-collapsed .tab{justify-content:center;font-size:0;gap:0;padding-left:0;padding-right:0}
+  body.sb-collapsed .sb-links a{justify-content:center;font-size:0;gap:0;padding-left:0;padding-right:0}
+  body.sb-collapsed .sb-collapse{justify-content:center;padding-left:0;padding-right:0}
+  body.sb-collapsed .sb-collapse svg{transform:rotate(180deg)}
 
   main{position:relative;overflow:hidden}
   section.view{position:absolute;inset:0}
@@ -144,14 +235,14 @@
     border:1px solid var(--hairline);border-radius:10px;color:var(--ink);
     font-family:var(--mono);font-size:12.5px;padding:9px 12px 9px 34px;outline:none;
     transition:border-color var(--t-fast) var(--ease)}
-  .search-mini input:focus-visible{border-color:rgba(255,212,121,.5)}
+  .search-mini input:focus-visible{border-color:rgba(139,127,240,.5)}
   .search-mini svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.5}
   .viewtoggle{display:flex;gap:1px;background:var(--glass);border:1px solid var(--hairline);
     border-radius:10px;padding:3px;backdrop-filter:blur(10px)}
   .viewtoggle button{background:none;border:none;color:var(--dim);font-family:var(--mono);
     font-size:11px;padding:6px 11px;border-radius:7px;cursor:pointer;
     transition:color var(--t-fast),background var(--t-fast)}
-  .viewtoggle button.on{background:rgba(255,212,121,.15);color:var(--amber)}
+  .viewtoggle button.on{background:rgba(139,127,240,.16);color:var(--accent)}
   .viewtoggle button:hover:not(.on){color:var(--ink)}
   .legend{position:absolute;left:14px;bottom:14px;display:flex;flex-wrap:wrap;gap:6px;
     max-width:55%;z-index:3}
@@ -222,7 +313,7 @@
   .metrics-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
   .metric{background:rgba(255,255,255,.03);border:1px solid var(--hairline);
     border-radius:var(--r);padding:11px 13px}
-  .metric .n{font-family:var(--serif);font-size:28px;line-height:1;color:var(--amber)}
+  .metric .n{font-family:var(--serif);font-size:28px;line-height:1;color:var(--accent)}
   .metric.cyan .n{color:var(--cyan)}
   .metric .l{color:var(--dim);font-size:10px;letter-spacing:.14em;
     text-transform:uppercase;margin-top:5px}
@@ -265,8 +356,8 @@
     display:flex;flex-direction:column;gap:3px;position:relative}
   .rail-cell:hover{background:rgba(255,255,255,.06);
     border-color:rgba(255,255,255,.14);transform:translateX(-2px)}
-  .rail-cell.active{border-color:rgba(126,168,255,.55);
-    background:rgba(126,168,255,.08)}
+  .rail-cell.active{border-color:rgba(139,127,240,.55);
+    background:rgba(139,127,240,.08)}
   .rail-cell .rd{font-size:9.5px;color:var(--dim);letter-spacing:.04em;
     display:flex;justify-content:space-between;align-items:baseline}
   .rail-cell .rd .rn{color:var(--ink);font-weight:500;font-size:10px;
@@ -347,7 +438,7 @@
     font-family:var(--mono);background:transparent;color:var(--dim);
     border:none;cursor:pointer;border-radius:999px;
     transition:background var(--t-fast),color var(--t-fast)}
-  .tl-seg button.on{background:rgba(126,168,255,.18);color:var(--accent)}
+  .tl-seg button.on{background:rgba(139,127,240,.18);color:var(--accent)}
   .tl-seg button:hover:not(.on){color:var(--ink)}
   /* Smooth fade for SVG paths on connect-mode switch. */
   .gl-svg line, .gl-svg path, .gl-svg circle{transition:stroke-opacity .35s var(--ease),
@@ -382,11 +473,11 @@
   #detail ul.ev-list li .ev-cnt{color:var(--ink);
     overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   #detail .ev-first{margin:0 0 12px;padding:12px 14px;
-    background:rgba(126,168,255,.06);
-    border:1px solid rgba(126,168,255,.18);border-radius:10px;cursor:pointer;
+    background:rgba(139,127,240,.06);
+    border:1px solid rgba(139,127,240,.18);border-radius:10px;cursor:pointer;
     transition:background var(--t-fast),border-color var(--t-fast);position:relative}
-  #detail .ev-first:hover{background:rgba(126,168,255,.10);
-    border-color:rgba(126,168,255,.32)}
+  #detail .ev-first:hover{background:rgba(139,127,240,.10);
+    border-color:rgba(139,127,240,.32)}
   #detail .ev-first-head{display:flex;gap:10px;font-family:var(--mono);
     font-size:10.5px;margin:0 0 8px;align-items:center}
   #detail .ev-first-head .ev-hash{color:var(--accent)}
@@ -417,13 +508,18 @@
     border-radius:var(--r);padding:16px 18px;
     backdrop-filter:blur(16px) saturate(160%);
     -webkit-backdrop-filter:blur(16px) saturate(160%);
-    box-shadow:inset 0 1px 0 var(--glass-highlight);position:relative}
+    box-shadow:var(--shadow-2),inset 0 1px 0 var(--glass-highlight);position:relative;
+    transition:transform var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease)}
+  .stat-card::before{content:"";position:absolute;top:0;left:1px;right:1px;height:1px;
+    background:linear-gradient(90deg,transparent,var(--glass-highlight) 50%,transparent);pointer-events:none}
+  .stat-card:hover{transform:translateY(-2px);border-color:var(--hairline-strong);
+    box-shadow:var(--shadow-3),inset 0 1px 0 var(--glass-highlight)}
   .stat-card .v{font-family:var(--sans);font-weight:700;font-size:30px;line-height:1;
     color:var(--ink);letter-spacing:-0.02em}
   .stat-card .v.cyan{color:var(--accent)} .stat-card .v.rose{color:var(--ink)}
   .stat-card .l{color:var(--dim);font-size:10.5px;letter-spacing:.14em;
     text-transform:uppercase;margin-top:7px;font-weight:500}
-  .stat-card .v.amber{color:#E1B340}
+  .stat-card .v.amber{color:var(--accent)}
   .stat-card .v.dim{color:var(--faint)}
 
   /* LESSONS tab — self-improvement loop */
@@ -479,8 +575,11 @@
     border-radius:var(--r-lg);padding:22px 24px;margin-bottom:16px;
     backdrop-filter:blur(20px) saturate(160%);
     -webkit-backdrop-filter:blur(20px) saturate(160%);
-    box-shadow:inset 0 1px 0 var(--glass-highlight),0 8px 24px rgba(0,0,0,.25);
+    box-shadow:var(--shadow-2),inset 0 1px 0 var(--glass-highlight);
     position:relative}
+  .panel::before{content:"";position:absolute;top:0;left:1px;right:1px;height:1px;
+    background:linear-gradient(90deg,transparent,var(--glass-highlight) 50%,transparent);
+    border-radius:inherit;pointer-events:none}
   .panel h2{font-family:var(--sans);font-weight:700;font-size:20px;margin:0 0 16px;
     color:var(--ink);letter-spacing:-0.02em}
   .panel h2 .sub{font-family:var(--mono);font-weight:400;font-size:10.5px;color:var(--faint);
@@ -502,7 +601,7 @@
     border-bottom:1px solid var(--hairline);font-weight:500;font-size:10px;
     letter-spacing:.16em;text-transform:uppercase}
   td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
-  tr:hover td{background:rgba(255,212,121,.025)}
+  tr:hover td{background:rgba(139,127,240,.03)}
   .ulid{font-family:var(--mono);font-size:11px;color:var(--faint);cursor:pointer;
     transition:color var(--t-fast)}
   .ulid:hover{color:var(--cyan)}
@@ -538,8 +637,8 @@
   button.btn:active{transform:scale(.97)}
   button.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   button.btn.primary{background:var(--accent-soft);
-    color:var(--accent);border-color:rgba(126,168,255,.4);font-weight:600}
-  button.btn.primary:hover{background:rgba(126,168,255,.28);color:var(--ink)}
+    color:var(--accent);border-color:rgba(139,127,240,.4);font-weight:600}
+  button.btn.primary:hover{background:rgba(139,127,240,.28);color:var(--ink)}
   button.btn.danger{background:rgba(239,68,68,.14);
     color:#fca5a5;border-color:rgba(239,68,68,.4)}
   button.btn.danger:hover{background:rgba(239,68,68,.26);color:#fff;
@@ -670,32 +769,46 @@
 </style>
 </head>
 <body>
+<div id="loader"><div class="ld-mark"><svg width="60" height="60" viewBox="0 0 107 106" fill="none"><mask id="ldpmb" maskUnits="userSpaceOnUse" x="17" y="0" width="90" height="90" style="mask-type:alpha"><rect x="21" y="4" width="82" height="82" rx="15" stroke="#fff" stroke-width="8"/></mask><g mask="url(#ldpmb)"><rect x="17" y="23" width="68" height="67" fill="#fff"/><rect x="85" y="27" width="76" height="63" fill="#fff"/><rect x="17" y="-39" width="90" height="63" fill="#fff"/><rect x="84" y="-12" width="28" height="63" fill="#fff"/></g><rect x="4" y="20" width="82" height="82" rx="15" stroke="#fff" stroke-width="8"/></svg></div><div class="ld-dots"><i></i><i></i><i></i></div></div>
 <div class="glow"></div>
 <div class="grain"></div>
 
 <div id="app">
 
 <header>
+  <a class="sb-brand" href="https://github.com/oleksiijko/pmb" target="_blank" rel="noopener" title="PMB">
+    <svg width="22" height="22" viewBox="0 0 107 106" fill="none" style="flex-shrink:0"><mask id="sbpmb" maskUnits="userSpaceOnUse" x="17" y="0" width="90" height="90" style="mask-type:alpha"><rect x="21" y="4" width="82" height="82" rx="15" stroke="#fff" stroke-width="8"/></mask><g mask="url(#sbpmb)"><rect x="17" y="23" width="68" height="67" fill="#fff"/><rect x="85" y="27" width="76" height="63" fill="#fff"/><rect x="17" y="-39" width="90" height="63" fill="#fff"/><rect x="84" y="-12" width="28" height="63" fill="#fff"/></g><rect x="4" y="20" width="82" height="82" rx="15" stroke="#fff" stroke-width="8"/></svg>
+    <b>PMB</b>
+  </a>
   <div class="topsearch">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
     <input id="mapsearch" type="search" placeholder="Search memory…" autocomplete="off" aria-label="Search entities">
   </div>
-  <span></span>
   <nav class="tabs" id="tabs" role="tablist" aria-label="Sections">
-    <button class="tab on" data-tab="map" role="tab">Map</button>
-    <button class="tab" data-tab="timeline" role="tab">Timeline</button>
-    <button class="tab" data-tab="overview" role="tab">Overview</button>
-    <button class="tab" data-tab="entities" role="tab">Entities</button>
-    <button class="tab" data-tab="arcs" role="tab">Arcs</button>
-    <button class="tab" data-tab="lessons" role="tab">Lessons</button>
-    <button class="tab" data-tab="adherence" role="tab">Adherence</button>
-    <button class="tab" data-tab="dedup" role="tab">Duplicates</button>
-    <button class="tab" data-tab="perf" role="tab">Performance</button>
-    <button class="tab" data-tab="recall" role="tab">Recall</button>
+    <button class="tab on" data-tab="map" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2"/><circle cx="18" cy="9" r="2"/><circle cx="9" cy="18" r="2"/><path d="m7.8 8.1 8.2.9M8.3 16.2 16.3 10.5"/></svg>Map</button>
+    <button class="tab" data-tab="timeline" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>Timeline</button>
+    <button class="tab" data-tab="overview" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>Overview</button>
+    <button class="tab" data-tab="entities" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="1.4"/><circle cx="5" cy="12" r="1.4"/><circle cx="5" cy="18" r="1.4"/><path d="M10 6h10M10 12h10M10 18h10"/></svg>Entities</button>
+    <button class="tab" data-tab="arcs" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17c0-8 5-11 8-11s4 3 8 3"/><circle cx="4" cy="17" r="1.6"/><circle cx="20" cy="9" r="1.6"/></svg>Arcs</button>
+    <button class="tab" data-tab="lessons" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="m8 12 2.6 2.6L16 9"/></svg>Lessons</button>
+    <button class="tab" data-tab="adherence" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V11M12 21V4M19 21v-6"/></svg>Adherence</button>
+    <button class="tab" data-tab="dedup" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg>Duplicates</button>
+    <button class="tab" data-tab="perf" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 18a7.5 7.5 0 1 1 15 0"/><path d="M12 18l3.6-4.6"/></svg>Performance</button>
+    <button class="tab" data-tab="recall" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Recall</button>
+    <button class="tab" data-tab="errors" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.5h.01"/></svg>Errors</button>
+    <button class="tab" data-tab="settings" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h7M15 17h5"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="13" cy="17" r="2"/></svg>Settings</button>
   </nav>
+  <div class="sb-links">
+    <a href="https://docs.pmbai.dev" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20"/></svg>Docs</a>
+    <a href="https://github.com/oleksiijko/pmb" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.27a11 11 0 0 0-3.48 21.46c.55.1.73-.24.73-.53v-1.85c-3.03.66-3.67-1.45-3.67-1.45-.5-1.27-1.21-1.61-1.21-1.61-.99-.68.07-.66.07-.66 1.1.08 1.67 1.13 1.67 1.13.97 1.67 2.55 1.19 3.17.91.1-.71.38-1.19.69-1.46-2.42-.28-4.96-1.21-4.96-5.38 0-1.19.42-2.16 1.13-2.92-.11-.28-.49-1.39.11-2.9 0 0 .92-.3 3.02 1.12a10.4 10.4 0 0 1 5.5 0c2.1-1.42 3.02-1.12 3.02-1.12.6 1.51.22 2.62.11 2.9.7.76 1.13 1.73 1.13 2.92 0 4.18-2.55 5.1-4.98 5.37.39.34.74 1 .74 2.03v3.01c0 .29.18.63.74.52A11 11 0 0 0 12 1.27"/></svg>GitHub</a>
+  </div>
+  <button class="sb-collapse" type="button" onclick="toggleSidebar()" title="Collapse / expand menu" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+  </button>
 </header>
 
 <main>
+<div id="vloader" aria-hidden="true"><div class="vl-mark"><svg width="42" height="42" viewBox="0 0 107 106" fill="none"><mask id="vlpmb" maskUnits="userSpaceOnUse" x="17" y="0" width="90" height="90" style="mask-type:alpha"><rect x="21" y="4" width="82" height="82" rx="15" stroke="#fff" stroke-width="8"/></mask><g mask="url(#vlpmb)"><rect x="17" y="23" width="68" height="67" fill="#fff"/><rect x="85" y="27" width="76" height="63" fill="#fff"/><rect x="17" y="-39" width="90" height="63" fill="#fff"/><rect x="84" y="-12" width="28" height="63" fill="#fff"/></g><rect x="4" y="20" width="82" height="82" rx="15" stroke="#fff" stroke-width="8"/></svg></div></div>
 
 <!-- MAP -->
 <section id="tab-map" class="view" role="tabpanel">
@@ -764,6 +877,10 @@
     <div class="over-grid" id="stats-grid">…</div>
   </div>
   <div class="panel">
+    <h2>Activity<span class="sub">records over time · last 90 days</span></h2>
+    <div id="activity-chart"><div class="empty">Loading…</div></div>
+  </div>
+  <div class="panel">
     <h2>Entity types<span class="sub">by mentions</span></h2>
     <div class="bars" id="overview-bars"></div>
   </div>
@@ -794,8 +911,33 @@
 <section id="tab-arcs" class="view scrollable hidden" role="tabpanel">
   <div class="panel">
     <h2>Narrative arcs<span class="sub">storylines across events</span></h2>
+    <div class="row-bar">
+      <button class="btn" onclick="loadArcs()" type="button">Refresh</button>
+      <button class="btn primary" onclick="runCmd('arcs',this,loadArcs)" type="button">↻ Cluster arcs (pmb arcs cluster · LLM)</button>
+    </div>
     <div id="arcs-list"></div>
   </div>
+</section>
+
+<!-- ERRORS — swallowed best-effort breadcrumbs (same source as `pmb doctor`) -->
+<section id="tab-errors" class="view scrollable hidden" role="tabpanel">
+  <div class="panel">
+    <h2>Errors<span class="sub" id="errors-meta">swallowed breadcrumbs · last 7d</span></h2>
+    <div id="errors-summary" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+    <div id="errors-list"></div>
+  </div>
+</section>
+
+<!-- SETTINGS — live config editor (reads/writes the workspace config) -->
+<section id="tab-settings" class="view scrollable hidden" role="tabpanel">
+  <div class="panel">
+    <h2>Settings<span class="sub" id="settings-meta">workspace config</span></h2>
+    <div class="row-bar" style="align-items:center">
+      <button class="btn" id="cfg-pro-btn" onclick="toggleCfgPro()" type="button">Show all</button>
+      <span id="settings-status" style="font-family:var(--mono);font-size:11.5px;margin-left:6px"></span>
+    </div>
+  </div>
+  <div id="settings-list"></div>
 </section>
 
 <!-- LESSONS — self-improvement loop -->
@@ -848,6 +990,7 @@
     <h2>Duplicates<span class="sub">borderline pairs</span></h2>
     <div class="row-bar">
       <button class="btn" onclick="loadDedup()" type="button">Refresh</button>
+      <button class="btn primary" onclick="runCmd('dedupe',this,loadDedup)" type="button">↻ Recompute (pmb dedupe)</button>
       <button class="btn" onclick="runDedupSweep(0.92)" type="button">Sweep ≥0.92</button>
       <button class="btn" onclick="runDedupSweep(0.88)" type="button">Sweep ≥0.88 (looser)</button>
       <span class="meta" id="dedup-meta"></span>
@@ -947,29 +1090,86 @@ const dayLabel = ts=> new Date(ts*1000).toLocaleDateString(undefined,
 
 async function api(p,o){return (await fetch(p,o||{})).json();}
 
+// Custom confirm dialog, design-system styled — replaces the native confirm().
+// Returns a Promise<boolean>; Enter = confirm, Esc / backdrop = cancel.
+function confirmModal(title, message, opts){
+  opts = opts || {};
+  return new Promise(resolve=>{
+    const ov = document.createElement('div');
+    ov.className = 'modal-ov';
+    ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true"><h3>'+title+'</h3>'+
+      '<p>'+message+'</p><div class="modal-actions">'+
+      '<button class="btn modal-cancel" type="button">'+(opts.cancel||'Cancel')+'</button>'+
+      '<button class="btn primary modal-ok" type="button">'+(opts.ok||'Run')+'</button></div></div>';
+    document.body.appendChild(ov);
+    requestAnimationFrame(()=>ov.classList.add('on'));
+    let done = false;
+    const close = (val)=>{ if(done) return; done = true; ov.classList.remove('on');
+      document.removeEventListener('keydown', onKey); setTimeout(()=>ov.remove(), 200); resolve(val); };
+    const onKey = (e)=>{ if(e.key==='Escape') close(false); else if(e.key==='Enter') close(true); };
+    ov.querySelector('.modal-ok').addEventListener('click', ()=>close(true));
+    ov.querySelector('.modal-cancel').addEventListener('click', ()=>close(false));
+    ov.addEventListener('click', e=>{ if(e.target===ov) close(false); });
+    document.addEventListener('keydown', onKey);
+    setTimeout(()=>ov.querySelector('.modal-ok').focus(), 30);
+  });
+}
+
+// Run a whitelisted maintenance command on the server (POST /api/run). Heavy
+// or LLM-backed jobs (arcs, reindex, consolidate, reflect) ask for confirmation
+// and may take a while; the button shows live status, then refreshes the tab.
+async function runCmd(cmd, btn, after){
+  const SLOW = {arcs:1, reindex:1, consolidate:1, reflect:1};
+  if(SLOW[cmd] && !(await confirmModal('Run <code>pmb '+cmd+'</code>?', 'This command is heavy / LLM-backed and may take a while.'))) return;
+  const orig = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⟳ Running '+cmd+'…'; }
+  try{
+    const r = await api('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({cmd})});
+    if(btn) btn.textContent = (r && r.ok ? '✓ ' : '✕ ') + cmd + (r && r.seconds ? ' ('+r.seconds+'s)' : '');
+    if(!(r && r.ok)) console.warn('pmb '+cmd+' →', r);
+    if(r && r.ok && typeof after === 'function') setTimeout(after, 400);
+  }catch(e){
+    if(btn) btn.textContent = '✕ '+cmd+' failed';
+    console.error('runCmd', cmd, e);
+  }finally{
+    if(btn) setTimeout(()=>{ btn.disabled = false; btn.textContent = orig; }, 2800);
+  }
+}
+
 /* ============= TABS ============= */
 let activeTab='map';
 const loaded = {};
 const TAB_LOAD = {
-  map: ()=>{ if(!loaded.map){ loadMap(); loaded.map=true; } else resize(); startLive(); },
-  timeline: ()=>{ if(!loaded.timeline){ loadTimeline(); loaded.timeline=true; }},
+  map: ()=>{ let p; if(!loaded.map){ p=loadMap(); loaded.map=true; } else if(window.network){ network.redraw(); } startLive(); return p; },
+  timeline: ()=>{ if(!loaded.timeline){ loaded.timeline=true; return loadTimeline(); }},
   overview: ()=>loadOverview(),
-  entities: ()=>{ if(!loaded.entities){ loadEntities(''); loaded.entities=true; }},
-  arcs: ()=>{ if(!loaded.arcs){ loadArcs(); loaded.arcs=true; }},
+  entities: ()=>{ if(!loaded.entities){ loaded.entities=true; return loadEntities(''); }},
+  arcs: ()=>{ if(!loaded.arcs){ loaded.arcs=true; return loadArcs(); }},
   lessons: ()=>loadLessons(7),
   adherence: ()=>loadAdherence(7),
   dedup: ()=>loadDedup(),
   perf: ()=>loadPerf(24),
   recall: ()=>{},
+  errors: ()=>loadErrors(),
+  settings: ()=>loadSettings(),
 };
-const VALID_TABS = new Set(['map','timeline','overview','entities','arcs','lessons','adherence','dedup','perf','recall']);
-function showTab(name){
+const VALID_TABS = new Set(['map','timeline','overview','entities','arcs','lessons','adherence','dedup','perf','recall','errors','settings']);
+async function showTab(name){
   if(!VALID_TABS.has(name)) name = 'map';
   activeTab = name;
   $$('.tab').forEach(t=>t.classList.toggle('on', t.dataset.tab===name));
   $$('main > section').forEach(s=>s.classList.toggle('hidden', s.id !== 'tab-'+name));
   if(location.hash !== '#'+name) location.hash = name;
-  (TAB_LOAD[name]||(()=>{}))();
+  // Branded loader, but only if the data takes a beat (>160ms). Cached tabs
+  // never flash it; heavy/growing tabs (Map, Lessons…) show it while fetching.
+  const vl = document.getElementById('vloader');
+  // Gate on `ready` so the per-tab loader never stacks on top of the boot
+  // splash (#loader) — during boot only #loader shows, after it only #vloader.
+  const t = (vl && document.body.classList.contains('ready')) ? setTimeout(()=>vl.classList.add('on'), 160) : null;
+  try{ await (TAB_LOAD[name]||(()=>{}))(); }
+  catch(e){ console.error('tab load failed:', name, e); }
+  finally{ if(t) clearTimeout(t); if(vl) vl.classList.remove('on'); }
 }
 $('#tabs').addEventListener('click', e=>{const t=e.target.closest('.tab'); if(t) showTab(t.dataset.tab);});
 window.addEventListener('hashchange', ()=>showTab((location.hash||'#map').slice(1)));
@@ -985,7 +1185,23 @@ window.addEventListener('hashchange', ()=>showTab((location.hash||'#map').slice(
   if(lbl) lbl.textContent = label;
   // Respect a deep-link hash (`#timeline`, `#overview`, …) on first load.
   const initial = (location.hash||'#map').slice(1);
-  showTab(VALID_TABS.has(initial) ? initial : 'map');
+  // FIRST loader = the boot splash (#loader). Kick off the initial tab beneath
+  // it; its per-tab loader stays suppressed until `ready`.
+  const tabP = showTab(VALID_TABS.has(initial) ? initial : 'map');
+  let loading = true;
+  tabP.then(()=>{loading=false;}, ()=>{loading=false;});
+  // Let the splash breathe, then fade it.
+  await new Promise(r=>setTimeout(r, 500));
+  document.body.classList.add('ready');
+  // SECOND loader: ONLY after the splash has fully faded (~0.55s), and ONLY if
+  // the first tab is still loading, hand off to the per-tab loader. Sequential,
+  // never stacked.
+  await new Promise(r=>setTimeout(r, 560));
+  const vl = document.getElementById('vloader');
+  if(loading && vl){
+    vl.classList.add('on');
+    tabP.then(()=>vl.classList.remove('on'), ()=>vl.classList.remove('on'));
+  }
 })();
 
 /* ============= MAP / GRAPH (vis-network) =============
@@ -1051,7 +1267,7 @@ function nodeForVis(n){
       highlight: {background: lighter, border: '#ffffff'},
       hover: {background: lighter, border: '#ffffff'}
     },
-    shadow: {enabled: true, color: col + '77', size: 18, x: 0, y: 0}
+    shadow: {enabled: true, color: col + '88', size: 22, x: 0, y: 0}
   };
 }
 
@@ -1093,11 +1309,10 @@ function buildNetwork(){
       scaling: {min: 7, max: 34, label: {enabled: false}}
     },
     edges: {
-      color: {color: 'rgba(255,255,255,.07)', highlight: 'rgba(126,168,255,.5)',
-              hover: 'rgba(126,168,255,.35)', opacity: 1},
+      color: {color: 'rgba(255,255,255,.08)', highlight: 'rgba(139,127,240,.55)',
+              hover: 'rgba(139,127,240,.35)', opacity: 1},
       width: 0.5, selectionWidth: 1.4, hoverWidth: 1,
-      smooth: {enabled: true, type: 'continuous', roundness: 0.2},
-      arrows: 'none'
+      smooth: {enabled: true, type: 'continuous', roundness: 0.2}
     },
     physics: {
       enabled: true,
@@ -1298,7 +1513,7 @@ function recolorAll(){
       color: {background: col, border: lighter,
               highlight: {background: lighter, border: '#ffffff'},
               hover: {background: lighter, border: '#ffffff'}},
-      shadow: {enabled: true, color: col + '77', size: 18, x: 0, y: 0},
+      shadow: {enabled: true, color: col + '88', size: 22, x: 0, y: 0},
     };
   }));
   renderClusterList();
@@ -1394,7 +1609,13 @@ function resetMap(){
   select(null);
 }
 
-$('#mapsearch').addEventListener('input', e=>{query=e.target.value.toLowerCase(); refreshFilter();});
+$('#mapsearch').addEventListener('input', e=>{
+  query=e.target.value.toLowerCase();
+  // Search is graph-driven — route here from any tab so it works everywhere,
+  // not only when the Map is already open.
+  if(query && activeTab!=='map') showTab('map');
+  refreshFilter();
+});
 // Colour mode: by kind / by cluster (one viewtoggle group)
 $$('.viewtoggle button[data-mode]').forEach(b=>b.onclick=()=>{
   $$('.viewtoggle button[data-mode]').forEach(x=>x.classList.remove('on'));
@@ -1505,14 +1726,17 @@ function toggleDemo(){
       demoBaseScale = network.getScale();
       let angle = 0;
       demoTimer = setInterval(() => {
-        angle += 0.006;
-        const r = 220;  // orbit radius in world coords
+        angle += 0.005;
+        // A FIXED world radius is invisible on a large graph (the bug behind
+        // "demo does nothing"). Scale the radius to the zoom so the on-screen
+        // sweep is a steady ~60px whatever the graph's size.
+        const r = 60 / (demoBaseScale || 1);
         network.moveTo({
           position: {
             x: c.x + Math.cos(angle) * r,
-            y: c.y + Math.sin(angle) * r * 0.55,  // elliptical sweep
+            y: c.y + Math.sin(angle) * r * 0.55,  // elliptical drift
           },
-          scale: demoBaseScale * (1 + Math.sin(angle * 1.5) * 0.08),
+          scale: demoBaseScale * (1 + Math.sin(angle * 0.8) * 0.07),  // visible breathing zoom
         });
       }, 33);
     }, 80);
@@ -1525,6 +1749,14 @@ function toggleDemo(){
   }
 }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && demoOn) toggleDemo(); });
+// Collapsible sidebar — icon-only rail, persisted across reloads.
+function toggleSidebar(){
+  const c = document.body.classList.toggle('sb-collapsed');
+  try{ localStorage.setItem('pmb-sb-collapsed', c?'1':'0'); }catch(_){}
+  // The map canvas grows when the rail shrinks — nudge vis-network to refit.
+  if(window.network){ setTimeout(()=>{ try{ network.redraw(); }catch(_){}}, 260); }
+}
+try{ if(localStorage.getItem('pmb-sb-collapsed')==='1') document.body.classList.add('sb-collapsed'); }catch(_){}
 
 // ===== LIVE MAP =====
 // When the agent is actively recording, the user wants to SEE clusters grow.
@@ -2084,7 +2316,7 @@ function drawTimelineGraph(laneOf){
     // For each pair (i, i+1) in time order, draw a bezier between their
     // dots if they share at least one top entity. Cross-lane connections
     // show entity-level continuity that pure project lanes miss.
-    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7ea8ff';
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8B7FF0';
     for(let i = 0; i < positions.length - 1; i++){
       const a = positions[i], b = positions[i+1];
       if(a.lane < 0 || b.lane < 0) continue;
@@ -2230,6 +2462,31 @@ async function loadOverview(){
       <span class="track"><span class="fill" style="--s:${(n/max).toFixed(3)};background:linear-gradient(90deg,${c},transparent 160%);animation-delay:${i*60}ms"></span></span>
       <span class="v">${n}</span></div>`;
   }).join('') : '<div class="empty">No entities yet.</div>';
+  // Records-over-time activity chart (record peaks).
+  const act = await api('/api/activity?days=90').catch(_=>({series:[]}));
+  renderActivityChart(act);
+}
+
+function renderActivityChart(act){
+  const el = $('#activity-chart'); if(!el) return;
+  const series = (act && act.series) || [];
+  if(!series.length){ el.innerHTML = '<div class="empty">No activity in the window yet.</div>'; return; }
+  const W=900, H=150, pad=6, base=14;
+  const max = Math.max(1, ...series.map(d=>d.n)), bw=(W-pad*2)/series.length;
+  const bars = series.map((d,i)=>{
+    const h = Math.max(2,(d.n/max)*(H-pad*2-base));
+    const x = pad+i*bw, y = H-pad-h-base+2;
+    return `<rect x="${(x+bw*0.14).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1,bw*0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="var(--accent)" opacity="0.85"><title>${d.day}: ${d.n}</title></rect>`;
+  }).join('');
+  const mono = 'font-family:var(--mono);font-variant-numeric:tabular-nums';
+  el.innerHTML = `
+    <div style="display:flex;gap:28px;align-items:baseline;margin-bottom:10px">
+      <div><span style="${mono};font-size:26px;color:var(--ink)">${act.total||0}</span>
+        <span style="color:var(--faint);font-size:11px;margin-left:6px">records · last ${act.days||90}d</span></div>
+      <div><span style="${mono};font-size:18px;color:var(--accent)">${act.peak||0}</span>
+        <span style="color:var(--faint);font-size:11px;margin-left:6px">peak / day</span></div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="150" preserveAspectRatio="none" style="display:block;overflow:visible">${bars}</svg>`;
 }
 
 /* ============= ENTITIES ============= */
@@ -2256,7 +2513,7 @@ async function loadEntities(kind){
 async function loadArcs(){
   const arcs = await api('/api/arcs').catch(_=>[]);
   if(!arcs.length){
-    $('#arcs-list').innerHTML = '<div class="empty">No arcs yet. Run <code style="color:var(--amber)">pmb arcs cluster</code> to build them.</div>';
+    $('#arcs-list').innerHTML = '<div class="empty">No arcs yet. Run <code style="color:var(--accent)">pmb arcs cluster</code> to build them.</div>';
     return;
   }
   $('#arcs-list').innerHTML = arcs.map((a,i)=>`
@@ -2266,6 +2523,86 @@ async function loadArcs(){
       <div style="color:var(--dim);font-size:12.5px;line-height:1.5">${esc(a.summary||'')}</div>
     </div>`).join('');
 }
+
+/* ============= ERRORS — swallowed breadcrumbs (same source as pmb doctor) ============= */
+async function loadErrors(){
+  const data = await api('/api/errors?hours=168').catch(_=>({errors:[],counts:{}}));
+  const errs = data.errors||[], counts = data.counts||{};
+  const total = errs.length;
+  const m = $('#errors-meta'); if(m) m.textContent = `last ${Math.round((data.hours||168)/24)}d · ${total} error${total===1?'':'s'}`;
+  const chips = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  $('#errors-summary').innerHTML = total
+    ? chips.map(([c,n])=>`<span class="tag" style="color:var(--bad);border-color:rgba(224,122,139,.45)">${esc(c)} · ${n}</span>`).join('')
+    : '<span style="color:var(--good)">No errors in the window ✓</span>';
+  $('#errors-list').innerHTML = total ? errs.map((e,i)=>`
+    <div style="padding:12px 14px;background:var(--bad-soft);border:1px solid rgba(224,122,139,.22);border-radius:var(--r);margin-bottom:8px;animation:fadeup .4s ${Math.min(i,12)*.03}s var(--ease) backwards">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <span class="tag" style="color:var(--bad);border-color:rgba(224,122,139,.5)">${esc(e.component||'?')}</span>
+        <span style="color:var(--faint);font-family:var(--mono);font-size:11px">${e.ts?fmtTime(e.ts):''}</span>
+      </div>
+      <div style="margin-top:6px;font-family:var(--mono);font-size:12px;color:var(--ink);word-break:break-word">${esc(e.message||'')}</div>
+      ${e.note?`<div style="color:var(--dim);font-size:11.5px;margin-top:3px">${esc(e.note)}</div>`:''}
+    </div>`).join('') : '<div class="empty">Nothing logged - these come from PMB best-effort paths (same source as <code>pmb doctor</code>).</div>';
+}
+
+/* ============= SETTINGS — live workspace-config editor ============= */
+let _cfgAll = [], _cfgPro = false;
+async function loadSettings(){
+  const data = await api('/api/config').catch(_=>({settings:[]}));
+  _cfgAll = data.settings || [];
+  renderSettings();
+}
+function renderSettings(){
+  const ss = _cfgPro ? _cfgAll : _cfgAll.filter(s=>s.tier==='default');
+  const bySec = {};
+  ss.forEach(s=>{(bySec[s.section]=bySec[s.section]||[]).push(s);});
+  const secs = Object.keys(bySec).sort();
+  const mod = _cfgAll.filter(s=>s.source==='workspace').length;
+  $('#settings-meta').innerHTML = `${ss.length} of ${_cfgAll.length}${mod?` · <span style="color:var(--accent)">${mod} modified</span>`:''}`;
+  $('#settings-list').innerHTML = secs.length ? secs.map(sec=>`
+    <div class="panel">
+      <h2>${esc(sec)}<span class="sub">${bySec[sec].length}</span></h2>
+      ${bySec[sec].map(cfgRow).join('')}
+    </div>`).join('') : '<div class="empty">No settings.</div>';
+  bindSettings();
+}
+function cfgRow(s){
+  const k = esc(s.key); let control;
+  if(s.type==='bool') control = `<button class="cfg-toggle ${s.value?'on':''}" data-key="${k}" data-type="bool" aria-pressed="${!!s.value}"><span></span></button>`;
+  else if(s.choices) control = `<select class="cfg-input" data-key="${k}" data-type="str">${s.choices.map(c=>`<option ${String(c)===String(s.value)?'selected':''}>${esc(String(c))}</option>`).join('')}</select>`;
+  else if(s.type==='int'||s.type==='float') control = `<input class="cfg-input" type="number" data-key="${k}" data-type="${s.type}" value="${esc(String(s.value))}" step="${s.type==='float'?'any':'1'}"${s.min!=null?` min="${s.min}"`:''}${s.max!=null?` max="${s.max}"`:''}>`;
+  else control = `<input class="cfg-input" type="text" data-key="${k}" data-type="str" value="${esc(String(s.value??''))}">`;
+  const m = s.source==='workspace';
+  return `<div class="cfg-row">
+    <div class="cfg-meta">
+      <div><code>${esc(s.key.split('.').slice(1).join('.')||s.key)}</code>${m?` <span class="tag" style="color:var(--accent);border-color:var(--accent-line);cursor:pointer" data-reset="${k}" title="Reset to default">modified ✕</span>`:''}</div>
+      <div class="cfg-help">${esc(s.help||'')}</div>
+    </div>
+    <div class="cfg-ctrl">${control}</div>
+  </div>`;
+}
+function bindSettings(){
+  $$('#settings-list .cfg-input').forEach(el=>el.onchange=()=>{
+    let v=el.value;
+    if(el.dataset.type==='int') v=parseInt(v,10);
+    else if(el.dataset.type==='float') v=parseFloat(v);
+    setCfg(el.dataset.key, v);
+  });
+  $$('#settings-list .cfg-toggle').forEach(el=>el.onclick=()=>setCfg(el.dataset.key, !el.classList.contains('on')));
+  $$('#settings-list [data-reset]').forEach(el=>el.onclick=()=>resetCfg(el.dataset.reset));
+}
+async function setCfg(key,value){
+  const r = await api('/api/config_set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,value})}).catch(e=>({ok:false,error:String(e)}));
+  cfgStatus(r.ok?`✓ ${key} = ${r.value}`:`✗ ${key}: ${r.error||'failed'}`, r.ok);
+  if(r.ok){ const s=_cfgAll.find(x=>x.key===key); if(s){ s.value=r.value; s.source=r.source; } renderSettings(); }
+}
+async function resetCfg(key){
+  const r = await api('/api/config_reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})}).catch(e=>({ok:false,error:String(e)}));
+  cfgStatus(r.ok?`↺ ${key} reset`:`✗ ${key}: ${r.error}`, r.ok);
+  if(r.ok){ const s=_cfgAll.find(x=>x.key===key); if(s){ s.value=r.value; s.source=r.source; } renderSettings(); }
+}
+function cfgStatus(msg,ok){ const e=$('#settings-status'); if(e){ e.textContent=msg; e.style.color=ok?'var(--good)':'var(--bad)'; } }
+function toggleCfgPro(){ _cfgPro=!_cfgPro; const b=$('#cfg-pro-btn'); if(b) b.textContent=_cfgPro?'Curated':'Show all'; renderSettings(); }
 
 /* ============= LESSONS — self-improvement loop ============= */
 async function loadLessons(days){

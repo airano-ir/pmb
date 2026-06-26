@@ -227,9 +227,7 @@ pmb snapshot create --note "before refactor"
 |---|---|
 | `pmb config list` | Every setting, its value, and where the value comes from (`--only-overridden`). |
 | `pmb config get\|set\|reset <key> [value]` | Read / change / reset a setting (workspace or `--global`). |
-| `pmb tune` | TUI to browse + edit all 67 settings live (needs `textual`). |
-| `pmb tui` | Full 5-tab terminal workspace (Memory / Recall / Stats / Dedup / Tune). |
-| `pmb dashboard` | Local web dashboard on `127.0.0.1:8765` (graph, events, perf, recall debugger). |
+| `pmb dashboard` | Local web dashboard on `127.0.0.1:8765`: graph, timeline, a live **Settings** editor, an **Errors** view, perf, and a recall debugger. Replaces the old `tui`/`tune` TUIs. |
 
 ```bash
 pmb config set recall.top_k 8

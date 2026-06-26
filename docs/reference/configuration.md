@@ -20,7 +20,7 @@ pmb config list             # the common keys, with value, source, and default
 pmb config list --pro       # everything, including advanced knobs
 pmb config get <key>        # one value
 pmb config set <key> <value>   # write to the global config
-pmb tune                    # interactive editor for all settings
+pmb config set <key> <val>  # or the dashboard Settings tab
 ```
 
 A value set globally applies to every workspace, which is what the daemon and

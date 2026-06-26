@@ -1,4 +1,4 @@
-.PHONY: help install dev test test-all test-core test-smoke test-all-WARN lint format clean bench bench-quick tui dashboard docker-build docker-shell docker-dashboard docker-mcp docker-test docker-bench-data docker-bench-write docker-bench-locomo docker-stop docker-restart docker-down docker-fix-perms docker-build-gpu docker-shell-gpu docker-dashboard-gpu docker-down-gpu
+.PHONY: help install dev test test-all test-core test-smoke test-all-WARN lint format clean bench bench-quick dashboard docker-build docker-shell docker-dashboard docker-mcp docker-test docker-bench-data docker-bench-write docker-bench-locomo docker-stop docker-restart docker-down docker-fix-perms docker-build-gpu docker-shell-gpu docker-dashboard-gpu docker-down-gpu
 
 help:
 	@echo "PMB development targets:"
@@ -16,7 +16,6 @@ help:
 	@echo "  make clean          - remove build artefacts and __pycache__"
 	@echo "  make bench          - full LoCoMo benchmark (10 conversations, ~30 min)"
 	@echo "  make bench-quick    - quick smoke benchmark (3 conversations, ~3 min)"
-	@echo "  make tui            - launch terminal UI"
 	@echo "  make dashboard      - launch web dashboard on :8765"
 	@echo ""
 	@echo "  Containerized mode (does not touch host Python or ~/.pmb):"
@@ -82,8 +81,6 @@ bench:
 bench-quick:
 	python scripts/benchmarks/benchmark_locomo.py --n-conversations 3 --top-k 10
 
-tui:
-	pmb tui
 
 dashboard:
 	pmb dashboard

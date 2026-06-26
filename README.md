@@ -18,7 +18,7 @@
 [![MCP](https://img.shields.io/badge/MCP-native-purple.svg)](https://modelcontextprotocol.io)
 [![GitHub MCP Registry](https://img.shields.io/badge/GitHub_MCP_Registry-listed-8B7FF0?logo=modelcontextprotocol&logoColor=white)](https://github.com/mcp/oleksiijko/pmb-ai)
 
-<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-map.gif" width="720" alt="PMB - your project's memory as a live graph">
+<img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-map.png" width="760" alt="PMB dashboard - your project's memory as a live entity graph">
 
 *Local-first memory, visualized. 3,800+ entities and 41,000+ connections, captured automatically as you work.*
 
@@ -289,8 +289,7 @@ on one machine.
 Inspect:
 
 ```bash
-pmb dashboard     # http://127.0.0.1:8765
-pmb tui           # terminal UI
+pmb dashboard     # http://127.0.0.1:8765 (graph, timeline, settings, errors)
 pmb stats         # quick numbers
 pmb doctor        # health check
 ```
@@ -303,8 +302,7 @@ pmb doctor        # health check
 # Memory
 pmb stats                                  show counts and storage info
 pmb recall "query"                          search with full debug
-pmb tui                                     interactive terminal UI
-pmb dashboard                               web UI on port 8765
+pmb dashboard                               web UI on port 8765 (graph, settings, errors)
 
 # Ingest
 pmb index pdf paper.pdf                     extract + chunk + embed

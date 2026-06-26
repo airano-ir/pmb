@@ -61,7 +61,7 @@ key decisions behind them. For how the pieces fit at runtime, see
 | Codex config | tomli-w to write TOML, standard library tomllib to read |
 | Dashboard | Python standard library HTTP server, vanilla HTML, CSS, and JavaScript, with vis-network for the entity graph |
 | npm launcher | a thin Node wrapper that installs and forwards to the Python package (no bundled Python) |
-| Optional extras | anthropic (background consolidation), cryptography (encrypted workspace export), textual (TUI) |
+| Optional extras | anthropic (background consolidation), cryptography (encrypted workspace export) |
 
 The dashboard deliberately has no build step and no JavaScript framework. It is
 one HTML file with plain CSS and JavaScript, so it renders anywhere and there is

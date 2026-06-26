@@ -136,6 +136,17 @@ def make_handler(engine):
                     days = float((qs.get("days") or ["7"])[0])
                     self._send_json(self._handle_adherence(days))
                     return
+                if route == "/api/activity":
+                    days = int((qs.get("days") or ["90"])[0])
+                    self._send_json(self._handle_activity(days))
+                    return
+                if route == "/api/errors":
+                    hours = float((qs.get("hours") or ["168"])[0])
+                    self._send_json(self._handle_errors(hours))
+                    return
+                if route == "/api/config":
+                    self._send_json(self._handle_config())
+                    return
                 self.send_error(404)
             except Exception as e:
                 log.exception("GET %s failed", route)
@@ -179,6 +190,15 @@ def make_handler(engine):
                 if route == "/api/dedup_sweep":
                     self._send_json(self._handle_dedup_sweep(payload))
                     return
+                if route == "/api/config_set":
+                    self._send_json(self._handle_config_set(payload))
+                    return
+                if route == "/api/config_reset":
+                    self._send_json(self._handle_config_reset(payload))
+                    return
+                if route == "/api/run":
+                    self._send_json(self._handle_run(payload))
+                    return
                 self.send_error(404)
             except Exception as e:
                 log.exception("POST %s failed", route)
@@ -192,6 +212,104 @@ def make_handler(engine):
             stats = engine.stats() if hasattr(engine, "stats") else {}
             graph_stats = engine.graph_stats() if hasattr(engine, "graph_stats") else {}
             return {"workspace": stats, "graph": graph_stats}
+
+        def _handle_config(self) -> dict:
+            """All tunables with current value + schema metadata, for the
+            Settings tab. Read-only here; writes go via /api/config_set."""
+            from pmb.config import DEFAULT_TIER_KEYS, SCHEMA
+            cfg = engine.config
+            out = []
+            for key, s in SCHEMA.items():
+                try:
+                    val = cfg.get(key)
+                except Exception:
+                    val = s.default
+                out.append({
+                    "key": key,
+                    "section": key.split(".", 1)[0],
+                    "value": val,
+                    "default": s.default,
+                    "type": getattr(s.type, "__name__", str(s.type)),
+                    "help": s.help,
+                    "choices": list(s.choices) if s.choices else None,
+                    "min": s.min,
+                    "max": s.max,
+                    "source": cfg.source_of(key),
+                    "tier": "default" if key in DEFAULT_TIER_KEYS else "pro",
+                })
+            return {"settings": out}
+
+        def _handle_config_set(self, payload: dict) -> dict:
+            """Write one setting to the per-workspace config (validated via the
+            schema's _coerce). Localhost-only surface."""
+            key = str(payload.get("key") or "")
+            try:
+                typed = engine.config.set_workspace(key, payload.get("value"))
+                return {"ok": True, "key": key, "value": typed,
+                        "source": engine.config.source_of(key)}
+            except Exception as e:
+                return {"ok": False, "key": key, "error": str(e)}
+
+        def _handle_config_reset(self, payload: dict) -> dict:
+            """Drop a per-workspace override, reverting to global/default."""
+            key = str(payload.get("key") or "")
+            try:
+                engine.config.reset_workspace(key)
+                return {"ok": True, "key": key, "value": engine.config.get(key),
+                        "source": engine.config.source_of(key)}
+            except Exception as e:
+                return {"ok": False, "key": key, "error": str(e)}
+
+        # Whitelisted maintenance commands runnable from the dashboard. Each maps
+        # to a `pmb` argv. LLM/heavy ones are flagged so the UI can warn.
+        RUN_COMMANDS = {
+            "dedupe":      {"argv": ["dedupe"],      "label": "Deduplicate",      "slow": False},
+            "arcs":        {"argv": ["arcs", "cluster"], "label": "Cluster arcs", "slow": True},
+            "regraph":     {"argv": ["regraph"],     "label": "Rebuild graph",    "slow": False},
+            "prune-graph": {"argv": ["prune-graph"], "label": "Prune weak edges", "slow": False},
+            "rehearse":    {"argv": ["rehearse"],    "label": "Rehearse idle",    "slow": False},
+            "reindex":     {"argv": ["reindex"],     "label": "Re-embed all",     "slow": True},
+            "consolidate": {"argv": ["consolidate"], "label": "Consolidate (LLM)", "slow": True},
+            "reflect":     {"argv": ["reflect"],     "label": "Reflect (LLM)",    "slow": True},
+            "declutter":   {"argv": ["declutter"],   "label": "Declutter junk",   "slow": False},
+        }
+
+        def _handle_run(self, payload: dict) -> dict:
+            """Run a whitelisted maintenance command as a subprocess. Localhost-
+            only surface. Heavy/LLM jobs are capped by the timeout; the request
+            blocks until the job finishes (ThreadingHTTPServer keeps other
+            requests responsive meanwhile)."""
+            import shutil
+            import subprocess
+            import sys
+            import time
+            cmd = str(payload.get("cmd") or "")
+            spec = self.RUN_COMMANDS.get(cmd)
+            if spec is None:
+                return {"ok": False, "cmd": cmd,
+                        "error": f"command not allowed: {cmd!r}"}
+            exe = shutil.which("pmb") or shutil.which("pmb.exe")
+            base = [exe] if exe else [sys.executable, "-m", "pmb"]
+            t0 = time.monotonic()
+            try:
+                proc = subprocess.run(
+                    base + spec["argv"],
+                    capture_output=True, text=True, timeout=900,
+                )
+                out = (proc.stdout or "")
+                if proc.stderr:
+                    out += ("\n" + proc.stderr)
+                out = out.strip()
+                if len(out) > 4000:
+                    out = "…(truncated)\n" + out[-4000:]
+                return {"ok": proc.returncode == 0, "cmd": cmd,
+                        "code": proc.returncode, "output": out or "(no output)",
+                        "seconds": round(time.monotonic() - t0, 1)}
+            except subprocess.TimeoutExpired:
+                return {"ok": False, "cmd": cmd, "error": "timed out after 900s",
+                        "seconds": round(time.monotonic() - t0, 1)}
+            except Exception as e:
+                return {"ok": False, "cmd": cmd, "error": str(e)}
 
         def _handle_events(self, limit: int) -> list[dict]:
             evs = engine.events.list_active(engine.workspace.id, limit=limit)
@@ -240,6 +358,47 @@ def make_handler(engine):
                 }
                 for e in evs
             ]
+
+        def _handle_activity(self, days: int) -> dict:
+            """Events-per-day for the Overview activity chart (record peaks).
+            Reuses the Engine API (no raw schema assumptions) and buckets in
+            Python — the active-event count is small enough for a dashboard."""
+            import time as _t
+            from collections import Counter
+            since = _t.time() - max(1, days) * 86400
+            evs = engine.events.list_active(engine.workspace.id, limit=100000)
+            per_day: Counter = Counter()
+            per_type: Counter = Counter()
+            for e in evs:
+                ts = getattr(e, "timestamp", None)
+                if ts is None or ts < since:
+                    continue
+                per_day[_t.strftime("%Y-%m-%d", _t.localtime(ts))] += 1
+                per_type[e.event_type or "other"] += 1
+            series = [{"day": d, "n": per_day[d]} for d in sorted(per_day)]
+            by_type = sorted(
+                ({"type": k, "n": v} for k, v in per_type.items()),
+                key=lambda x: -x["n"],
+            )
+            return {
+                "days": days,
+                "total": sum(per_day.values()),
+                "peak": max(per_day.values(), default=0),
+                "series": series,
+                "by_type": by_type,
+            }
+
+        def _handle_errors(self, hours: float) -> dict:
+            """Recent swallowed-error breadcrumbs (the error_log table) - the
+            same source `pmb doctor` reads. Surfaced read-only for triage."""
+            from pmb.core.errlog import error_counts, recent_errors
+            since = max(0.0, hours) * 3600.0
+            db = engine.workspace.db_path
+            return {
+                "hours": hours,
+                "counts": error_counts(db, since_s=since),
+                "errors": recent_errors(db, since_s=since, limit=200),
+            }
 
         def _handle_lesson_stats(self, days: float) -> dict:
             """Self-improvement loop dashboard data."""

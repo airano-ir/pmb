@@ -401,61 +401,6 @@ def prune_graph(
 
 
 @app.command()
-def tui():
-    """Improvement PP: full-workspace TUI - Memory / Recall / Stats / Dedup / Tune.
-
-    5-tab terminal workspace:
-      [1] Memory   - paginated event browser, filter, detail pane
-      [2] Recall   - interactive query playground with score breakdown
-      [3] Stats    - live MCP perf (auto-refresh 2s)
-      [4] Dedup    - borderline duplicate pairs awaiting decision
-      [5] Tune     - all 67 settings, click to edit, type-validated
-
-    Hotkeys: 1-5 switch tabs · / filter · r reload · q quit · ? help
-
-    Best-of from k9s / lazygit / mem0 / htop dashboards, terminal-native.
-    """
-    eng = Engine()
-    try:
-        from pmb.cli.tui_workspace import run_workspace_tui
-    except ImportError:
-        console.print(
-            "[red]Textual not installed.[/] Install: "
-            "[cyan].venv/Scripts/pip install textual[/]"
-        )
-        raise typer.Exit(1)
-    run_workspace_tui(eng)
-
-
-@app.command()
-def tune():
-    """Improvement OO: interactive TUI for fine-tuning all PMB settings.
-
-    Browse 67 settings across 9 categories (recall, dedup, embedding, …).
-    See current value + source (workspace/global/default), type, valid range.
-    Edit live with type validation. Press 'd' to reset to default.
-
-    Writes to per-workspace `config.yaml`. Press 'q' to quit.
-
-    Examples of what you can tune:
-      - recall.top_k, recall.rerank, recall.graph_boost
-      - dedup.cosine_high (0.92 default - lower = more aggressive merging)
-      - embedding.backend (sentence-transformers vs fastembed)
-      - mcp.record_batch_async, recall.adaptive_decompose
-    """
-    eng = Engine()
-    try:
-        from pmb.cli.tui_config import run_tui
-    except ImportError:
-        console.print(
-            "[red]Textual not installed.[/] Install with: "
-            "[cyan].venv/Scripts/pip install textual[/]"
-        )
-        raise typer.Exit(1)
-    run_tui(eng.config)
-
-
-@app.command()
 def regraph():
     """Wipe and rebuild the entity/edge graph from active events.
 
