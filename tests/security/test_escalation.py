@@ -91,4 +91,8 @@ def test_smart_recall_picks_higher_confidence_across_stages(
     base = eng.recall("adoption", top_k=3)
     smart = eng.recall_smart("adoption", top_k=3,
                              confidence_threshold=0.99)
-    assert smart.confidence >= base.confidence
+    # Tolerance: confidence folds in a time.time()-based recency term, and the
+    # two calls run a few ms apart, so the SAME result scores ~1e-10 lower on
+    # the later (smart) call. The contract is "smart is not WORSE than base",
+    # not bit-exact equality - compare with a float epsilon so CI is not 50/50.
+    assert smart.confidence >= base.confidence - 1e-6
