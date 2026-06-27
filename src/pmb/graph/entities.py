@@ -108,7 +108,11 @@ _TECH_RE = _build_tech_regex()
 # File path: posix-style with a known extension, or bare filename.ext
 _FILE_RE = re.compile(
     r"(?<![\w/])"
-    r"(?:[A-Za-z0-9_\-./]+/)*"               # optional dirs
+    # optional dirs: each segment is slash-terminated and the inner class does
+    # NOT contain '/', so segments can't overlap - this keeps matching linear.
+    # (The old `(?:[A-Za-z0-9_\-./]+/)*` put '/' inside the inner '+' under a
+    # '*', which backtracks catastrophically on long slashless input - ReDoS.)
+    r"(?:[A-Za-z0-9_\-.]+/)*"                 # optional dirs
     r"[A-Za-z0-9_\-.]+"
     r"\.(?:py|js|ts|tsx|jsx|go|rs|java|kt|swift|rb|php|c|h|cpp|hpp|cs|"
     r"sql|sh|ps1|yml|yaml|toml|json|md|html|css|scss|vue|svelte|conf|"
