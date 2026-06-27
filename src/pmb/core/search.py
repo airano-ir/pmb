@@ -388,6 +388,11 @@ class HybridSearch:
         self._bm25_ulids: list[str] = []
         self._bm25_tokens: list[list[str]] = []
         self._bm25_reloaded = False
+        # mtime of the on-disk BM25 cache the last time WE loaded/saved it.
+        # A long-running daemon uses this to notice out-of-band writes (a CLI
+        # `pmb fact` / `index` / `track` while the daemon is warm) and refresh,
+        # instead of serving a stale in-RAM index until restart.
+        self._bm25_cache_mtime = 0.0
 
     @property
     def _table(self):
@@ -656,6 +661,12 @@ class HybridSearch:
             with open(tmp, "wb") as f:
                 pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
             tmp.replace(self._bm25_cache_path)
+            # Remember our own write so the staleness check doesn't mistake it
+            # for an out-of-band one and reload needlessly.
+            try:
+                self._bm25_cache_mtime = self._bm25_cache_path.stat().st_mtime
+            except OSError:
+                pass
         except Exception:
             # Cache is purely a perf hint; never fail writes because of it
             pass
@@ -678,6 +689,10 @@ class HybridSearch:
                 self._bm25 = fitted
             else:
                 self._bm25 = None
+            try:
+                self._bm25_cache_mtime = p.stat().st_mtime
+            except OSError:
+                pass
             return True
         except Exception:
             return False
@@ -718,6 +733,24 @@ class HybridSearch:
         # Seed the cache so the next process avoids the LanceDB scan
         if self._bm25_ulids:
             self._save_bm25_cache()
+
+    def _refresh_if_stale(self) -> None:
+        """Pick up out-of-band writes. If another process appended to the
+        on-disk BM25 cache since we last loaded/saved it (a CLI `pmb fact` /
+        `index` / `track` while this engine - typically the warm daemon - is
+        live), reload BM25 and drop the cached LanceDB handle so the next
+        vector query re-opens the table. Without this a long-running daemon
+        serves a stale index for externally-added memory until it restarts.
+        Cheap: one stat() per search; the reload only fires when the file
+        actually changed."""
+        try:
+            m = self._bm25_cache_path.stat().st_mtime
+        except OSError:
+            return
+        if m > self._bm25_cache_mtime:
+            self.reload_bm25()
+            # Force LanceDB to re-open on next access so new vectors are visible.
+            self._table_obj = None
 
     def _workspace_has_no_events(self) -> bool:
         """Cheap SQLite check to skip the 22s LanceDB import on cold-start
@@ -799,9 +832,13 @@ class HybridSearch:
         vector similarity but the call doesn't timeout.
         """
         # Lazy BM25 reload - first search triggers it (cheap if pickle exists,
-        # otherwise scans LanceDB once). Subsequent searches skip via the flag.
+        # otherwise scans LanceDB once). Subsequent searches skip via the flag,
+        # but still check whether another process wrote since (out-of-band CLI
+        # writes vs a warm daemon) and refresh if so.
         if not self._bm25_reloaded:
             self.reload_bm25()
+        else:
+            self._refresh_if_stale()
 
         if self.size() == 0:
             return []
