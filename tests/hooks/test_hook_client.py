@@ -277,3 +277,47 @@ def test_prepare_context_client_overhead_p95(monkeypatch):
         assert p95 < 300.0, f"client overhead p95={p95:.0f}ms exceeds 300ms budget"
     finally:
         srv.shutdown()
+
+
+# ── PMB_INTERNAL_LLM guard: PMB's own LLM sub-calls must not trip PMB hooks ──
+
+def test_internal_llm_flag_no_ops_every_hook(monkeypatch, capsys):
+    """PMB spawns `claude -p` as its OWN LLM backend and sets PMB_INTERNAL_LLM=1.
+    Every hook subcommand must then no-op: no daemon round-trip, no output, no
+    capture - so PMB's summarizer prompts don't trip PMB's own hooks (the
+    correction-capture false-positive bug)."""
+    import pmb.hookclient.__main__ as hc
+
+    reached = {"daemon": False}
+    monkeypatch.setattr(
+        "pmb.mcp.registry.find_live_daemon",
+        lambda: reached.__setitem__("daemon", True) or {"host": "127.0.0.1", "port": 1},
+        raising=False,
+    )
+    monkeypatch.setenv("PMB_INTERNAL_LLM", "1")
+
+    class _Stdin:
+        def __init__(self, data):
+            self._d = data.encode("utf-8")
+            self.buffer = self
+        def read(self):
+            return self._d
+
+    # a prompt that WOULD trip correction-capture if the hook actually ran
+    monkeypatch.setattr(sys, "stdin", _Stdin(json.dumps(
+        {"prompt": "again, again - stop. Capture the INTENT, not the diff."})))
+
+    for sub in ("prepare-context", "session-restore", "track-action",
+                "pretool", "autowrite"):
+        assert hc.main([sub]) == 0
+
+    assert reached["daemon"] is False, "internal LLM call must not reach the daemon"
+    assert capsys.readouterr().out == "", "internal LLM call must emit no hook output"
+
+
+def test_claude_cli_client_marks_internal_llm():
+    """The other half of the guard: the spawn flags itself (PMB_INTERNAL_LLM=1)
+    so the hook entrypoint above can recognise an internal call."""
+    from pmb.health.consolidate import ClaudeCLIClient
+    env = ClaudeCLIClient(command="claude")._subprocess_env()
+    assert env.get("PMB_INTERNAL_LLM") == "1"

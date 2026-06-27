@@ -390,6 +390,16 @@ _DISPATCH = {
 
 
 def main(argv: list[str] | None = None) -> int:
+    # PMB spawns `claude -p` as its OWN LLM backend (consolidate, track
+    # changes/modules, graph expansion). Those sub-calls inherit the host's
+    # hook config, so without this guard PMB's own summarizer prompts trip
+    # PMB's hooks - e.g. the correction-capture marker scan flagging "Capture
+    # the INTENT, not the diff" as user pushback, or autowrite journaling the
+    # sub-call. An internal LLM call must leave no memory side effects, so every
+    # hook subcommand no-ops here. The flag is set in
+    # health.consolidate.ClaudeCLIClient._subprocess_env.
+    if os.environ.get("PMB_INTERNAL_LLM"):
+        return 0
     # Windows consoles default to cp1252; a lesson with an emoji or Cyrillic would
     # crash sys.stdout.write and the hook would silently emit nothing. Force UTF-8
     # so any rule text reaches the agent.

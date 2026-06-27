@@ -212,6 +212,18 @@ class ClaudeCLIClient:
             prompt,
         ]
 
+    def _subprocess_env(self) -> dict:
+        """Environment for the spawned `claude -p`. Flags the call as an
+        INTERNAL PMB LLM sub-call (PMB_INTERNAL_LLM=1) so the host's PMB hooks
+        no-op on it. Without this, PMB's own summarizer prompts trip PMB's own
+        UserPromptSubmit / Stop hooks - e.g. correction-capture flagging
+        "Capture the INTENT, not the diff" as user pushback, and autowrite
+        journaling the sub-call. Internal LLM calls must leave no memory side
+        effects (the guard lives in pmb.hookclient.__main__)."""
+        env = dict(os.environ)
+        env["PMB_INTERNAL_LLM"] = "1"
+        return env
+
     def consolidate(self, events_text: list[str]) -> dict:
         import subprocess
 
@@ -229,6 +241,7 @@ class ClaudeCLIClient:
                 argv,
                 capture_output=True, text=True, timeout=self.timeout,
                 encoding="utf-8", errors="replace",
+                env=self._subprocess_env(),
             )
         except FileNotFoundError:
             raise RuntimeError(
@@ -259,6 +272,7 @@ class ClaudeCLIClient:
                 argv,
                 capture_output=True, text=True, timeout=self.timeout,
                 encoding="utf-8", errors="replace",
+                env=self._subprocess_env(),
             )
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
             raise RuntimeError(f"claude CLI failed: {e}")
