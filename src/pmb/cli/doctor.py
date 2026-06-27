@@ -71,17 +71,32 @@ def check_deps() -> dict:
 
 
 def check_embedding_model() -> dict:
-    """Look for a cached sentence-transformers model so first recall is fast."""
+    """Look for a cached sentence-transformers model so first recall is fast.
+
+    Checks the CONFIGURED embedding model (embedding.model), not a hardcoded
+    name - otherwise the default multilingual model always reports 'not cached'
+    even when it is, because the check looked for a different model id."""
+    from pmb.config import Config
+    try:
+        from pmb.core.workspace import detect_workspace
+        ws = detect_workspace()
+        cfg = Config(workspace_dir=ws.storage_dir, pmb_home=ws.pmb_home)
+    except Exception:
+        cfg = Config()
+    model = cfg.get("embedding.model") or "sentence-transformers/all-MiniLM-L6-v2"
+    backend = cfg.get("embedding.backend") or "sentence-transformers"
+    if backend != "sentence-transformers":
+        return _ok(
+            f"embedding backend '{backend}', model '{model}' "
+            f"(HuggingFace cache check skipped)"
+        )
     hf_cache = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
-    candidates = [
-        hf_cache / "hub" / "models--sentence-transformers--all-MiniLM-L6-v2",
-        hf_cache / "transformers",
-    ]
-    for p in candidates:
-        if p.exists():
-            return _ok(f"embedding model cache found: {p}")
+    # HF stores a repo "org/name" under hub/models--org--name.
+    cache_dir = hf_cache / "hub" / ("models--" + model.replace("/", "--"))
+    if cache_dir.exists():
+        return _ok(f"embedding model cached: {model}")
     return _warn(
-        "embedding model not cached yet - first recall will download ~80MB. "
+        f"embedding model '{model}' not cached yet - first recall will download it. "
         f"Cache root: {hf_cache}"
     )
 
