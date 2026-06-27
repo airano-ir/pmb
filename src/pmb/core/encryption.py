@@ -161,9 +161,12 @@ def export_workspace(
         salt = os.urandom(_SALT_LEN)
         key = _derive_key_passphrase(passphrase, salt)
 
-    token = Fernet(key).encrypt(payload)
+    # `ciphertext` (NOT a plaintext token): the workspace payload encrypted with
+    # Fernet (AES-128-CBC + HMAC). Only the header (magic + version + mode +
+    # salt) and this ciphertext are written - never plaintext or the key.
+    ciphertext = Fernet(key).encrypt(payload)
     header = _MAGIC + bytes([_VERSION, mode]) + salt
-    Path(out_path).write_bytes(header + token)
+    Path(out_path).write_bytes(header + ciphertext)
     return CryptoResult(
         True, "export",
         f"encrypted {len(payload):,} bytes → {out_path}",
@@ -191,7 +194,7 @@ def import_workspace(
     if version != _VERSION:
         return CryptoResult(False, "import", f"unsupported bundle version {version}")
     salt = raw[len(_MAGIC) + 2: len(_MAGIC) + 2 + _SALT_LEN]
-    token = raw[len(_MAGIC) + 2 + _SALT_LEN:]
+    ciphertext = raw[len(_MAGIC) + 2 + _SALT_LEN:]
 
     if mode == _MODE_KEYFILE:
         if not key_file:
@@ -205,7 +208,7 @@ def import_workspace(
         return CryptoResult(False, "import", f"unknown bundle mode {mode}")
 
     try:
-        payload = Fernet(key).decrypt(token)
+        payload = Fernet(key).decrypt(ciphertext)
     except InvalidToken:
         return CryptoResult(False, "import",
                             "decryption failed - wrong passphrase/key or tampered bundle")
