@@ -200,6 +200,17 @@ class RecallMixin:
         if rerank_top_n is None:
             rerank_top_n = self.config.get("recall.rerank_top_n")
 
+        # Reflect out-of-band writes: if another process (a CLI `pmb fact` /
+        # `forget` / `purge` while this engine - typically the warm daemon - is
+        # live) changed the on-disk index, reload it AND invalidate the recall
+        # cache here, so even a previously-cached identical query re-runs
+        # instead of serving a stale hit until the TTL.
+        try:
+            if self.search._refresh_if_stale():
+                self.recall_cache.bump_generation()
+        except Exception:
+            pass
+
         # Adaptive Query Decomposition (RAG-Fusion / IRCoT style).
         # Triggered only when query looks multi-hop and feature is on.
         # The user's recall() call is the entry point; recursive sub-query

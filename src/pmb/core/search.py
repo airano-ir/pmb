@@ -756,7 +756,7 @@ class HybridSearch:
         if self._bm25_ulids:
             self._save_bm25_cache()
 
-    def _refresh_if_stale(self) -> None:
+    def _refresh_if_stale(self) -> bool:
         """Pick up out-of-band writes. If another process appended to the
         on-disk BM25 cache since we last loaded/saved it (a CLI `pmb fact` /
         `index` / `track` while this engine - typically the warm daemon - is
@@ -764,15 +764,18 @@ class HybridSearch:
         vector query re-opens the table. Without this a long-running daemon
         serves a stale index for externally-added memory until it restarts.
         Cheap: one stat() per search; the reload only fires when the file
-        actually changed."""
+        actually changed. Returns True when it detected a change and reloaded,
+        so the caller can also invalidate its recall cache."""
         try:
             m = self._bm25_cache_path.stat().st_mtime
         except OSError:
-            return
+            return False
         if m > self._bm25_cache_mtime:
             self.reload_bm25()
             # Force LanceDB to re-open on next access so new vectors are visible.
             self._table_obj = None
+            return True
+        return False
 
     def _workspace_has_no_events(self) -> bool:
         """Cheap SQLite check to skip the 22s LanceDB import on cold-start
