@@ -187,7 +187,10 @@ def track_install_cmd(
         hook.write_text("#!/bin/sh\n" + block, encoding="utf-8")
         try:
             import os
-            os.chmod(hook, 0o755)
+            # Owner-only rwx (0o700): git runs the hook as the current user, so
+            # group/other read+execute (0o755) is needless exposure (CodeQL
+            # 'overly permissive file permissions').
+            os.chmod(hook, 0o700)
         except OSError:
             pass
         console.print(Panel.fit(
