@@ -164,7 +164,10 @@ def make_handler(engine):
                     return
                 self.send_error(404)
             except Exception as e:
-                log.exception("GET %s failed", route)
+                # Strip CRLF from the user-controlled route before logging so a
+                # crafted URL can't forge log lines (CodeQL log injection).
+                safe_route = route.replace("\r", " ").replace("\n", " ")
+                log.exception("GET %s failed", safe_route)
                 self._send_json({"error": str(e)}, status=500)
 
         def do_POST(self):
@@ -216,7 +219,10 @@ def make_handler(engine):
                     return
                 self.send_error(404)
             except Exception as e:
-                log.exception("POST %s failed", route)
+                # Strip CRLF from the user-controlled route before logging so a
+                # crafted URL can't forge log lines (CodeQL log injection).
+                safe_route = route.replace("\r", " ").replace("\n", " ")
+                log.exception("POST %s failed", safe_route)
                 self._send_json({"error": str(e)}, status=500)
 
         # ------------------------------------------------------------------
