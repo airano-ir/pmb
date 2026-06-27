@@ -178,6 +178,9 @@ def _extract_python(text: str) -> tuple[list[str], list[str]]:
                     prefix = f"{s.parent}.{s.name} (method)"
                     symbol_strs.append(prefix)
                     continue
+                elif s.kind == "constant":
+                    symbol_strs.append(f"{s.name} (const)")
+                    continue
                 symbol_strs.append(f"{prefix}{s.name}")
         return symbol_strs, imports
     except Exception:

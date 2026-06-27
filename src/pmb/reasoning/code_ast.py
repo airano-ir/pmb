@@ -118,6 +118,22 @@ def extract_python_symbols(code: str) -> list[CodeSymbol]:
                     line=node.lineno,
                 ))
             return
+        # Module-level constants: UPPER_CASE assignments at the top level
+        # (config keys, magic numbers, table names) are navigationally useful,
+        # but the structural index dropped them before. Only fires at module
+        # scope (parent_class is None); class attributes and function-body
+        # locals are skipped (function bodies aren't walked at all).
+        if parent_class is None and isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for t in targets:
+                if isinstance(t, ast.Name) and len(t.id) > 1 and t.id.isupper():
+                    out.append(CodeSymbol(
+                        kind="constant",
+                        name=t.id,
+                        signature=t.id,
+                        line=getattr(node, "lineno", 0),
+                    ))
+            return
         # Recurse into module / class bodies
         for child in ast.iter_child_nodes(node):
             walk(child, parent_class=parent_class)
