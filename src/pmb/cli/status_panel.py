@@ -11,7 +11,7 @@ from pathlib import Path
 # Human-readable explanation of how the active workspace was resolved.
 _SOURCE_HELP = {
     "env": "PMB_WORKSPACE env var",
-    "explicit": "explicit --workspace flag",
+    "explicit": "explicit workspace id (--workspace flag or caller-provided, e.g. the MCP daemon)",
     "config": "project .pmb/workspace.yaml",
     "default": "saved default (pmb workspace use)",
     "git": "git remote / repo root",
