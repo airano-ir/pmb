@@ -544,6 +544,75 @@ def watch(
         console.print("\n[dim]Stopped watching. Run `pmb regraph` to refresh the entity graph.[/]")
 
 
+def _try_daemon_recall(query: str, top_k: int) -> dict | None:
+    """Best-effort: ask the warm daemon for hybrid (BM25 + vector) recall so the
+    CLI matches what an agent gets, without a cold model load. Returns the JSON
+    pack, or None when there is no live, version-matched daemon for THIS
+    workspace (the caller then falls back to a local cold engine)."""
+    try:
+        import json
+        import os
+        import urllib.request
+
+        import pmb
+        from pmb.core.workspace import detect_workspace
+        from pmb.mcp.daemon import read_daemon_token
+        from pmb.mcp.registry import find_live_daemon
+
+        info = find_live_daemon()
+        if not info or not info.get("port"):
+            return None
+        try:
+            ws_id = detect_workspace().id
+        except Exception:
+            ws_id = os.environ.get("PMB_WORKSPACE")
+        host = info.get("host") or "127.0.0.1"
+        port = int(info["port"])
+        tok = read_daemon_token() or ""
+        body = json.dumps(
+            {"query": query, "top_k": top_k, "workspace": ws_id}
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            f"http://{host}:{port}/internal/recall", data=body,
+            headers={"Authorization": f"Bearer {tok}",
+                     "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5.0) as r:
+            out = json.loads(r.read().decode("utf-8"))
+        # Reject a version-mismatched daemon (stale build) or a workspace refusal.
+        if out.get("version") != pmb.__version__ or "results" not in out:
+            return None
+        return out
+    except Exception:
+        return None
+
+
+def _pack_from_daemon(query: str, out: dict):
+    """Rebuild a RecallPack from the daemon JSON so the normal render path works
+    unchanged."""
+    from pmb.core.engine.types import RecallPack, RecallResult
+    results = []
+    for d in out.get("results", []):
+        s = d.get("signals", {}) or {}
+        results.append(RecallResult(
+            ulid=d.get("ulid", ""), event_type=d.get("event_type", ""),
+            content=d.get("content", ""), metadata=d.get("metadata") or {},
+            timestamp=float(d.get("timestamp") or 0.0),
+            score=float(d.get("score") or 0.0),
+            bm25_score=float(s.get("bm25") or 0.0),
+            vec_score=float(s.get("vector") or 0.0),
+            importance=float(s.get("importance") or 0.0),
+            recency_score=float(s.get("recency") or 0.0),
+            raw_vec=float(s.get("raw_cosine") or 0.0),
+        ))
+    return RecallPack(
+        query=query, workspace_name=out.get("workspace_name", ""),
+        workspace_id="", results=results,
+        n_total_in_workspace=int(out.get("n_total_in_workspace") or 0),
+        elapsed_ms=float(out.get("elapsed_ms") or 0.0),
+    )
+
+
 @app.command()
 def recall(
     query: str = typer.Argument(...),
@@ -552,16 +621,27 @@ def recall(
                                 help="Cross-encoder reranker over top-25 (adds ~80MB model + ~100ms)"),
 ):
     """Search memory for relevant events."""
-    with loading("searching memory (loading embedding model on first run)…"):
-        eng = Engine(
-            rerank_model="cross-encoder/ms-marco-MiniLM-L-6-v2" if rerank else None,
-        )
-        pack = eng.recall(query=query, top_k=top_k, rerank=rerank)
+    pack = None
+    source = "cold (bm25-only)"
+    # A warm daemon gives full hybrid recall without a 25s cold model load.
+    # Skip it for --rerank (the cross-encoder lives only on the local path).
+    if not rerank:
+        out = _try_daemon_recall(query, top_k)
+        if out is not None:
+            pack = _pack_from_daemon(query, out)
+            source = "daemon (hybrid)"
+    if pack is None:
+        with loading("searching memory (loading embedding model on first run)…"):
+            eng = Engine(
+                rerank_model="cross-encoder/ms-marco-MiniLM-L-6-v2" if rerank else None,
+            )
+            pack = eng.recall(query=query, top_k=top_k, rerank=rerank)
 
     console.print(f"\n[bold]Query:[/] {query}")
     console.print(f"[dim]Workspace: {pack.workspace_name} | "
                   f"Search took {pack.elapsed_ms:.1f}ms | "
-                  f"Total in workspace: {pack.n_total_in_workspace}[/]\n")
+                  f"Total in workspace: {pack.n_total_in_workspace} | "
+                  f"source: {source}[/]\n")
 
     if not pack.results:
         console.print("[yellow]No matches.[/]")
