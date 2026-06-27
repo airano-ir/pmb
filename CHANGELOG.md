@@ -4,6 +4,19 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+### Fixed - stability and recall-correctness pass (live-session QA)
+- **`forget` / `pin` / `restore` invalidate the recall cache**, so a forgotten memory stops surfacing immediately instead of lingering in the warm daemon's cache until the TTL.
+- **PMB's own LLM sub-calls no longer trip PMB's hooks.** `pmb track changes` / `track modules` / consolidate spawn `claude -p`; those sub-calls now set `PMB_INTERNAL_LLM=1` and `pmb-hook` no-ops on it, so the summarizer's own instruction ("Capture the INTENT, not the diff") is no longer captured as a "user correction" draft lesson.
+- **`pmb track modules` never stores a refusal as a module purpose.** The prompt states the indexed structure is the only input, and refusal / clarifying-question / "unknown" responses are dropped instead of stored.
+- **`pmb history` / `pmb correlate` find commits tracked by `pmb track changes`** (read both the `files` and `files_changed` metadata keys and the `git-change` fact source, not only the legacy git-signal schema).
+- **`pmb doctor` checks the configured embedding model** (the default multilingual MiniLM-L12) instead of a hardcoded all-MiniLM-L6-v2, ending a false "model not cached" warning.
+- **`pmb recall` (CLI) routes through the warm daemon** for full hybrid (BM25 + vector) results when one serves this workspace, instead of cold BM25-only; falls back to the local cold engine otherwise.
+- **`index project` captures module-level constants** (UPPER_CASE assignments) as symbols, not just defs / classes / methods.
+- **The entity graph no longer ingests code-index scaffolding** (`file`, `symbols`, `imports`, month names) as nodes.
+- **Out-of-band writes are visible without a restart.** A long-running engine (the warm daemon) reloads its index when another process changed it; a cold write (a one-shot CLI with no model loaded) indexes into BM25 synchronously; and the recall cache is invalidated on an external change. A CLI `pmb fact` / `index` is now recallable immediately.
+- **Auto-recall surfaces the specific fact for project-named questions** ("what is `<project>`'s X?") instead of only the project overview.
+- **`pmb workspace current`** wording: source `explicit` now reads "explicit workspace id (--workspace flag or caller-provided)".
+
 ## [1.2.0] - 2026-06-27 - Dashboard redesign and self-tending memory
 
 A full dashboard redesign, settings moved out of the TUI into the dashboard, and engine work that lets memory tend itself.
