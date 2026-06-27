@@ -98,11 +98,6 @@ by default (or fully offline via Ollama), and idempotent.
   `recall_exploration` also reports `repo_changed_since` (the repo moved beyond
   the listed sources, so verify even if the listed ones are fresh), closing the
   false-fresh gap.
-- **Read-Guard (`readguard.enabled`, PreToolUse on Read).** Off by default;
-  denies re-reading a file already read this session that is unchanged (sha) and
-  recent (within `readguard.recency_window`), so it is not dumped into the context
-  window again. Measured on 601 real sessions: ~33% of reads are recent re-reads.
-  Daemon-served, conservative (changed / new / long-ago files always pass).
 - **Memory Delta Protocol (`memory_delta.enabled`, default off).** A per-session
   ledger of items PMB has already shown the agent. When auto-context re-injects
   the same lesson, the renderer collapses it to a one-line handle reference

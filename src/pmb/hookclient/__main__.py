@@ -306,13 +306,17 @@ def cmd_pretool(args: list[str]) -> int:
         return 0
     tool = payload.get("tool_name") or payload.get("tool") or ""
     ti = payload.get("tool_input") or {}
-    # a compact excerpt of what the tool is about to do
-    parts = [tool]
+    # A compact excerpt of what the tool is about to do. The command/args lead and
+    # the TOOL NAME goes LAST: the daemon reads the leading program token to match
+    # command-bound rules, and a leading "Bash" would mask the real command (git,
+    # npm, ...) so those rules could never fire.
+    parts = []
     for k in ("command", "file_path", "path", "url", "content", "query",
               "pattern", "prompt", "description"):
         v = ti.get(k)
         if isinstance(v, str) and v.strip():
             parts.append(v)
+    parts.append(tool)
     excerpt = " ".join(parts)[:500].strip()
     if not excerpt:
         return 0
@@ -320,45 +324,12 @@ def cmd_pretool(args: list[str]) -> int:
         "/internal/hook/pretool",
         {"excerpt": excerpt, "session_id": payload.get("session_id"),
          "workspace": _workspace_hint()},
-        timeout=0.6,
+        timeout=1.5,
     )
     if out is not None:
         ctx = out.get("context") or ""
         if ctx.strip():
             sys.stdout.write(ctx if ctx.endswith("\n") else ctx + "\n")
-    return 0
-
-
-def cmd_read_guard(args: list[str]) -> int:
-    """PreToolUse(Read): ask the daemon whether this is a redundant re-read of an
-    unchanged, recently-read file; if so, emit a deny so the file is not dumped
-    into context again. Daemon-served only; silent allow without a daemon."""
-    raw = _read_stdin_utf8()
-    if not raw.strip():
-        return 0
-    try:
-        payload = json.loads(raw)
-    except Exception:
-        return 0
-    if (payload.get("tool_name") or payload.get("tool") or "") != "Read":
-        return 0
-    ti = payload.get("tool_input") or {}
-    fp = ti.get("file_path") or ti.get("path") or ""
-    if not fp:
-        return 0
-    try:
-        from pmb.hooks.read_guard import deny_payload, file_sha1
-        sha = file_sha1(fp)
-    except Exception:
-        return 0
-    out = _daemon_request(
-        "/internal/hook/readguard",
-        {"file_path": fp, "sha1": sha, "session_id": payload.get("session_id"),
-         "workspace": _workspace_hint()},
-        timeout=0.6,
-    )
-    if out and out.get("decision") == "deny":
-        sys.stdout.write(json.dumps(deny_payload(out.get("reason") or "")) + "\n")
     return 0
 
 
@@ -415,11 +386,17 @@ _DISPATCH = {
     "lesson-followcheck": cmd_followcheck,  # accept the full-CLI name too
     "autowrite": cmd_autowrite,
     "capture-exploration": cmd_capture_exploration,
-    "read-guard": cmd_read_guard,
 }
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows consoles default to cp1252; a lesson with an emoji or Cyrillic would
+    # crash sys.stdout.write and the hook would silently emit nothing. Force UTF-8
+    # so any rule text reaches the agent.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
         sys.stderr.write("usage: pmb-hook <prepare-context|session-restore|"

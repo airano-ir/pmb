@@ -117,7 +117,6 @@ pmb resume install                # auto-refresh resume.md at every turn end
 pmb health lessons-impact         # which lessons actually help outcomes (lift, churn)
 
 # Opt-in token-saving guards
-pmb config set readguard.enabled true        # block redundant in-context re-reads
 pmb config set memory_delta.enabled true     # collapse repeat lesson injections to [Mxx]
 pmb memory ledger                            # inspect Memory Delta handles this session
 ```

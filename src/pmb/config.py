@@ -445,24 +445,6 @@ SCHEMA: dict[str, _Setting] = {
         "Minimum distinct files READ in a turn before auto-capture fires.",
         min=1, max=50,
     ),
-    # ── Read-Guard (block redundant in-context re-reads) ──────────
-    "readguard.enabled": _Setting(
-        bool, False,
-        "Read-Guard: a PreToolUse(Read) guard that DENIES re-reading a file you "
-        "already read this session that is unchanged (sha match) and was read "
-        "within readguard.recency_window reads ago - so it isn't dumped into the "
-        "context window again. Conservative: changed/new/long-ago files always "
-        "pass. OFF by default (blocking reads is a trust decision); opt in with "
-        "`pmb config set readguard.enabled true`. Daemon-served; no-op without a "
-        "daemon.",
-    ),
-    "readguard.recency_window": _Setting(
-        int, 40,
-        "How many reads ago a file can have been read and still be assumed in "
-        "the live context (so a re-read is redundant). Beyond this it is allowed "
-        "again - it may have been compacted out.",
-        min=1, max=1000,
-    ),
     # ── Resume note (committable markdown snapshot of memory state) ───
     "resume.auto_save_enabled": _Setting(
         bool, False,
@@ -506,7 +488,14 @@ SCHEMA: dict[str, _Setting] = {
         float, 30.0, "Half-life for recency boost in days", min=0.5, max=3650.0,
     ),
     "recall.graph_boost": _Setting(
-        float, 0.15, "Additive bonus from graph traversal (0 disables)",
+        float, 0.10,
+        "Bonus from graph traversal (0 disables), saturated in recall.py as "
+        "graph_boost * w/(1+w) * imp so a multi-entity match nudges proportionally "
+        "instead of leapfrogging the base relevance. Before saturation the raw "
+        "summed-IDF weight made this HURT (LoCoMo n=997: the old 0.15 cost ~3pp "
+        "recall@1 vs 0); with saturation a sweep PEAKS at 0.10 - recall@1 68.4% / "
+        "MRR 0.774 / nDCG 0.816, beating both the old 0.15 default AND graph-off, "
+        "recall@10 flat at ~94.6%.",
         min=0.0, max=1.0,
     ),
     "recall.multi_entity_bonus": _Setting(
@@ -672,15 +661,25 @@ SCHEMA: dict[str, _Setting] = {
         bool, True,
         "M1: let the warm daemon tend the store on a schedule (once per "
         "maintenance_interval_h of uptime, only when idle) instead of relying on "
-        "hand-installed cron. Runs archive_cold (archive-only), a conflict scan "
-        "(report-only → doctor) and a declutter DRY-RUN (report-only). Never "
-        "hard-deletes. Set false to disable the tick entirely.",
+        "hand-installed cron. Runs the forgetting-curve decay, archive_cold "
+        "(archive-only), a conflict scan (report-only → doctor) and a declutter "
+        "DRY-RUN (report-only). Never hard-deletes. Set false to disable the "
+        "tick entirely.",
     ),
     "daemon.maintenance_archive": _Setting(
         bool, True,
         "M1: whether the maintenance tick's archive_cold step actually archives "
         "(reversible) or only the report-only steps run. Set false to keep the "
         "conflict/declutter reports but never auto-archive cold memory.",
+    ),
+    "daemon.maintenance_decay": _Setting(
+        bool, True,
+        "M1: whether the maintenance tick runs the importance forgetting curve "
+        "(apply_daily_decay) before archive_cold, so memory decays on its own "
+        "instead of needing a manual `pmb decay`. Pinned events are skipped and "
+        "lessons / decisions are floored, so nothing durable evaporates. Set "
+        "false to keep importance static and rely only on archive_cold's age + "
+        "never-accessed criteria.",
     ),
     "daemon.maintenance_interval_h": _Setting(
         float, 24.0,

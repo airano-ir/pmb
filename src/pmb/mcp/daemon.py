@@ -76,12 +76,6 @@ _LAST_MAINTENANCE: dict = {"summary": None}
 # so a rule interrupts at most once per session (not on every tool call).
 _PRETOOL_SEEN: dict[str, set] = {}
 
-# Read-Guard: per-session ledger of files read this session {session: {"seq",
-# "files": {path: {sha, seq}}}}, used to deny redundant re-reads of unchanged
-# files. In-memory (warm daemon); resets on restart, which is fine.
-_READ_LEDGER: dict = {}
-
-
 def pretool_lessons(engine, excerpt: str, seen: set) -> list:
     """R11 core: lessons that should FIRE for a tool-call excerpt - a STRONG
     match (>= 2 distinctive overlapping tokens incl >= 1 identifier-grade one),
@@ -123,19 +117,24 @@ def pretool_lessons(engine, excerpt: str, seen: set) -> list:
                     have.add(L.get("ulid"))
         except Exception:
             pass
+    # PRIORITY: a rule that NAMES the command we're about to run beats a fuzzy
+    # keyword match for the tiny slot budget. Without this, fuzzy candidates
+    # (e.g. lessons that merely share the word "dashboard") take both slots and
+    # crowd out the command-bound rule the agent actually needs right here.
+    def _words(L) -> set:
+        return set(_re.findall(r"[a-z0-9_.\-/]+", (L.get("content") or "").lower()))
+    primary = [L for L in cands if cmds & _words(L)]
+    secondary = [L for L in cands if not (cmds & _words(L))]
     fired = []
-    for L in cands:
+    for L in (*primary, *secondary):
         u = L.get("ulid")
         if not u or u in seen:
             continue
         content = L.get("content") or ""
         ov = q & distinctive_tokens(content)
-        words = set(_re.findall(r"[a-z0-9_.\-/]+", content.lower()))
-        cmd_hit = bool(cmds & words)  # the rule names the command we're running
+        cmd_hit = bool(cmds & _words(L))  # the rule names the command we're running
         # Fire on: a rule that NAMES this command, OR two distinctive overlapping
         # tokens, OR one identifier-grade one (record_batch, qwen2.5 - is_strong).
-        # The guard interrupts the agent, so the generic bar is high - but a rule
-        # naming the exact command we're about to run always qualifies.
         if cmd_hit or len(ov) >= 2 or any(is_strong(t) for t in ov):
             seen.add(u)
             fired.append(L)
@@ -331,11 +330,11 @@ def _register_internal_routes(mcp, engine) -> None:
                 lines: list[str] = []
                 if negs:
                     lines.append(
-                        "[pmb] ⛔ STOP - you were corrected on this before. "
+                        "[pmb] STOP - you were corrected on this before. "
                         "Do NOT repeat it:")
                     for L in negs:
                         txt = (L.get("match_text") or L.get("content") or "")[:240]
-                        lines.append(f"  ✗ {txt}")
+                        lines.append(f"  - {txt}")
                 if lessons:
                     lines.append("[pmb] Relevant rule(s) before this action:")
                     lines += [f"  ! {(L.get('content') or '')[:240]}" for L in lessons]
@@ -346,38 +345,6 @@ def _register_internal_routes(mcp, engine) -> None:
         text = await anyio.to_thread.run_sync(_work)
         return JSONResponse({"context": text, "version": pmb.__version__,
                              "source": "daemon"})
-
-    @mcp.custom_route("/internal/hook/readguard", methods=["POST"])
-    async def _readguard(request):  # noqa: ANN001
-        """Read-Guard: deny a redundant re-read of an unchanged, recently-read
-        file so it is not dumped into context again. Daemon-served only;
-        returns 'allow' (no-op) unless readguard.enabled is true."""
-        _LAST_REQUEST["ts"] = time.time()
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        if not _workspace_matches(engine, (body or {}).get("workspace")):
-            return JSONResponse({"error": "workspace_mismatch",
-                                 "version": pmb.__version__}, status_code=409)
-        file_path = str((body or {}).get("file_path") or "")
-        sha = (body or {}).get("sha1")
-        session = str((body or {}).get("session_id") or "")
-
-        def _work() -> dict:
-            if not file_path:
-                return {"decision": "allow", "reason": ""}
-            try:
-                if not engine.config.get("readguard.enabled"):
-                    return {"decision": "allow", "reason": ""}
-                window = int(engine.config.get("readguard.recency_window") or 40)
-            except Exception:
-                return {"decision": "allow", "reason": ""}
-            from pmb.hooks.read_guard import evaluate
-            return evaluate(_READ_LEDGER, session, file_path, sha, window)
-
-        out = await anyio.to_thread.run_sync(_work)
-        return JSONResponse({**out, "version": pmb.__version__, "source": "daemon"})
 
     @mcp.custom_route("/internal/shutdown", methods=["POST"])
     async def _shutdown(request):  # noqa: ANN001
@@ -454,11 +421,14 @@ def _maintenance_watcher(engine) -> None:
         except Exception:
             archive = True
         try:
-            summary = run_maintenance_tick(engine, archive=archive, now=now)
+            days_since = max(0.0, (now - last_tick) / 86400.0)
+            summary = run_maintenance_tick(engine, archive=archive,
+                                           decay_days=days_since, now=now)
             _LAST_MAINTENANCE["summary"] = summary
             st = summary.get("steps", {})
             sys.stderr.write(
-                f"[pmb-daemon] maintenance: archived "
+                f"[pmb-daemon] maintenance: decayed "
+                f"{st.get('decay', {}).get('decayed', 0)}, archived "
                 f"{st.get('archive_cold', {}).get('archived', 0)}, conflicts "
                 f"{st.get('conflicts', {}).get('found', 0)}, declutter-candidates "
                 f"{st.get('declutter_dryrun', {}).get('would_archive', 0)}\n"

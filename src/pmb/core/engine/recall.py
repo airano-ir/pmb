@@ -930,7 +930,15 @@ class RecallMixin:
             w = graph_weights.get(ulid, 0.0) if graph_boost > 0 else 0.0
             if w > 0:
                 gb_mul = layer_weights.graph_boost_mul if layer_weights else 1.0
-                base += graph_boost * gb_mul * w * importance_factor
+                # Saturate the summed-IDF weight so a multi-entity match nudges
+                # PROPORTIONALLY rather than leapfrogging the base relevance.
+                # Raw w (sum of per-entity IDF x the multi-entity bonus) is the
+                # ONE uncalibrated additive term and could exceed the base score
+                # for events that merely share several query entities - sinking
+                # the genuinely-relevant top result (measured on LoCoMo). w/(1+w)
+                # bounds the contribution to (0, graph_boost*imp).
+                w_eff = w / (1.0 + w)
+                base += graph_boost * gb_mul * w_eff * importance_factor
             # Causation augmentation: small additive bonus for events surfaced
             # by walking event_edges from raw hits. Multi-hop unlock.
             if ulid in causation_ulids:

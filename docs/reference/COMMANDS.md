@@ -98,9 +98,6 @@ reuse a past session's research instead of re-deriving it:
 
 **Token-saving guards & self-measurement (opt-in).**
 
-- **Read-Guard** (`readguard.enabled`, default off) - a PreToolUse(Read) guard that
-  denies re-reading a file already read this session that is unchanged and recent,
-  so it is not dumped into the context window again. Conservative; daemon-served.
 - **Auto-capture** (`memo.autocapture_enabled`, default off) - a Stop hook that
   memoizes a turn's research conclusion from the transcript when it read several
   files, so `recall_exploration` can reuse it later.

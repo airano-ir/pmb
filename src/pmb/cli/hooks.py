@@ -96,14 +96,6 @@ def _claude_hook_specs() -> list[dict]:
             "matcher": "Bash|Edit|Write|NotebookEdit",
             "command": f'"{h}" pretool --quiet',
         },
-        # PreToolUse(Read): Read-Guard - deny a redundant re-read of an unchanged
-        # file so it isn't dumped into context again. No-op unless
-        # readguard.enabled; daemon-served, silent without a daemon.
-        {
-            "event": "PreToolUse",
-            "matcher": "Read",
-            "command": f'"{h}" read-guard',
-        },
         # PostToolUse: ambient observer - log the agent's action (instant).
         {
             "event": "PostToolUse",
