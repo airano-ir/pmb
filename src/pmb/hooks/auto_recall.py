@@ -532,14 +532,25 @@ def run_auto_context(
         info = {"severity": correction_sig.severity, "surface_id": None,
                 "reused": False, "markers": correction_sig.markers}
         if correction_record_draft:
+            # Scope the draft to the project the complaint is about, so it
+            # surfaces only for that project and the agent sees what it relates
+            # to. Use the SAME resolver the overview path uses - it keeps dev-ish
+            # names like 'pmb' that the engine's stopword-filtered detector drops.
+            try:
+                corr_project = _resolve_project_name(
+                    engine, msg, _known_projects(engine))
+            except Exception:
+                corr_project = None
             try:
                 cap = engine.capture_correction(
                     msg, severity=correction_sig.severity,
                     markers=correction_sig.markers,
                     importance=correction_importance,
+                    project=corr_project,
                 )
                 info["surface_id"] = cap.get("surface_id")
                 info["reused"] = cap.get("reused", False)
+                info["project"] = cap.get("project")
             except Exception:
                 pass
         res.correction = info

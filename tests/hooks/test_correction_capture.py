@@ -11,6 +11,7 @@ to the traffic it actually has to catch.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -126,6 +127,80 @@ def test_capture_dedups_within_window(tmp_pmb_home, tmp_workspace_dir):
     assert b["lesson_ulid"] == a["lesson_ulid"]
     # one underlying draft, two surfaces (each angry message gets an id)
     assert len(_lessons_by_source(eng, "correction-capture")) == 1
+
+
+def _draft_metadata(eng, ulid):
+    with sqlite3.connect(str(eng.workspace.db_path)) as c:
+        raw = c.execute(
+            "SELECT metadata_json FROM events WHERE ulid=?", (ulid,)).fetchone()[0]
+    return json.loads(raw) if raw else {}
+
+
+def test_capture_tags_explicit_project(tmp_pmb_home, tmp_workspace_dir):
+    """An explicit project hint is embedded in the draft - both as structured
+    metadata (so find_lessons(project=) keys off it) and inline in the text (so
+    the agent reading the correction banner sees what it relates to)."""
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    out = eng.capture_correction(
+        "снова не заполнило поле перед submit",
+        severity="weak", markers=["weak:снова", "neg:не заполн"],
+        project="LoadGuard",
+    )
+    assert out["lesson_ulid"]
+    assert out.get("project") == "LoadGuard"
+    ulid, content = _lessons_by_source(eng, "correction-capture")[0]
+    assert "[project: LoadGuard]" in content
+    assert _draft_metadata(eng, ulid).get("project_name") == "LoadGuard"
+
+
+def test_capture_detects_project_from_message(tmp_pmb_home, tmp_workspace_dir):
+    """With no explicit hint, the engine scopes the draft to the project NAMED in
+    the complaint - detected from the workspace's known project entities."""
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    for _ in range(3):                       # seed two known projects
+        eng.graph.upsert_entity(eng.workspace.id, "project", "LoadGuard")
+        eng.graph.upsert_entity(eng.workspace.id, "project", "ApplyPilot")
+    out = eng.capture_correction(
+        "опять LoadGuard pricing снова не считает правильно",
+        severity="weak", markers=["weak:опять", "neg:не счит"],
+    )
+    assert (out.get("project") or "") == "LoadGuard"
+    ulid, content = _lessons_by_source(eng, "correction-capture")[0]
+    assert "[project: LoadGuard]" in content
+    assert _draft_metadata(eng, ulid).get("project_name") == "LoadGuard"
+
+
+def test_auto_context_tags_correction_with_resolved_project(
+    tmp_pmb_home, tmp_workspace_dir,
+):
+    """End-to-end through the hook resolver: a correction about PMB is tagged
+    project=PMB even though 'pmb' is a dev-noise stopword the engine's own
+    detector drops - the hook uses the same lenient resolver as the overview
+    path. This is the real user case (shared 'personal' store, many projects)."""
+    from pmb.hooks.auto_recall import run_auto_context
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    eng.workspace.name = "personal"          # shared store → text-detection only
+    for _ in range(4):
+        eng.graph.upsert_entity(eng.workspace.id, "project", "PMB")
+    res = run_auto_context(eng, "схуяли PMB опять снова не находит правило")
+    assert res.correction is not None
+    rows = _lessons_by_source(eng, "correction-capture")
+    assert rows, "a draft should have been captured"
+    assert _draft_metadata(eng, rows[0][0]).get("project_name") == "PMB"
+    assert "[project: PMB]" in rows[0][1]
+
+
+def test_capture_untagged_when_no_project_known(tmp_pmb_home, tmp_workspace_dir):
+    """No hint + nothing detectable → no project_name (don't invent one). The
+    draft is still recorded; it just stays workspace-wide."""
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    eng.workspace.name = "personal"          # catch-all store: no project fallback
+    out = eng.capture_correction(
+        "снова не заполнило поле перед submit", severity="weak")
+    assert out.get("project") in (None, "")
+    ulid, content = _lessons_by_source(eng, "correction-capture")[0]
+    assert "[project:" not in content
+    assert "project_name" not in _draft_metadata(eng, ulid)
 
 
 # ── 4. Integration: run_auto_context + format_context ──────────────────────
