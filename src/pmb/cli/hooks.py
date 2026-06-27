@@ -59,12 +59,18 @@ def _pmb_entry() -> str:
 
 
 def _pmb_hook_entry() -> str:
-    """Absolute path to the stdlib-only `pmb-hook` fast lane (S2). Falls back to
-    the full `pmb` binary if pmb-hook isn't installed (older wheels), so an
-    upgrade is seamless either way."""
+    """The `pmb-hook` invocation for a hook command (S2 fast lane).
+
+    The hook command is run UNQUOTED by the host through the platform shell,
+    and it must parse in PowerShell, cmd AND bash. PowerShell ParserErrors on a
+    quoted executable without the `&` call operator (this broke headless
+    `claude -p` hooks on Windows), and a path with spaces can't be used
+    unquoted. So we return the absolute pmb-hook path ONLY when it has no
+    spaces; otherwise the bare `pmb-hook` (a console-script on PATH), which is
+    space-free and safe unquoted everywhere."""
     py = Path(sys.executable)
     for candidate in (py.parent / "pmb-hook.exe", py.parent / "pmb-hook"):
-        if candidate.exists():
+        if candidate.exists() and " " not in str(candidate):
             return str(candidate)
     return "pmb-hook"
 
@@ -82,11 +88,11 @@ def _claude_hook_specs() -> list[dict]:
     return [
         {
             "event": "UserPromptSubmit",
-            "command": f'"{h}" prepare-context --max-chars 4000 --quiet',
+            "command": f'{h} prepare-context --max-chars 4000 --quiet',
         },
         {
             "event": "SessionStart",
-            "command": f'"{h}" session-restore --max-chars 3000 --quiet',
+            "command": f'{h} session-restore --max-chars 3000 --quiet',
         },
         # PreToolUse: R11 lesson guard - fire a matching rule ("use pnpm, never
         # npm") at tool-call time, even if the agent never called memory.
@@ -94,30 +100,30 @@ def _claude_hook_specs() -> list[dict]:
         {
             "event": "PreToolUse",
             "matcher": "Bash|Edit|Write|NotebookEdit",
-            "command": f'"{h}" pretool --quiet',
+            "command": f'{h} pretool --quiet',
         },
         # PostToolUse: ambient observer - log the agent's action (instant).
         {
             "event": "PostToolUse",
-            "command": f'"{h}" track-action --quiet',
+            "command": f'{h} track-action --quiet',
         },
         {
             "event": "Stop",
-            "command": f'"{h}" lesson-followcheck --window 30 --quiet',
+            "command": f'{h} lesson-followcheck --window 30 --quiet',
         },
         # Stop: ambient auto-write - journal the turn if the agent didn't.
         # No-op unless `autowrite.enabled` is true in config, so installing
         # the hook is safe; it stays silent until the user opts in.
         {
             "event": "Stop",
-            "command": f'"{h}" autowrite --window 30 --quiet',
+            "command": f'{h} autowrite --window 30 --quiet',
         },
         # Stop: auto-capture an exploration memo from the transcript so a future
         # session can reuse the conclusion. No-op unless memo.autocapture_enabled
         # is true, so installing it is safe; silent until the user opts in.
         {
             "event": "Stop",
-            "command": f'"{h}" capture-exploration --quiet',
+            "command": f'{h} capture-exploration --quiet',
         },
     ]
 
