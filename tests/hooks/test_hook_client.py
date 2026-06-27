@@ -160,11 +160,11 @@ def test_cold_cli_decodes_child_stdout_as_utf8(monkeypatch):
         stdout = "контекст"
 
     def _fake_run(cmd, **kw):
+        seen["cmd"] = cmd
         seen.update(kw)
         return _R()
 
     monkeypatch.setattr(_sp, "run", _fake_run)
-    monkeypatch.setattr(hc, "_full_cli_path", lambda: "pmb")
 
     rc = hc._exec_full_cli(["session-restore", "--quiet"])
     assert rc == 0
@@ -172,6 +172,8 @@ def test_cold_cli_decodes_child_stdout_as_utf8(monkeypatch):
     assert seen.get("errors") == "replace"
     # the child is also told to emit UTF-8 (belt-and-suspenders across hosts)
     assert seen.get("env", {}).get("PYTHONIOENCODING") == "utf-8"
+    # SAC-safe: the cold fallback runs the SIGNED interpreter, not pmb.exe
+    assert seen["cmd"][:3] == [sys.executable, "-m", "pmb.cli"]
 
 
 # ── daemon-served prepare-context against a stub server ─────────────

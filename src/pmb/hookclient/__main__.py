@@ -168,21 +168,17 @@ def _daemon_request(route: str, payload: dict, timeout: float) -> dict | None:
 
 # ── full-CLI fallback ───────────────────────────────────────────────
 
-def _full_cli_path() -> str:
-    py = Path(sys.executable)
-    for c in (py.parent / "pmb.exe", py.parent / "pmb"):
-        if c.exists():
-            return str(c)
-    return "pmb"
-
-
 def _exec_full_cli(cli_args: list[str], detached: bool = False,
                    trace_source: str | None = None) -> int:
-    """Run the full `pmb <cli_args>` and forward its stdout. The slow cold path
-    - reached only when the daemon is absent. When `trace_source` is set, stamp
-    the honest end-to-end total + source into the trace header (S10)."""
+    """Run the full CLI and forward its stdout. The slow cold path - reached
+    only when the daemon is absent. When `trace_source` is set, stamp the honest
+    end-to-end total + source into the trace header (S10)."""
     import subprocess
-    cmd = [_full_cli_path(), *cli_args]
+    # Invoke through the SIGNED interpreter (`python -m pmb.cli`), NOT the
+    # unsigned pip `pmb.exe` shim: Windows Smart App Control blocks unsigned
+    # executables, and this cold fallback also AUTOSTARTS the daemon - an
+    # unsigned exe here could leave the user with no daemon and dead hooks.
+    cmd = [sys.executable, "-m", "pmb.cli", *cli_args]
     if detached:
         kwargs: dict = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
                         "stdin": subprocess.DEVNULL}
