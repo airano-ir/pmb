@@ -8,6 +8,11 @@ idle for ``daemon.maintenance_idle_min`` minutes (so it never competes with a
 live request), it runs - each step independently guarded + errlogged so one
 failure can't abort the rest:
 
+  * apply_daily_decay - tier-aware forgetting curve (importance decays by tier
+                        half-life; lessons / decisions floored, pinned skipped).
+                        Runs BEFORE archive_cold so freshly down-weighted rows
+                        leave recall the same tick. Gated by
+                        ``daemon.maintenance_decay`` (default on).
   * archive_cold      - archive cold / low-value / old fact+activity rows.
                         Archive-only (reversible, ``archived_reason=decay_cold``);
                         NEVER lessons / goals, and decisions survive because they
@@ -45,6 +50,7 @@ def should_run_maintenance(
 
 
 def run_maintenance_tick(engine: Any, *, archive: bool = True,
+                         decay_days: float = 1.0,
                          now: float | None = None) -> dict:
     """Run one maintenance pass. Returns a summary dict
     ``{ran_at, ok, steps: {name: {...}}}``. Pure of scheduling - the caller
@@ -64,7 +70,24 @@ def run_maintenance_tick(engine: Any, *, archive: bool = True,
             except Exception:
                 pass
 
-    # 1. archive cold/low-value/old rows (archive-only, reversible).
+    # 1. decay importance (the forgetting curve) FIRST, so freshly
+    # down-weighted rows drop under archive_cold's importance threshold and
+    # leave recall this same tick. apply_daily_decay floors lessons / decisions
+    # and skips pinned, so nothing durable evaporates.
+    try:
+        decay_on = bool(engine.config.get("daemon.maintenance_decay"))
+    except Exception:
+        decay_on = True
+    if decay_on:
+        def _decay() -> dict:
+            r = engine.apply_daily_decay(days_since=max(0.0, decay_days))
+            return {"decayed": int(r.get("n_decayed", 0)),
+                    "archived": int(r.get("n_archived", 0))}
+        _step("decay", _decay)
+    else:
+        summary["steps"]["decay"] = {"skipped": "maintenance_decay=off"}
+
+    # 2. archive cold/low-value/old rows (archive-only, reversible).
     if archive:
         _step("archive_cold",
               lambda: {"archived": int(engine.archive_cold(dry_run=False).get("n", 0))})
