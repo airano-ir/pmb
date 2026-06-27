@@ -71,6 +71,28 @@ def test_dashboard_serves_html(running_dashboard):
     assert "<html" in body
 
 
+def test_static_route_rejects_path_traversal(running_dashboard):
+    """`/static/../server.py` points at a real file just outside the static
+    root. Without the confinement guard the server would read and leak it; with
+    it, the request must 404. Sent over a raw socket so the client can't
+    normalise the `..` away (CodeQL path-traversal)."""
+    _, port = running_dashboard
+    sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+    sock.sendall(
+        b"GET /static/../server.py HTTP/1.1\r\n"
+        b"Host: 127.0.0.1\r\nConnection: close\r\n\r\n")
+    resp = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        resp += chunk
+    sock.close()
+    status_line = resp.split(b"\r\n", 1)[0]
+    assert b"404" in status_line, status_line
+    assert b"make_handler" not in resp, "static traversal leaked source code"
+
+
 def test_dashboard_api_stats(running_dashboard):
     eng, port = running_dashboard
     data = _get_json(port, "/api/stats")

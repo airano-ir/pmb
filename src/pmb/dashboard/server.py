@@ -56,12 +56,27 @@ def make_handler(engine):
             self.wfile.write(body)
 
         def _send_static(self, path: Path) -> None:
-            if not path.exists() or not path.is_file():
+            # Confine to STATIC_DIR. The /static/<rel> route joins user-supplied
+            # input to the served path, so resolve and reject anything that
+            # escapes the static root (CodeQL 'uncontrolled data used in path
+            # expression' - path traversal). is_relative_to is exact, unlike a
+            # str.startswith prefix test.
+            try:
+                resolved = path.resolve()
+                static_root = STATIC_DIR.resolve()
+            except (OSError, ValueError):
                 self.send_error(404)
                 return
-            ctype, _ = mimetypes.guess_type(str(path))
+            if not resolved.is_relative_to(static_root) or not resolved.is_file():
+                self.send_error(404)
+                return
+            ctype, _ = mimetypes.guess_type(str(resolved))
             ctype = ctype or "application/octet-stream"
-            data = path.read_bytes()
+            # A header value must never carry CRLF (HTTP response splitting).
+            # guess_type returns a clean mime, but pin it defensively.
+            if "\r" in ctype or "\n" in ctype:
+                ctype = "application/octet-stream"
+            data = resolved.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
