@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import io
 import os
+import shutil
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -118,19 +119,40 @@ def _tar_workspace(storage_dir: Path) -> bytes:
 def _untar_workspace(data: bytes, dest_dir: Path) -> list[str]:
     dest_dir.mkdir(parents=True, exist_ok=True)
     names: list[str] = []
+    dest_root = dest_dir.resolve()
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-        for m in tar.getmembers():
-            # path-traversal guard: members must stay within dest
+        members = tar.getmembers()
+        for m in members:
+            # Only plain files / dirs - reject symlinks, hardlinks and devices
+            # (they can redirect a write outside dest or touch special files).
+            if not (m.isreg() or m.isdir()):
+                raise ValueError(f"unsafe member type in bundle: {m.name!r}")
+            # Path-traversal guard: the resolved target must stay inside dest.
+            # is_relative_to is exact, unlike a str.startswith prefix test
+            # (which treats /dest-evil as inside /dest).
             target = (dest_dir / m.name).resolve()
-            if not str(target).startswith(str(dest_dir.resolve())):
+            if not target.is_relative_to(dest_root):
                 raise ValueError(f"unsafe path in bundle: {m.name!r}")
             names.append(m.name)
-        # Python 3.12+ supports the 'data' filter (rejects unsafe members);
-        # fall back gracefully on older runtimes.
+        # Prefer the stdlib 'data' filter (3.12+, backported to 3.9.17+/3.11.4+),
+        # which rejects unsafe members itself.
         try:
             tar.extractall(dest_dir, filter="data")
         except TypeError:
-            tar.extractall(dest_dir)  # noqa: S202 - path-traversal guarded above
+            # Older runtime without the filter: extract each validated member by
+            # hand. Write regular files straight into the confined target - never
+            # via tar.extract(), which would follow the tainted member path/links.
+            for m in members:
+                target = (dest_dir / m.name).resolve()
+                if m.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                src = tar.extractfile(m)
+                if src is None:
+                    continue
+                with src, open(target, "wb") as out:
+                    shutil.copyfileobj(src, out)
     return names
 
 
