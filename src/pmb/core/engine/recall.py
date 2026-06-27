@@ -52,14 +52,24 @@ _WORD_NUM = r"[^\W_]+"
 
 def _result_in_project(r, project_lc: str) -> bool:
     """True if a RecallResult is tied to `project_lc` (case-insensitive
-    substring against project_name / project / project_path metadata)."""
+    substring against project_name / project / project_path metadata, OR the
+    project name appears in the event content).
+
+    The content fallback matters because record_batch drops custom metadata on
+    type='activity' items, so an agent-recorded decision ("PMB demo decision:
+    ...") carries no project tag and would otherwise be invisible to a
+    project-scoped recall even though it is clearly about that project."""
     meta = r.metadata if isinstance(r.metadata, dict) else {}
     for k in ("project_name", "project"):
         v = meta.get(k)
         if isinstance(v, str) and project_lc in v.lower():
             return True
     pp = meta.get("project_path")
-    return isinstance(pp, str) and project_lc in pp.lower()
+    if isinstance(pp, str) and project_lc in pp.lower():
+        return True
+    # Content fallback: the project name is mentioned in the event text.
+    content = getattr(r, "content", "") or ""
+    return project_lc in content.lower()
 
 
 class RecallMixin:
