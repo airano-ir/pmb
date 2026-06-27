@@ -15,6 +15,7 @@ All notable changes to PMB are documented here.
 - **The entity graph no longer ingests code-index scaffolding** (`file`, `symbols`, `imports`, month names) as nodes.
 - **Out-of-band writes are visible without a restart.** A long-running engine (the warm daemon) reloads its index when another process changed it; a cold write (a one-shot CLI with no model loaded) indexes into BM25 synchronously; and the recall cache is invalidated on an external change. A CLI `pmb fact` / `index` is now recallable immediately.
 - **Auto-recall surfaces the specific fact for project-named questions** ("what is `<project>`'s X?") instead of only the project overview.
+- **Project-scoped recall (`recall(project=X)`) also matches decisions that name the project in their content.** Found in a live agent-to-agent test: one session records a decision (record_batch stores it as an `activity`, dropping the project tag), and a later `recall(project=X)` filtered it out - breaking cross-session memory. The scope filter now falls back to a content mention, so the decision is found.
 - **`pmb workspace current`** wording: source `explicit` now reads "explicit workspace id (--workspace flag or caller-provided)".
 
 ## [1.2.0] - 2026-06-27 - Dashboard redesign and self-tending memory
