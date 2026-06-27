@@ -141,6 +141,39 @@ def test_inject_trace_total_noop_without_trace():
     assert _inject_trace_total("", "daemon") == ""
 
 
+# ── cold-path stdout decode is pinned to UTF-8 (Cyrillic mojibake guard) ──
+
+def test_cold_cli_decodes_child_stdout_as_utf8(monkeypatch):
+    """Regression: the cold fallback ran `subprocess.run(..., text=True)` with no
+    encoding, so the child `pmb` CLI's UTF-8 stdout was decoded with the Windows
+    locale (cp1251) and DOUBLE-encoded - the agent saw the auto-context's 'Карта
+    проекта' arrive as 'РљР°СЂС‚Р° РїСЂРѕРµРєС‚Р°'. The cold path must pin the
+    decode (and the child's output codec) to UTF-8, matching the daemon path."""
+    import subprocess as _sp
+
+    import pmb.hookclient.__main__ as hc
+
+    seen: dict = {}
+
+    class _R:
+        returncode = 0
+        stdout = "контекст"
+
+    def _fake_run(cmd, **kw):
+        seen.update(kw)
+        return _R()
+
+    monkeypatch.setattr(_sp, "run", _fake_run)
+    monkeypatch.setattr(hc, "_full_cli_path", lambda: "pmb")
+
+    rc = hc._exec_full_cli(["session-restore", "--quiet"])
+    assert rc == 0
+    assert seen.get("encoding") == "utf-8", "child stdout must be decoded as UTF-8"
+    assert seen.get("errors") == "replace"
+    # the child is also told to emit UTF-8 (belt-and-suspenders across hosts)
+    assert seen.get("env", {}).get("PYTHONIOENCODING") == "utf-8"
+
+
 # ── daemon-served prepare-context against a stub server ─────────────
 
 class _StubHandler(BaseHTTPRequestHandler):

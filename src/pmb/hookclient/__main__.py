@@ -195,8 +195,18 @@ def _exec_full_cli(cli_args: list[str], detached: bool = False,
         except Exception:
             pass
         return 0
+    # Decode the child's stdout as UTF-8, NOT the Windows locale (cp1251/cp1252).
+    # The full `pmb` CLI writes UTF-8 (it reconfigures its own stdout); letting
+    # text=True fall back to the locale codec double-encoded any Cyrillic/emoji
+    # in the cold auto-context - the agent saw "Карта проекта" arrive as
+    # "РљР°СЂС‚Р° РїСЂРѕРµРєС‚Р°". Pin both the child's output codec (env) and our
+    # decode (encoding=) to UTF-8 so the cold path matches the daemon path.
+    child_env = dict(os.environ)
+    child_env.setdefault("PYTHONIOENCODING", "utf-8")
+    child_env.setdefault("PYTHONUTF8", "1")
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", env=child_env)
         if r.stdout:
             out = _inject_trace_total(r.stdout, trace_source) if trace_source else r.stdout
             sys.stdout.write(out)
