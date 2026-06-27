@@ -196,13 +196,40 @@ Diff (may be truncated):
 """
 
 _MODULE_PROMPT = """\
-In ONE sentence, state what this source file is responsible for in the project.
-Be concrete about the domain (e.g. "parses .gitignore and walks a repo's source
-files"), not generic ("defines functions"). No markdown, no preamble, just the
-sentence.
+You are given the INDEXED STRUCTURE of one source file below (its path, symbols
+and imports). That structure is your ONLY input - do NOT try to open, read or
+look for the file itself, and do NOT ask for its path.
+
+From the structure alone, state in ONE sentence what this source file is
+responsible for in the project. Be concrete about the domain (e.g. "parses
+.gitignore and walks a repo's source files"), not generic ("defines functions").
+No markdown, no preamble, just the sentence. If the structure is too sparse to
+tell, reply with exactly: unknown
 
 {header}
 """
+
+
+def _is_bad_module_summary(text: str) -> bool:
+    """True when the LLM returned a refusal / clarifying question / 'unknown'
+    instead of an actual one-line summary.
+
+    The summarizer runs headless with no tools, so a coding-agent backend
+    sometimes tries to "open" the file (which it cannot reach) and replies
+    "the file doesn't exist, provide its path" - we must NOT store that as a
+    module's purpose. Matches unambiguous non-summary markers only, so a real
+    domain sentence is never rejected."""
+    low = (text or "").strip().lower()
+    if not low or low in ("unknown", "n/a", "none", "."):
+        return True
+    markers = (
+        "doesn't exist", "does not exist", "no such file", "not found",
+        "provide the", "please provide", "provide its", "could you provide",
+        "can you provide", "i can't", "i cannot", "i'm unable", "i am unable",
+        "unable to", "i don't have access", "i do not have access",
+        "i don't see", "i do not see",
+    )
+    return any(m in low for m in markers)
 
 
 def _summarize_commit(llm: LLMClient, info: dict) -> str:
@@ -439,9 +466,16 @@ def summarize_modules(
             log.warning("module summary failed for %s: %s", f["file_path"], e)
             continue
         summary = (text or "").strip()
-        if not summary:
+        if not summary or _is_bad_module_summary(summary):
+            if summary:
+                log.warning(
+                    "skipped non-summary module purpose for %s: %r",
+                    f["file_path"], summary[:80],
+                )
             continue
         summary = summary.splitlines()[0].strip()  # one line only
+        if not summary:
+            continue
         items.append({
             "type": "fact",
             "content": f"Module {f['file_path']}: {summary}",

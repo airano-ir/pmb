@@ -97,11 +97,29 @@ def start(
         out = open(log_path, "a", encoding="utf-8")  # noqa: SIM115 (child owns it)
     except Exception:
         out = subprocess.DEVNULL
+    # Carry the configured tool profile to the spawned daemon so a manual
+    # `pmb daemon start/restart` serves the same profile as the connect /
+    # auto-start path. Without this it falls back to the tight `minimal`
+    # default, and an agent loses forget / recall_smart / index_project on
+    # every restart.
+    env = dict(os.environ)
+    if not env.get("PMB_TOOL_PROFILE"):
+        try:
+            from pmb.config import Config
+            from pmb.core.workspace import detect_workspace
+            ws = detect_workspace()
+            prof = str(Config(
+                workspace_dir=ws.storage_dir, pmb_home=ws.pmb_home,
+            ).get("daemon.tool_profile") or "").strip()
+            if prof:
+                env["PMB_TOOL_PROFILE"] = prof
+        except Exception:
+            pass
     try:
         subprocess.Popen(
             [sys.executable, "-m", "pmb.cli", "daemon", "run",
              "--port", str(port), "--host", host],
-            stdout=out, stderr=out, stdin=subprocess.DEVNULL, **kwargs,
+            stdout=out, stderr=out, stdin=subprocess.DEVNULL, env=env, **kwargs,
         )
     finally:
         if out is not subprocess.DEVNULL:

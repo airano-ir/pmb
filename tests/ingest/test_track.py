@@ -137,3 +137,55 @@ def test_cursor_roundtrip(isolated_engine):
     _write_cursor(isolated_engine, "/repo/y", "def456")
     assert _read_cursor(isolated_engine, "/repo/x") == "abc123"
     assert _read_cursor(isolated_engine, "/repo/y") == "def456"
+
+
+def test_is_bad_module_summary():
+    from pmb.ingest.track import _is_bad_module_summary
+
+    # refusals / clarifying questions / sentinels are rejected
+    assert _is_bad_module_summary("The file doesn't exist in this repository.")
+    assert _is_bad_module_summary("Could you provide the actual path to a.py?")
+    assert _is_bad_module_summary("I cannot find that file.")
+    assert _is_bad_module_summary("unknown")
+    assert _is_bad_module_summary("")
+    # real one-line domain summaries pass through
+    assert not _is_bad_module_summary("Parses .gitignore and walks a repo's source files")
+    assert not _is_bad_module_summary("Provides the warm-engine HTTP routes for the daemon")
+
+
+def test_summarize_modules_skips_refusal_summary(isolated_engine, monkeypatch):
+    """Regression: a headless coding-agent backend that cannot reach the file
+    may reply 'the file doesn't exist, provide its path' instead of a summary.
+    That refusal must NOT be stored as the module's purpose."""
+    from pmb.ingest import track
+
+    monkeypatch.setattr(track, "_indexed_files", lambda e, p: [
+        {"file_path": "a.py", "content": "File: a.py\nSymbols: def f", "language": "python"},
+        {"file_path": "b.py", "content": "File: b.py\nSymbols: def g", "language": "python"},
+    ])
+    monkeypatch.setattr(track, "_files_with_summary", lambda e, p: set())
+
+    class _MixedLLM:
+        """First file: a refusal; second: a real summary."""
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, prompt, max_tokens=256, **kw):
+            self.calls += 1
+            if self.calls == 1:
+                return ("The file doesn't exist in this repository. Could you "
+                        "provide the actual path to a.py?")
+            return "Parses config files and validates schema."
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        isolated_engine, "record_batch_async",
+        lambda items: captured.update(items=items) or {"ok": True},
+    )
+
+    res = summarize_modules(isolated_engine, ".", llm=_MixedLLM())
+    # Only the real summary is stored; the refusal is dropped.
+    assert res["n_summarized"] == 1
+    stored = {i["metadata"]["file_path"]: i["content"] for i in captured["items"]}
+    assert "b.py" in stored and "a.py" not in stored
+    assert "doesn't exist" not in stored["b.py"]

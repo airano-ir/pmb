@@ -141,6 +141,41 @@ def test_inject_trace_total_noop_without_trace():
     assert _inject_trace_total("", "daemon") == ""
 
 
+# ── cold-path stdout decode is pinned to UTF-8 (Cyrillic mojibake guard) ──
+
+def test_cold_cli_decodes_child_stdout_as_utf8(monkeypatch):
+    """Regression: the cold fallback ran `subprocess.run(..., text=True)` with no
+    encoding, so the child `pmb` CLI's UTF-8 stdout was decoded with the Windows
+    locale (cp1251) and DOUBLE-encoded - the agent saw the auto-context's 'Карта
+    проекта' arrive as 'РљР°СЂС‚Р° РїСЂРѕРµРєС‚Р°'. The cold path must pin the
+    decode (and the child's output codec) to UTF-8, matching the daemon path."""
+    import subprocess as _sp
+
+    import pmb.hookclient.__main__ as hc
+
+    seen: dict = {}
+
+    class _R:
+        returncode = 0
+        stdout = "контекст"
+
+    def _fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        seen.update(kw)
+        return _R()
+
+    monkeypatch.setattr(_sp, "run", _fake_run)
+
+    rc = hc._exec_full_cli(["session-restore", "--quiet"])
+    assert rc == 0
+    assert seen.get("encoding") == "utf-8", "child stdout must be decoded as UTF-8"
+    assert seen.get("errors") == "replace"
+    # the child is also told to emit UTF-8 (belt-and-suspenders across hosts)
+    assert seen.get("env", {}).get("PYTHONIOENCODING") == "utf-8"
+    # SAC-safe: the cold fallback runs the SIGNED interpreter, not pmb.exe
+    assert seen["cmd"][:3] == [sys.executable, "-m", "pmb.cli"]
+
+
 # ── daemon-served prepare-context against a stub server ─────────────
 
 class _StubHandler(BaseHTTPRequestHandler):
@@ -277,3 +312,47 @@ def test_prepare_context_client_overhead_p95(monkeypatch):
         assert p95 < 300.0, f"client overhead p95={p95:.0f}ms exceeds 300ms budget"
     finally:
         srv.shutdown()
+
+
+# ── PMB_INTERNAL_LLM guard: PMB's own LLM sub-calls must not trip PMB hooks ──
+
+def test_internal_llm_flag_no_ops_every_hook(monkeypatch, capsys):
+    """PMB spawns `claude -p` as its OWN LLM backend and sets PMB_INTERNAL_LLM=1.
+    Every hook subcommand must then no-op: no daemon round-trip, no output, no
+    capture - so PMB's summarizer prompts don't trip PMB's own hooks (the
+    correction-capture false-positive bug)."""
+    import pmb.hookclient.__main__ as hc
+
+    reached = {"daemon": False}
+    monkeypatch.setattr(
+        "pmb.mcp.registry.find_live_daemon",
+        lambda: reached.__setitem__("daemon", True) or {"host": "127.0.0.1", "port": 1},
+        raising=False,
+    )
+    monkeypatch.setenv("PMB_INTERNAL_LLM", "1")
+
+    class _Stdin:
+        def __init__(self, data):
+            self._d = data.encode("utf-8")
+            self.buffer = self
+        def read(self):
+            return self._d
+
+    # a prompt that WOULD trip correction-capture if the hook actually ran
+    monkeypatch.setattr(sys, "stdin", _Stdin(json.dumps(
+        {"prompt": "again, again - stop. Capture the INTENT, not the diff."})))
+
+    for sub in ("prepare-context", "session-restore", "track-action",
+                "pretool", "autowrite"):
+        assert hc.main([sub]) == 0
+
+    assert reached["daemon"] is False, "internal LLM call must not reach the daemon"
+    assert capsys.readouterr().out == "", "internal LLM call must emit no hook output"
+
+
+def test_claude_cli_client_marks_internal_llm():
+    """The other half of the guard: the spawn flags itself (PMB_INTERNAL_LLM=1)
+    so the hook entrypoint above can recognise an internal call."""
+    from pmb.health.consolidate import ClaudeCLIClient
+    env = ClaudeCLIClient(command="claude")._subprocess_env()
+    assert env.get("PMB_INTERNAL_LLM") == "1"

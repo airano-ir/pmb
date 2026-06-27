@@ -225,6 +225,17 @@ _STOPWORDS = {
     # Reporting / dialogue past-tense
     "explained", "described", "mentioned", "noted", "shared", "showed",
     "claimed", "argued", "proposed", "suggested", "agreed", "disagreed",
+    # Code-index structural tokens (from `index project` facts shaped
+    # "File: x.py (python, N lines) Symbols: ... Imports: ...") - these are
+    # scaffolding labels, not entities, and were polluting the graph with nodes
+    # like "imports" / "symbols" / "file" (some even miscategorised as people).
+    "file", "files", "symbol", "symbols", "import", "imports",
+    "line", "lines", "loc", "sha", "sha1", "def",
+    # Month names + date fragments leak from "On June 24, 2026" style content.
+    "january", "february", "march", "april", "june", "july", "august",
+    "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept",
+    "oct", "nov", "dec",
 }
 # RU/UK localized folder-name stopwords (the words for "Desktop"/"Documents"
 # /…) merge in from the packs so Windows path leftovers never become concepts.

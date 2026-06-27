@@ -69,6 +69,27 @@ def test_internal_prepare_context_empty_message(tmp_pmb_home, tmp_workspace_dir)
         assert r.json()["context"] == ""
 
 
+def test_internal_recall_returns_serialized_pack(tmp_pmb_home, tmp_workspace_dir):
+    """The /internal/recall route lets `pmb recall` reuse the warm engine: it
+    returns a serialized pack (results + the bm25/vector signal breakdown the
+    CLI renders)."""
+    client, engine = _build_daemon_app(tmp_workspace_dir)
+    engine.record_batch([
+        {"type": "fact", "content": "zz canonical deploy region is eu-central-7"},
+    ])
+    engine.wait_for_writes(timeout=30)
+    with client:
+        r = client.post("/internal/recall",
+                        json={"query": "canonical deploy region", "top_k": 5})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] == "daemon"
+        assert body["version"] == pmb.__version__
+        hit = [x for x in body.get("results", []) if "eu-central-7" in x["content"]]
+        assert hit, "seeded fact should be recalled by the daemon"
+        assert "signals" in hit[0] and "bm25" in hit[0]["signals"]
+
+
 # ── B1: registry tracks a daemon; find_live_daemon matches kind+home ────────
 
 def test_find_live_daemon_matches_kind(tmp_pmb_home):

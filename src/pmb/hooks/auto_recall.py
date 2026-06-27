@@ -216,10 +216,17 @@ def detect_intents(
     if _LESSONS_QUERY.search(s):
         out.append(Intent.LESSONS_QUERY)
 
-    # Last resort: a question mark and no other intent fired. Likely a
-    # factual ask. We'll do a low-cost recall and only surface if it
-    # actually hits.
-    if not out and _HAS_QUESTION.search(s):
+    # A question fires a specific fact-recall when nothing else would surface
+    # the answer: either NO intent matched, OR only a project intent did - a
+    # project-NAMED question ("what is <project>'s default timezone?") must
+    # surface the specific fact, not just the project overview. The recall is
+    # low-cost and self-gated (only surfaces when it actually hits), so adding
+    # it on top of a project intent is safe.
+    if _HAS_QUESTION.search(s) and (
+        not out
+        or Intent.PROJECT_OVERVIEW in out
+        or Intent.PROJECT_PREP in out
+    ):
         out.append(Intent.GENERIC_FACTUAL)
 
     # R4: a WORK REQUEST - an imperative / work verb, no project, no question.
@@ -525,14 +532,25 @@ def run_auto_context(
         info = {"severity": correction_sig.severity, "surface_id": None,
                 "reused": False, "markers": correction_sig.markers}
         if correction_record_draft:
+            # Scope the draft to the project the complaint is about, so it
+            # surfaces only for that project and the agent sees what it relates
+            # to. Use the SAME resolver the overview path uses - it keeps dev-ish
+            # names like 'pmb' that the engine's stopword-filtered detector drops.
+            try:
+                corr_project = _resolve_project_name(
+                    engine, msg, _known_projects(engine))
+            except Exception:
+                corr_project = None
             try:
                 cap = engine.capture_correction(
                     msg, severity=correction_sig.severity,
                     markers=correction_sig.markers,
                     importance=correction_importance,
+                    project=corr_project,
                 )
                 info["surface_id"] = cap.get("surface_id")
                 info["reused"] = cap.get("reused", False)
+                info["project"] = cap.get("project")
             except Exception:
                 pass
         res.correction = info

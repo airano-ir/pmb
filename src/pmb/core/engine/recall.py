@@ -52,14 +52,24 @@ _WORD_NUM = r"[^\W_]+"
 
 def _result_in_project(r, project_lc: str) -> bool:
     """True if a RecallResult is tied to `project_lc` (case-insensitive
-    substring against project_name / project / project_path metadata)."""
+    substring against project_name / project / project_path metadata, OR the
+    project name appears in the event content).
+
+    The content fallback matters because record_batch drops custom metadata on
+    type='activity' items, so an agent-recorded decision ("PMB demo decision:
+    ...") carries no project tag and would otherwise be invisible to a
+    project-scoped recall even though it is clearly about that project."""
     meta = r.metadata if isinstance(r.metadata, dict) else {}
     for k in ("project_name", "project"):
         v = meta.get(k)
         if isinstance(v, str) and project_lc in v.lower():
             return True
     pp = meta.get("project_path")
-    return isinstance(pp, str) and project_lc in pp.lower()
+    if isinstance(pp, str) and project_lc in pp.lower():
+        return True
+    # Content fallback: the project name is mentioned in the event text.
+    content = getattr(r, "content", "") or ""
+    return project_lc in content.lower()
 
 
 class RecallMixin:
@@ -199,6 +209,17 @@ class RecallMixin:
             rerank = self.config.get("recall.rerank")
         if rerank_top_n is None:
             rerank_top_n = self.config.get("recall.rerank_top_n")
+
+        # Reflect out-of-band writes: if another process (a CLI `pmb fact` /
+        # `forget` / `purge` while this engine - typically the warm daemon - is
+        # live) changed the on-disk index, reload it AND invalidate the recall
+        # cache here, so even a previously-cached identical query re-runs
+        # instead of serving a stale hit until the TTL.
+        try:
+            if self.search._refresh_if_stale():
+                self.recall_cache.bump_generation()
+        except Exception:
+            pass
 
         # Adaptive Query Decomposition (RAG-Fusion / IRCoT style).
         # Triggered only when query looks multi-hop and feature is on.
@@ -1411,12 +1432,20 @@ class RecallMixin:
 
     def pin(self, ulid: str, importance: float = 1.0):
         self.events.pin(ulid, importance)
+        # pin un-archives and reweights the event, so recall results change.
+        self.recall_cache.bump_generation()
 
     def forget(self, ulid: str):
         self.events.archive(ulid)
+        # The recall cache is keyed by a write generation; archiving must
+        # invalidate it, else a query recalled before the forget keeps
+        # returning the now-archived event (the warm daemon serves it stale).
+        self.recall_cache.bump_generation()
 
     def unforget(self, ulid: str):
         self.events.unarchive(ulid)
+        # restore must make the event recallable again on the next query.
+        self.recall_cache.bump_generation()
 
     def purge(self, ulid: str) -> bool:
         """HARD delete (irreversible): drop the vector, the SQLite row, and the

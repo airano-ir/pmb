@@ -650,12 +650,15 @@ SCHEMA: dict[str, _Setting] = {
         "to keep the old stdio default; --stdio always overrides per-invocation.",
     ),
     "daemon.tool_profile": _Setting(
-        str, "",
-        "S6: the MCP tool profile the warm daemon should serve (minimal | lean | "
-        "default | full) when clients connect over HTTP (`pmb connect --daemon`). "
-        "Empty = inherit PMB_TOOL_PROFILE / the built-in default. `pmb connect` "
-        "sets this to 'lean' for a hook-enabled host so the shared daemon trims "
-        "the tools the hooks already cover, exactly like the stdio entry did.",
+        str, "lean",
+        "S6: the MCP tool profile the warm daemon serves (minimal | lean | "
+        "default | full) when clients connect over HTTP. Defaults to 'lean' - "
+        "the full useful surface (incl. forget / recall_smart / index_project / "
+        "project_structure) minus the browse tools the host hooks already cover - "
+        "so a warm-daemon agent gets the effective toolset out of the box and a "
+        "plain `pmb daemon restart` keeps it. Set 'minimal' for the tight 10-tool "
+        "core, or 'full' for everything incl. admin. Empty also means inherit "
+        "PMB_TOOL_PROFILE / the built-in default.",
     ),
     "daemon.maintenance": _Setting(
         bool, True,

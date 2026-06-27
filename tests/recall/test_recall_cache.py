@@ -112,6 +112,28 @@ def test_write_invalidates_cache(tmp_pmb_home, tmp_workspace_dir):
     assert misses >= 2
 
 
+def test_forget_invalidates_cache(tmp_pmb_home, tmp_workspace_dir):
+    """Regression: forget() must invalidate the recall cache, else a query
+    recalled before the forget keeps returning the now-archived event."""
+    eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home)
+    ulid = eng.remember("Q", "gamma deploy region eu-central-7")
+    p1 = eng.recall("gamma deploy region", top_k=5)
+    assert any("eu-central-7" in r.content for r in p1.results)
+    eng.forget(ulid)
+    p2 = eng.recall("gamma deploy region", top_k=5)
+    assert not any("eu-central-7" in r.content for r in p2.results)
+
+
+def test_pin_invalidates_cache(tmp_pmb_home, tmp_workspace_dir):
+    """pin() un-archives + reweights an event, so it must bump the generation."""
+    eng = Engine(cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home)
+    ulid = eng.remember("Q", "delta pinned content marker")
+    eng.recall("delta pinned content", top_k=5)
+    gen_before = eng.recall_cache.stats()["generation"]
+    eng.pin(ulid)
+    assert eng.recall_cache.stats()["generation"] > gen_before
+
+
 def test_cache_disabled_via_config(tmp_pmb_home, tmp_workspace_dir):
     eng = Engine(
         cwd=tmp_workspace_dir, pmb_home=tmp_pmb_home,

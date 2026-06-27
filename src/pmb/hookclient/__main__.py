@@ -168,21 +168,17 @@ def _daemon_request(route: str, payload: dict, timeout: float) -> dict | None:
 
 # ── full-CLI fallback ───────────────────────────────────────────────
 
-def _full_cli_path() -> str:
-    py = Path(sys.executable)
-    for c in (py.parent / "pmb.exe", py.parent / "pmb"):
-        if c.exists():
-            return str(c)
-    return "pmb"
-
-
 def _exec_full_cli(cli_args: list[str], detached: bool = False,
                    trace_source: str | None = None) -> int:
-    """Run the full `pmb <cli_args>` and forward its stdout. The slow cold path
-    - reached only when the daemon is absent. When `trace_source` is set, stamp
-    the honest end-to-end total + source into the trace header (S10)."""
+    """Run the full CLI and forward its stdout. The slow cold path - reached
+    only when the daemon is absent. When `trace_source` is set, stamp the honest
+    end-to-end total + source into the trace header (S10)."""
     import subprocess
-    cmd = [_full_cli_path(), *cli_args]
+    # Invoke through the SIGNED interpreter (`python -m pmb.cli`), NOT the
+    # unsigned pip `pmb.exe` shim: Windows Smart App Control blocks unsigned
+    # executables, and this cold fallback also AUTOSTARTS the daemon - an
+    # unsigned exe here could leave the user with no daemon and dead hooks.
+    cmd = [sys.executable, "-m", "pmb.cli", *cli_args]
     if detached:
         kwargs: dict = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
                         "stdin": subprocess.DEVNULL}
@@ -195,8 +191,18 @@ def _exec_full_cli(cli_args: list[str], detached: bool = False,
         except Exception:
             pass
         return 0
+    # Decode the child's stdout as UTF-8, NOT the Windows locale (cp1251/cp1252).
+    # The full `pmb` CLI writes UTF-8 (it reconfigures its own stdout); letting
+    # text=True fall back to the locale codec double-encoded any non-ASCII
+    # (Cyrillic, emoji) in the cold auto-context - UTF-8 bytes re-decoded as
+    # cp1251 reach the agent as mojibake. Pin both the child's output codec (env)
+    # and our decode (encoding=) to UTF-8 so the cold path matches the daemon.
+    child_env = dict(os.environ)
+    child_env.setdefault("PYTHONIOENCODING", "utf-8")
+    child_env.setdefault("PYTHONUTF8", "1")
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", env=child_env)
         if r.stdout:
             out = _inject_trace_total(r.stdout, trace_source) if trace_source else r.stdout
             sys.stdout.write(out)
@@ -390,6 +396,16 @@ _DISPATCH = {
 
 
 def main(argv: list[str] | None = None) -> int:
+    # PMB spawns `claude -p` as its OWN LLM backend (consolidate, track
+    # changes/modules, graph expansion). Those sub-calls inherit the host's
+    # hook config, so without this guard PMB's own summarizer prompts trip
+    # PMB's hooks - e.g. the correction-capture marker scan flagging "Capture
+    # the INTENT, not the diff" as user pushback, or autowrite journaling the
+    # sub-call. An internal LLM call must leave no memory side effects, so every
+    # hook subcommand no-ops here. The flag is set in
+    # health.consolidate.ClaudeCLIClient._subprocess_env.
+    if os.environ.get("PMB_INTERNAL_LLM"):
+        return 0
     # Windows consoles default to cp1252; a lesson with an emoji or Cyrillic would
     # crash sys.stdout.write and the hook would silently emit nothing. Force UTF-8
     # so any rule text reaches the agent.

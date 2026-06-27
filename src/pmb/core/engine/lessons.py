@@ -150,6 +150,7 @@ class LessonsMixin:
         markers: list[str] | None = None,
         importance: float = 0.85,
         dedup_minutes: float = 90.0,
+        project: str | None = None,
         session_id: str | None = None,
     ) -> dict:
         """Record a DRAFT lesson the moment the user pushes back, so the rule
@@ -177,6 +178,34 @@ class LessonsMixin:
 
         ws = self.workspace.id
         msg_tokens = distinctive_tokens(msg)
+
+        # Resolve WHICH project this complaint is about, so the draft surfaces
+        # only for that project (find_lessons project-scope) instead of leaking
+        # across every other project in a shared store - and so the agent
+        # immediately sees what the captured complaint relates to. Order: an
+        # explicit hint, then detection from the message text, then a real
+        # per-project workspace name (never the catch-all 'personal'/'default').
+        proj = (project or "").strip() or None
+        if not proj:
+            try:
+                det = self.detect_project_in_text(msg, min_mentions=1)
+                if det and det.get("name"):
+                    proj = str(det["name"]).strip() or None
+            except Exception:
+                proj = None
+        if not proj:
+            try:
+                ws_name = (self.workspace.name or "").strip()
+                # A path-like workspace name (no git repo -> the cwd path is used
+                # as the name) is not a project label; reduce it to its last
+                # component so the tag is 'myrepo', not 'C:\...\myrepo'. Skip the
+                # catch-all multi-project stores.
+                base = ws_name.replace("\\", "/").rstrip("/").split("/")[-1].strip()
+                if base and base.lower() not in {
+                        "personal", "default", "global", "main"}:
+                    proj = base
+            except Exception:
+                proj = None
 
         # 1. Dedup against recent correction drafts.
         reuse_ulid = None
@@ -208,8 +237,10 @@ class LessonsMixin:
         if reused:
             lesson_ulid = reuse_ulid
         else:
+            proj_tag = f"[project: {proj}] " if proj else ""
             content = (
                 "[DRAFT lesson - auto-captured from a user correction] "
+                f"{proj_tag}"
                 f"User pushed back: \"{msg[:280]}\". "
                 "Turn this into a durable rule: state plainly what to ALWAYS / "
                 "NEVER do so this stops repeating, then it will surface next time."
@@ -229,6 +260,10 @@ class LessonsMixin:
                         # draft's boilerplate ("durable rule", "repeating", ...)
                         # which would cause spurious fires.
                         "correction_text": msg[:280],
+                        # The project this draft is scoped to (structured, so
+                        # find_lessons(project=...) keys off it directly instead
+                        # of guessing from the raw complaint text).
+                        **({"project_name": proj} if proj else {}),
                     },
                     session_id=session_id,
                 )
@@ -250,7 +285,7 @@ class LessonsMixin:
             pass
 
         return {"lesson_ulid": lesson_ulid, "surface_id": surface_id,
-                "reused": reused, "severity": severity}
+                "reused": reused, "severity": severity, "project": proj}
 
     def adherence_stats(self, days: float = 7.0) -> dict:
         """How well is the AI agent FOLLOWING the READ-FIRST workflow?

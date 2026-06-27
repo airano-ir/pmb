@@ -4,6 +4,28 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+### Fixed - stability and recall-correctness pass (live-session QA)
+- **`forget` / `pin` / `restore` invalidate the recall cache**, so a forgotten memory stops surfacing immediately instead of lingering in the warm daemon's cache until the TTL.
+- **PMB's own LLM sub-calls no longer trip PMB's hooks.** `pmb track changes` / `track modules` / consolidate spawn `claude -p`; those sub-calls now set `PMB_INTERNAL_LLM=1` and `pmb-hook` no-ops on it, so the summarizer's own instruction ("Capture the INTENT, not the diff") is no longer captured as a "user correction" draft lesson.
+- **`pmb track modules` never stores a refusal as a module purpose.** The prompt states the indexed structure is the only input, and refusal / clarifying-question / "unknown" responses are dropped instead of stored.
+- **`pmb history` / `pmb correlate` find commits tracked by `pmb track changes`** (read both the `files` and `files_changed` metadata keys and the `git-change` fact source, not only the legacy git-signal schema).
+- **`pmb doctor` checks the configured embedding model** (the default multilingual MiniLM-L12) instead of a hardcoded all-MiniLM-L6-v2, ending a false "model not cached" warning.
+- **`pmb recall` (CLI) routes through the warm daemon** for full hybrid (BM25 + vector) results when one serves this workspace, instead of cold BM25-only; falls back to the local cold engine otherwise.
+- **`index project` captures module-level constants** (UPPER_CASE assignments) as symbols, not just defs / classes / methods.
+- **The entity graph no longer ingests code-index scaffolding** (`file`, `symbols`, `imports`, month names) as nodes.
+- **Out-of-band writes are visible without a restart.** A long-running engine (the warm daemon) reloads its index when another process changed it; a cold write (a one-shot CLI with no model loaded) indexes into BM25 synchronously; and the recall cache is invalidated on an external change. A CLI `pmb fact` / `index` is now recallable immediately.
+- **Auto-recall surfaces the specific fact for project-named questions** ("what is `<project>`'s X?") instead of only the project overview.
+- **Project-scoped recall (`recall(project=X)`) also matches decisions that name the project in their content.** Found in a live agent-to-agent test: one session records a decision (record_batch stores it as an `activity`, dropping the project tag), and a later `recall(project=X)` filtered it out - breaking cross-session memory. The scope filter now falls back to a content mention, so the decision is found.
+- **Hooks are emitted UNQUOTED so they parse in PowerShell.** Headless `claude -p` on Windows runs hooks through PowerShell, which ParserErrors on a quoted command (`"pmb-hook" ...`) with no `&` call operator - so SessionStart / Stop / auto-recall silently failed in headless agents and injected memory never reached them. The hook command is now `pmb-hook ...` (unquoted bare name on PATH, or a space-free absolute path), which parses in PowerShell, cmd and bash.
+- **The cold auto-context no longer mangles Cyrillic / emoji.** The cold hook path decoded the full `pmb` CLI's UTF-8 stdout with the Windows locale (cp1251), double-encoding non-ASCII - the agent saw "Карта проекта" arrive as "РљР°СЂС‚Р° РїСЂРѕРµРєС‚Р°". The decode (and the child's output codec) are now pinned to UTF-8, matching the daemon path.
+- **Captured corrections are scoped to the project they're about.** A correction-capture draft was stored as the raw user message with no project context, so it surfaced contextless and could leak across the other projects sharing a memory store. The draft now records which project the complaint is about - both as structured `project_name` metadata (so `find_lessons(project=...)` keys off it) and inline as a `[project: X]` tag - resolved via the same lenient detector the overview path uses (so dev-ish names like `pmb` are caught). A path-like workspace name is reduced to its basename, so the tag never becomes a full filesystem path.
+- **Hooks survive Windows Smart App Control.** Hooks are now invoked through the signed Python interpreter (`<python> -m pmb.hookclient ...`) instead of the pip-generated, UNSIGNED `pmb-hook.exe` launcher. SAC blocks unsigned executables, which silently killed every hook (the user saw "part of this app was blocked" pointing at the hook path, typically right after a reinstall recreated the shims). The interpreter path is the space-free first token, so the command still parses unquoted in PowerShell / cmd / bash.
+- **`pmb hooks install` is strip-then-add, so reinstall leaves no stale or duplicate hook lines.** It removes every PMB-marked hook first, then writes the current set - previously an unrecognised marker or an old `pmb-hook` line could survive a reinstall as a duplicate (`capture-exploration` was missing from the marker set and is now included).
+
+### Changed
+- **The warm daemon serves the effective `lean` tool profile by default** (forget / recall_smart / index_project / project_structure + the core memory loop), and `pmb daemon start/restart` now reads `daemon.tool_profile` into the spawned daemon, so a manual restart keeps it instead of falling back to the tight 10-tool `minimal` surface.
+- **`pmb workspace current`** wording: source `explicit` now reads "explicit workspace id (--workspace flag or caller-provided)".
+
 ## [1.2.0] - 2026-06-27 - Dashboard redesign and self-tending memory
 
 A full dashboard redesign, settings moved out of the TUI into the dashboard, and engine work that lets memory tend itself.

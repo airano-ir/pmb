@@ -284,6 +284,48 @@ def _register_internal_routes(mcp, engine) -> None:
             "source": "daemon",
         })
 
+    @mcp.custom_route("/internal/recall", methods=["POST"])
+    async def _recall(request):  # noqa: ANN001
+        """Full hybrid recall over the warm engine, for the `pmb recall` CLI so
+        a human gets the SAME BM25+vector results an agent does instead of the
+        cold BM25-only fallback. Best-effort: the CLI falls back to a local cold
+        engine when this is unavailable."""
+        _LAST_REQUEST["ts"] = time.time()
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not _workspace_matches(engine, (body or {}).get("workspace")):
+            return JSONResponse({"error": "workspace_mismatch",
+                                 "version": pmb.__version__}, status_code=409)
+        query = str((body or {}).get("query") or "").strip()
+        top_k = int((body or {}).get("top_k") or 5)
+        if not query:
+            return JSONResponse({"results": [], "version": pmb.__version__})
+
+        def _work() -> dict:
+            try:
+                pack = engine.recall(query=query, top_k=top_k)
+                return {
+                    "results": [r.to_dict() for r in pack.results],
+                    "workspace_name": pack.workspace_name,
+                    "n_total_in_workspace": pack.n_total_in_workspace,
+                    "elapsed_ms": pack.elapsed_ms,
+                }
+            except Exception as e:
+                try:
+                    from pmb.core.errlog import log_error
+                    log_error(engine.workspace.db_path, "daemon_hook", e, "recall")
+                except Exception:
+                    pass
+                return {"results": []}
+
+        out = await anyio.to_thread.run_sync(_work)
+        out["version"] = pmb.__version__
+        out["warm"] = bool(getattr(engine, "is_warm", lambda: False)())
+        out["source"] = "daemon"
+        return JSONResponse(out)
+
     @mcp.custom_route("/internal/hook/pretool", methods=["POST"])
     async def _pretool(request):  # noqa: ANN001
         """R11: PreToolUse lesson guard. Fires a matching lesson at TOOL-CALL

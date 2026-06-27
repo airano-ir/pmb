@@ -284,5 +284,29 @@ def test_file_history(tmp_pmb_home):
         assert history[0]["author"] == "alice"
 
 
+def test_file_history_and_correlation_see_track_changes_facts(tmp_pmb_home):
+    """Regression: `pmb track changes` stores git-change memories as FACTS
+    (event_type='fact', metadata.source='git-change', files under 'files').
+    file_history / correlations used to filter event_type='git' + key
+    'files_changed' and found nothing; they must see the fact form too."""
+    with tempfile.TemporaryDirectory() as tmp:
+        eng = Engine(cwd=Path(tmp), pmb_home=tmp_pmb_home)
+        eng.record_event(
+            event_type="fact",
+            content="Change in proj (def5678): refactor auth\nWhy: split the validator out",
+            metadata={"source": "git-change", "commit_short": "def5678",
+                      "author": "dev",
+                      "files": ["src/auth.py", "src/validator.py"]},
+        )
+
+        corr = FileCorrelation(eng)
+        history = corr.file_history("src/auth.py")
+        assert len(history) == 1
+        assert history[0]["sha"] == "def5678"
+        # co-occurrence: auth.py changed together with validator.py
+        co = dict(corr.correlations("src/auth.py"))
+        assert co.get("src/validator.py") == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

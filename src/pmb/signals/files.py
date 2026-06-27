@@ -24,6 +24,14 @@ if TYPE_CHECKING:
     from pmb.core.engine import Engine
 
 
+def _files_of(ev) -> list:
+    """The changed-files list from a git-change memory, tolerating both
+    schemas: `pmb track changes` writes 'files', the legacy git-signal path
+    wrote 'files_changed'."""
+    md = ev.metadata or {}
+    return md.get("files") or md.get("files_changed") or []
+
+
 class FileCorrelation:
     """Analysis of file co-occurrence in git commits."""
 
@@ -31,9 +39,17 @@ class FileCorrelation:
         self.engine = engine
 
     def _get_git_events(self) -> list:
-        return self.engine.events.list_active(
-            self.engine.workspace.id, limit=10000, event_type="git",
-        )
+        """Git-change memories. `pmb track changes` stores these as facts with
+        metadata.source == 'git-change' (files under 'files'); the older
+        git-signal path used event_type='git' (files under 'files_changed').
+        Return both so file history / correlation see commits tracked either
+        way - the user-facing `pmb track changes` writes the fact form, so
+        filtering on event_type='git' alone found nothing."""
+        ws = self.engine.workspace.id
+        facts = self.engine.events.list_active(ws, limit=10000, event_type="fact")
+        out = [e for e in facts if (e.metadata or {}).get("source") == "git-change"]
+        out += self.engine.events.list_active(ws, limit=10000, event_type="git")
+        return out
 
     def correlations(self, file_path: str, top_k: int = 10) -> list[tuple[str, int]]:
         """
@@ -46,7 +62,7 @@ class FileCorrelation:
 
         co_occur: Counter = Counter()
         for ev in events:
-            files = ev.metadata.get("files_changed", [])
+            files = _files_of(ev)
             files_norm = [f.replace("\\", "/").strip() for f in files]
             if target in files_norm:
                 for other in files_norm:
@@ -64,7 +80,7 @@ class FileCorrelation:
         for ev in events:
             if ev.timestamp < cutoff:
                 continue
-            for f in ev.metadata.get("files_changed", []):
+            for f in _files_of(ev):
                 counter[f.replace("\\", "/")] += 1
 
         return counter.most_common()
@@ -76,12 +92,11 @@ class FileCorrelation:
 
         history = []
         for ev in events:
-            files = [f.replace("\\", "/").strip()
-                     for f in ev.metadata.get("files_changed", [])]
+            files = [f.replace("\\", "/").strip() for f in _files_of(ev)]
             if target in files:
                 history.append({
                     "ulid": ev.ulid,
-                    "sha": ev.metadata.get("short_sha"),
+                    "sha": ev.metadata.get("commit_short") or ev.metadata.get("short_sha"),
                     "subject": ev.metadata.get("subject", ev.content[:80]),
                     "timestamp": ev.timestamp,
                     "author": ev.metadata.get("author"),
