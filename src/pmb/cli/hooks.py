@@ -44,7 +44,7 @@ _HOOK_SCRIPT_NAME = "pmb-session-start"
 # idempotent and uninstall can find every one we added.
 _PMB_MARKERS = (
     "prepare-context", "session-restore", "lesson-followcheck",
-    "track-action", "autowrite", "pretool",
+    "track-action", "autowrite", "pretool", "capture-exploration",
 )
 
 
@@ -59,19 +59,27 @@ def _pmb_entry() -> str:
 
 
 def _pmb_hook_entry() -> str:
-    """The `pmb-hook` invocation for a hook command (S2 fast lane).
+    """The hook fast-lane (S2) invocation, chosen to dodge TWO Windows traps.
 
-    The hook command is run UNQUOTED by the host through the platform shell,
-    and it must parse in PowerShell, cmd AND bash. PowerShell ParserErrors on a
-    quoted executable without the `&` call operator (this broke headless
-    `claude -p` hooks on Windows), and a path with spaces can't be used
-    unquoted. So we return the absolute pmb-hook path ONLY when it has no
-    spaces; otherwise the bare `pmb-hook` (a console-script on PATH), which is
-    space-free and safe unquoted everywhere."""
-    py = Path(sys.executable)
-    for candidate in (py.parent / "pmb-hook.exe", py.parent / "pmb-hook"):
-        if candidate.exists() and " " not in str(candidate):
-            return str(candidate)
+    1. CROSS-SHELL. The command runs UNQUOTED through the platform shell and
+       must parse in PowerShell, cmd AND bash. PowerShell ParserErrors on a
+       quoted executable without the `&` call operator (this broke headless
+       `claude -p` hooks), and a path with spaces can't be used unquoted - so
+       the command must START with a space-free token.
+    2. SMART APP CONTROL. Windows 11 SAC blocks UNSIGNED executables. The
+       pip-generated `pmb-hook.exe` launcher is unsigned, so SAC can block it
+       and silently kill every hook (the user sees "part of this app was
+       blocked" pointing at the hook path). The Python interpreter is signed, so
+       we run the same fast lane as a module instead: `<python> -m
+       pmb.hookclient`. `python.exe` is the space-free first token, the rest are
+       args - PowerShell-safe.
+
+    Use the absolute interpreter path when it is space-free; otherwise fall back
+    to the bare `pmb-hook` console-script on PATH (space-free, but unsigned -
+    only reached when python's own path has spaces)."""
+    py = str(Path(sys.executable))
+    if py and " " not in py:
+        return f"{py} -m pmb.hookclient"
     return "pmb-hook"
 
 
@@ -137,7 +145,7 @@ def hook_command_for(agent: str) -> str:
     """
     h = _pmb_hook_entry()
     if agent in ("claude-code", "codex"):
-        return f'"{h}" prepare-context --max-chars 4000 --quiet'
+        return f'{h} prepare-context --max-chars 4000 --quiet'
     raise ValueError(f"no hook support for agent {agent!r}")
 
 
@@ -156,38 +164,49 @@ def _load_json(p: Path) -> dict:
         return {}
 
 
+def _strip_pmb_hooks(hooks: dict) -> int:
+    """Remove every PMB-installed hook (matched by subcommand marker) from a
+    Claude `hooks` mapping, in place; return how many were removed. Non-PMB
+    hooks are preserved. Shared by install (strip-then-add) and uninstall."""
+    removed = 0
+    for event, entries in list(hooks.items()):
+        new_entries = []
+        for entry in entries:
+            orig = entry.get("hooks", [])
+            kept = [h for h in orig
+                    if not any(m in (h.get("command") or "") for m in _PMB_MARKERS)]
+            removed += len(orig) - len(kept)
+            if kept:
+                ne = dict(entry)
+                ne["hooks"] = kept
+                new_entries.append(ne)
+        if new_entries:
+            hooks[event] = new_entries
+        else:
+            hooks.pop(event, None)
+    return removed
+
+
 def _install_claude_hook() -> dict:
     p = _claude_settings_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     cfg = _load_json(p)
     hooks = cfg.setdefault("hooks", {})
 
+    # Strip ALL existing PMB hooks first, then add fresh - so a reinstall never
+    # leaves a stale line (an old unsigned `pmb-hook` entry, or one whose marker
+    # wasn't recognised before) or a duplicate. Non-PMB hooks are untouched.
+    _strip_pmb_hooks(hooks)
+
     actions: list[dict] = []
     for spec in _claude_hook_specs():
         event = spec["event"]
-        cmd = spec["command"]
         entries = hooks.setdefault(event, [])
-        # Find any existing PMB-tagged hook under this event and update it
-        # in place; identify by the subcommand marker so we don't duplicate.
-        marker = next((m for m in _PMB_MARKERS if m in cmd), None)
-        existing = None
-        for entry in entries:
-            for h in entry.get("hooks", []):
-                hc = h.get("command") or ""
-                if marker and marker in hc:
-                    existing = h
-                    break
-            if existing:
-                break
-        if existing:
-            existing["command"] = cmd
-            actions.append({"event": event, "action": "updated"})
-        else:
-            entries.append({
-                "matcher": spec.get("matcher", "*"),
-                "hooks": [{"type": "command", "command": cmd}],
-            })
-            actions.append({"event": event, "action": "created"})
+        entries.append({
+            "matcher": spec.get("matcher", "*"),
+            "hooks": [{"type": "command", "command": spec["command"]}],
+        })
+        actions.append({"event": event, "action": "installed"})
 
     p.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     return {"agent": "claude-code", "path": str(p), "actions": actions,
@@ -200,25 +219,7 @@ def _uninstall_claude_hook() -> dict:
         return {"agent": "claude-code", "action": "not_installed"}
     cfg = _load_json(p)
     hooks = cfg.get("hooks", {})
-    removed = 0
-    for event, entries in list(hooks.items()):
-        new_entries = []
-        for entry in entries:
-            kept = []
-            for h in entry.get("hooks", []):
-                hc = h.get("command") or ""
-                if any(m in hc for m in _PMB_MARKERS):
-                    removed += 1
-                    continue
-                kept.append(h)
-            if kept:
-                ne = dict(entry)
-                ne["hooks"] = kept
-                new_entries.append(ne)
-        if new_entries:
-            hooks[event] = new_entries
-        else:
-            hooks.pop(event, None)
+    removed = _strip_pmb_hooks(hooks)
     if removed == 0:
         return {"agent": "claude-code", "action": "not_installed", "path": str(p)}
     cfg["hooks"] = hooks
