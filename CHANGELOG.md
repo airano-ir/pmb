@@ -16,6 +16,10 @@ All notable changes to PMB are documented here.
 - **Out-of-band writes are visible without a restart.** A long-running engine (the warm daemon) reloads its index when another process changed it; a cold write (a one-shot CLI with no model loaded) indexes into BM25 synchronously; and the recall cache is invalidated on an external change. A CLI `pmb fact` / `index` is now recallable immediately.
 - **Auto-recall surfaces the specific fact for project-named questions** ("what is `<project>`'s X?") instead of only the project overview.
 - **Project-scoped recall (`recall(project=X)`) also matches decisions that name the project in their content.** Found in a live agent-to-agent test: one session records a decision (record_batch stores it as an `activity`, dropping the project tag), and a later `recall(project=X)` filtered it out - breaking cross-session memory. The scope filter now falls back to a content mention, so the decision is found.
+- **Hooks are emitted UNQUOTED so they parse in PowerShell.** Headless `claude -p` on Windows runs hooks through PowerShell, which ParserErrors on a quoted command (`"pmb-hook" ...`) with no `&` call operator - so SessionStart / Stop / auto-recall silently failed in headless agents and injected memory never reached them. The hook command is now `pmb-hook ...` (unquoted bare name on PATH, or a space-free absolute path), which parses in PowerShell, cmd and bash.
+
+### Changed
+- **The warm daemon serves the effective `lean` tool profile by default** (forget / recall_smart / index_project / project_structure + the core memory loop), and `pmb daemon start/restart` now reads `daemon.tool_profile` into the spawned daemon, so a manual restart keeps it instead of falling back to the tight 10-tool `minimal` surface.
 - **`pmb workspace current`** wording: source `explicit` now reads "explicit workspace id (--workspace flag or caller-provided)".
 
 ## [1.2.0] - 2026-06-27 - Dashboard redesign and self-tending memory
