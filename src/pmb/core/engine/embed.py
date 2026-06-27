@@ -360,6 +360,15 @@ class EmbedMixin:
                 return
             except Exception:
                 pass  # fall through to queue on failure
+        # Cold path: model not loaded. Index BM25 NOW (tokenize-only, no model)
+        # so the write is lexically searchable immediately and the on-disk
+        # pickle updates - which lets a fresh process AND a warm daemon (via
+        # _refresh_if_stale) pick up this out-of-band write instead of missing
+        # it until a restart/reindex. The vector embed stays deferred below.
+        try:
+            self.search.add_bm25_only(ulid, text)
+        except Exception:
+            pass
         self._enqueue_embed(ulid, text)
 
     def _enqueue_embed(self, ulid: str, text: str) -> None:

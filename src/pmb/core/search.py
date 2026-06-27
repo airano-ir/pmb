@@ -568,10 +568,32 @@ class HybridSearch:
             "vector": emb.tolist(),
             "text": text,
         }])
-        # Append into BM25 in-memory state
+        # Append into BM25 in-memory state. Skip the BM25 append if a prior
+        # add_bm25_only() already listed this ulid (cold-write fast path), so
+        # the deferred vector embed doesn't double-list it; still persist the
+        # vector add above.
+        if ulid not in self._bm25_ulids:
+            self._bm25_ulids.append(ulid)
+            self._bm25_tokens.append(tokenize(text))
+            self._bm25 = None  # invalidate, rebuild on next search
+        self._save_bm25_cache()
+
+    def add_bm25_only(self, ulid: str, text: str) -> None:
+        """Add a doc to the BM25 index WITHOUT embedding (no model needed).
+
+        Lets a COLD writer (a one-shot CLI with no model loaded) make a new
+        event lexically searchable immediately and persist it to the on-disk
+        pickle, while the vector embed stays deferred to the durable queue. The
+        pickle mtime bump also lets a warm daemon notice the out-of-band write
+        and reload (see _refresh_if_stale). Idempotent: a later full add() for
+        the same ulid adds only the vector."""
+        if not self._bm25_reloaded:
+            self.reload_bm25()
+        if ulid in self._bm25_ulids:
+            return
         self._bm25_ulids.append(ulid)
         self._bm25_tokens.append(tokenize(text))
-        self._bm25 = None  # invalidate, rebuild on next search
+        self._bm25 = None
         self._save_bm25_cache()
 
     def add_batch(self, items: list[tuple[str, str]]) -> None:
