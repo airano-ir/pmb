@@ -1411,12 +1411,20 @@ class RecallMixin:
 
     def pin(self, ulid: str, importance: float = 1.0):
         self.events.pin(ulid, importance)
+        # pin un-archives and reweights the event, so recall results change.
+        self.recall_cache.bump_generation()
 
     def forget(self, ulid: str):
         self.events.archive(ulid)
+        # The recall cache is keyed by a write generation; archiving must
+        # invalidate it, else a query recalled before the forget keeps
+        # returning the now-archived event (the warm daemon serves it stale).
+        self.recall_cache.bump_generation()
 
     def unforget(self, ulid: str):
         self.events.unarchive(ulid)
+        # restore must make the event recallable again on the next query.
+        self.recall_cache.bump_generation()
 
     def purge(self, ulid: str) -> bool:
         """HARD delete (irreversible): drop the vector, the SQLite row, and the
