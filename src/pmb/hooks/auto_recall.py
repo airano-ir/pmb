@@ -216,10 +216,17 @@ def detect_intents(
     if _LESSONS_QUERY.search(s):
         out.append(Intent.LESSONS_QUERY)
 
-    # Last resort: a question mark and no other intent fired. Likely a
-    # factual ask. We'll do a low-cost recall and only surface if it
-    # actually hits.
-    if not out and _HAS_QUESTION.search(s):
+    # A question fires a specific fact-recall when nothing else would surface
+    # the answer: either NO intent matched, OR only a project intent did - a
+    # project-NAMED question ("what is <project>'s default timezone?") must
+    # surface the specific fact, not just the project overview. The recall is
+    # low-cost and self-gated (only surfaces when it actually hits), so adding
+    # it on top of a project intent is safe.
+    if _HAS_QUESTION.search(s) and (
+        not out
+        or Intent.PROJECT_OVERVIEW in out
+        or Intent.PROJECT_PREP in out
+    ):
         out.append(Intent.GENERIC_FACTUAL)
 
     # R4: a WORK REQUEST - an imperative / work verb, no project, no question.
