@@ -16,6 +16,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/pmb-ai.svg)](https://pypi.org/project/pmb-ai/)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-native-purple.svg)](https://modelcontextprotocol.io)
+[![GitHub MCP Registry](https://img.shields.io/badge/GitHub_MCP_Registry-listed-8B7FF0?logo=modelcontextprotocol&logoColor=white)](https://github.com/mcp/oleksiijko/pmb-ai)
 
 <img src="https://raw.githubusercontent.com/oleksiijko/pmb/main/docs/assets/dashboard-map.png" width="760" alt="PMB dashboard - your project's memory as a live entity graph">
 
