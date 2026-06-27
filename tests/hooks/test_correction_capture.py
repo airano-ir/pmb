@@ -190,6 +190,25 @@ def test_auto_context_tags_correction_with_resolved_project(
     assert "[project: PMB]" in rows[0][1]
 
 
+def test_capture_fallback_uses_workspace_basename_not_full_path(
+    tmp_pmb_home, tmp_workspace_dir,
+):
+    """Regression (found on a real cold-hook run): when detection fails and the
+    workspace name is a filesystem PATH (no git repo -> cwd path is the name),
+    the fallback must tag the basename, not the whole path - otherwise the draft
+    reads `[project: C:\\Users\\...\\myrepo]`, the exact 'кривой' output we are
+    fixing."""
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    eng.workspace.name = r"C:\Users\me\code\myrepo"
+    out = eng.capture_correction("снова не заполнило поле перед submit",
+                                 severity="weak")
+    assert out.get("project") == "myrepo"
+    _, content = _lessons_by_source(eng, "correction-capture")[0]
+    assert "[project: myrepo]" in content
+    tag = content.split("[project:")[1].split("]")[0]
+    assert "\\" not in tag and "/" not in tag        # no path separators leak
+
+
 def test_capture_untagged_when_no_project_known(tmp_pmb_home, tmp_workspace_dir):
     """No hint + nothing detectable → no project_name (don't invent one). The
     draft is still recorded; it just stays workspace-wide."""

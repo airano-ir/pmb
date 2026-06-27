@@ -196,9 +196,14 @@ class LessonsMixin:
         if not proj:
             try:
                 ws_name = (self.workspace.name or "").strip()
-                if ws_name and ws_name.lower() not in {
+                # A path-like workspace name (no git repo -> the cwd path is used
+                # as the name) is not a project label; reduce it to its last
+                # component so the tag is 'myrepo', not 'C:\...\myrepo'. Skip the
+                # catch-all multi-project stores.
+                base = ws_name.replace("\\", "/").rstrip("/").split("/")[-1].strip()
+                if base and base.lower() not in {
                         "personal", "default", "global", "main"}:
-                    proj = ws_name
+                    proj = base
             except Exception:
                 proj = None
 
