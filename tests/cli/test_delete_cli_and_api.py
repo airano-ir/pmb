@@ -6,13 +6,10 @@ dashboard default of 8765.
 """
 from __future__ import annotations
 
-import json
 import threading
-import time
-import urllib.error
-import urllib.request
 from http.server import ThreadingHTTPServer
 
+from _http import post_json as _post
 from typer.testing import CliRunner
 
 from pmb.cli.main import app
@@ -103,27 +100,6 @@ class _DashFakeEngine:
     def delete_event(self, ulid, hard=False):
         self.calls.append((ulid, hard))
         return {"ulid": ulid, "mode": "hard" if hard else "soft", "ok": True}
-
-
-def _post(port, path, body):
-    # Resilient: the server thread may not have bound yet (startup race) and a
-    # loaded CI runner can stall, so retry transient connection/timeout errors
-    # with backoff. A real HTTP error (404/500) still propagates.
-    url = f"http://127.0.0.1:{port}{path}"
-    last: Exception | None = None
-    for i in range(5):
-        try:
-            req = urllib.request.Request(
-                url, data=json.dumps(body).encode("utf-8"), method="POST",
-                headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError:
-            raise
-        except (urllib.error.URLError, OSError) as e:
-            last = e
-            time.sleep(0.5 * (i + 1))
-    raise AssertionError(f"dashboard {path} unreachable after retries: {last!r}")
 
 
 def test_dashboard_api_delete_routes_soft_and_hard():
