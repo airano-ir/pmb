@@ -443,4 +443,18 @@ pytest                  # full suite, ~4 minutes
 pytest -k recall        # fast subset, ~12 s
 ```
 
+### Dev commands
+
+```bash
+bash scripts/test.sh                 # whole suite (CI-equivalent)
+bash scripts/test.sh tests/recall    # a subset (any pytest args pass through)
+bash scripts/codeql_local.sh         # run CI's CodeQL security-extended locally
+bash scripts/install-dev-hooks.sh    # pre-commit hook: ruff + CodeQL before each commit
+```
+
+`scripts/codeql_local.sh` auto-installs the CodeQL bundle on first run and runs
+the exact suite CI uses, so security findings are caught locally instead of on a
+push. The pre-commit hook bypasses with `git commit --no-verify` (or skip just
+the scan with `SKIP_CODEQL=1`).
+
 License: **Apache 2.0**.

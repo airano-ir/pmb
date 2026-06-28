@@ -49,16 +49,40 @@ echo ">> analyzing (security-extended, same queries as CI)"
   codeql/python-queries:codeql-suites/python-security-extended.qls \
   --format=sarif-latest --output="$SARIF" --threads=0 >/dev/null
 
-# ── summarize ─────────────────────────────────────────────────────────────────
+echo ">> SARIF written to $SARIF"
+
+# ── summarize + gate ─────────────────────────────────────────────────────────
+# Exits non-zero on any REAL finding (so this doubles as a pre-commit/pre-push
+# gate). Known false positives - dismissed on GitHub - are listed but ignored.
 python - "$SARIF" <<'PY'
-import json, sys
+import json
+import sys
+
+# Known false positives (also dismissed in GitHub code scanning):
+#   (ruleId substring, path substring, why)
+FALSE_POSITIVES = [
+    ("clear-text-storage", "core/encryption.py",
+     "Fernet ciphertext (AES-128-CBC+HMAC), not plaintext"),
+]
 results = json.load(open(sys.argv[1], encoding="utf-8"))["runs"][0].get("results", [])
-if not results:
-    print("\n  CLEAN - 0 security-extended findings"); raise SystemExit(0)
-print(f"\n  {len(results)} finding(s):")
+real, ignored = [], []
 for x in results:
     loc = x["locations"][0]["physicalLocation"]
     where = f"{loc['artifactLocation']['uri']}:{loc['region']['startLine']}"
-    print(f"   [{x['ruleId']}] {where}\n     {x['message']['text'][:140]}")
+    rid = x["ruleId"]
+    if any(fr in rid and fp in where for fr, fp, _ in FALSE_POSITIVES):
+        ignored.append((rid, where))
+    else:
+        real.append((rid, where, x["message"]["text"]))
+if ignored:
+    print(f"\n  {len(ignored)} known FP ignored:")
+    for rid, where in ignored:
+        print(f"   (fp) [{rid}] {where}")
+if not real:
+    print("\n  CLEAN - 0 real findings")
+    sys.exit(0)
+print(f"\n  {len(real)} REAL finding(s):")
+for rid, where, msg in real:
+    print(f"   [{rid}] {where}\n     {msg[:140]}")
+sys.exit(1)
 PY
-echo ">> SARIF written to $SARIF"
