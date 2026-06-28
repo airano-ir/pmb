@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -56,27 +57,30 @@ def make_handler(engine):
             self.wfile.write(body)
 
         def _send_static(self, path: Path) -> None:
-            # Confine to STATIC_DIR. The /static/<rel> route joins user-supplied
-            # input to the served path, so resolve and reject anything that
-            # escapes the static root (CodeQL 'uncontrolled data used in path
-            # expression' - path traversal). is_relative_to is exact, unlike a
-            # str.startswith prefix test.
+            # Confine to STATIC_DIR (path traversal): the /static/<rel> route
+            # joins user input to the served path. Normalise with realpath, then
+            # verify containment with commonpath - the sanitizer pattern CodeQL
+            # recognises for py/path-injection, and correct (commonpath, unlike
+            # str.startswith, won't treat /static-evil as inside /static).
             try:
-                resolved = path.resolve()
-                static_root = STATIC_DIR.resolve()
+                root = os.path.realpath(STATIC_DIR)
+                full = os.path.realpath(str(path))
+                if os.path.commonpath([root, full]) != root:
+                    self.send_error(404)
+                    return
             except (OSError, ValueError):
                 self.send_error(404)
                 return
-            if not resolved.is_relative_to(static_root) or not resolved.is_file():
+            if not os.path.isfile(full):
                 self.send_error(404)
                 return
-            ctype, _ = mimetypes.guess_type(str(resolved))
+            ctype, _ = mimetypes.guess_type(full)
             ctype = ctype or "application/octet-stream"
             # A header value must never carry CRLF (HTTP response splitting).
-            # guess_type returns a clean mime, but pin it defensively.
             if "\r" in ctype or "\n" in ctype:
                 ctype = "application/octet-stream"
-            data = resolved.read_bytes()
+            with open(full, "rb") as fh:
+                data = fh.read()
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
