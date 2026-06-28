@@ -25,7 +25,6 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
-import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -57,30 +56,27 @@ def make_handler(engine):
             self.wfile.write(body)
 
         def _send_static(self, path: Path) -> None:
-            # Confine to STATIC_DIR (path traversal): the /static/<rel> route
-            # joins user input to the served path. Normalise with realpath, then
-            # verify containment with commonpath - the sanitizer pattern CodeQL
-            # recognises for py/path-injection, and correct (commonpath, unlike
-            # str.startswith, won't treat /static-evil as inside /static).
+            # Serve ONLY files that already exist under STATIC_DIR. Look the
+            # request up in a map built from our OWN directory listing and read
+            # the Path found there - so the value used in the file read comes
+            # from rglob(), never from the request. Traversal is structurally
+            # impossible (CodeQL 'uncontrolled data used in path expression').
             try:
-                root = os.path.realpath(STATIC_DIR)
-                full = os.path.realpath(str(path))
-                if os.path.commonpath([root, full]) != root:
-                    self.send_error(404)
-                    return
+                catalog = {p.resolve(): p
+                           for p in STATIC_DIR.rglob("*") if p.is_file()}
+                target = catalog.get(path.resolve())
             except (OSError, ValueError):
+                target = None
+            if target is None:
                 self.send_error(404)
                 return
-            if not os.path.isfile(full):
-                self.send_error(404)
-                return
-            ctype, _ = mimetypes.guess_type(full)
+            # `target` is one of our own static files, not user-derived input.
+            ctype, _ = mimetypes.guess_type(target.name)
             ctype = ctype or "application/octet-stream"
             # A header value must never carry CRLF (HTTP response splitting).
             if "\r" in ctype or "\n" in ctype:
                 ctype = "application/octet-stream"
-            with open(full, "rb") as fh:
-                data = fh.read()
+            data = target.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
