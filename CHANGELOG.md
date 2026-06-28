@@ -4,6 +4,22 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-06-27 - Security and CI-stability pass
+
+### Security
+- **Dashboard static serving is path-traversal-proof.** `/static/<name>` is served by exact-name lookup against `STATIC_DIR`'s own listing, so user input never reaches a filesystem path - closing CodeQL `py/path-injection` and the related response-splitting on the derived `Content-Type`.
+- **Encrypted-bundle import is tar-slip-safe.** `import_workspace` rejects symlink / hardlink / device members and never calls an unfiltered `extractall` (older runtimes extract validated members by hand) - CodeQL `py/tarslip`.
+- **File-path regex made linear (ReDoS).** The entity-graph file-path pattern no longer backtracks catastrophically on long slashless input.
+- **Dashboard log injection closed** - the request route is stripped of CR/LF before logging.
+- **Git post-commit hook installed `0o700`** (owner-only) instead of `0o755`.
+
+### Added - developer tooling
+- **`scripts/codeql_local.sh`** runs CI's CodeQL `security-extended` suite locally (auto-installs the bundle on first run), so security findings surface before a push.
+- **`scripts/test.sh`** runs the whole suite or any subset; **`scripts/install-dev-hooks.sh`** wires a pre-commit hook (ruff + CodeQL).
+
+### Fixed - CI stability
+- **Matrix-reddening flaky tests fixed at the source:** the smart-recall confidence check tolerates time-based float jitter; the dashboard and delete-API HTTP harnesses wait for readiness and retry transient timeouts (shared `tests/_http.py`); an embedder-float-variance ranking test is marked `platform_sensitive` (gates on the Linux reference runner).
+
 ### Fixed - stability and recall-correctness pass (live-session QA)
 - **`forget` / `pin` / `restore` invalidate the recall cache**, so a forgotten memory stops surfacing immediately instead of lingering in the warm daemon's cache until the TTL.
 - **PMB's own LLM sub-calls no longer trip PMB's hooks.** `pmb track changes` / `track modules` / consolidate spawn `claude -p`; those sub-calls now set `PMB_INTERNAL_LLM=1` and `pmb-hook` no-ops on it, so the summarizer's own instruction ("Capture the INTENT, not the diff") is no longer captured as a "user correction" draft lesson.
