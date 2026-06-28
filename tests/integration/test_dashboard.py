@@ -5,6 +5,7 @@ import json
 import socket
 import threading
 import time
+import urllib.error
 import urllib.request
 
 import pytest
@@ -34,8 +35,16 @@ def running_dashboard(tmp_pmb_home, tmp_workspace_dir):
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    # Give it a moment
-    time.sleep(0.1)
+    # Wait until the server actually answers (readiness) instead of a fixed
+    # sleep - a cold per-test engine on a loaded CI runner can be slow to
+    # respond, and a fixed delay either flakes or wastes time.
+    for _ in range(120):  # up to ~30s
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as r:
+                if getattr(r, "status", 200) == 200:
+                    break
+        except OSError:
+            time.sleep(0.25)
     yield (eng, port)
     server.shutdown()
     server.server_close()
@@ -45,19 +54,39 @@ def running_dashboard(tmp_pmb_home, tmp_workspace_dir):
 # Static + API
 # ----------------------------------------------------------------------
 
+def _request(port, path, *, payload=None, timeout=30.0, attempts=5):
+    """Resilient JSON request. Integration tests hit a REAL server doing real
+    engine work (graph queries, a cold per-test engine) on shared CI runners,
+    where a transient stall can blow a tight timeout. Retry on timeout /
+    connection error with backoff - a genuine hang still fails after the last
+    attempt, a transient stall self-heals (this is what made CI flaky)."""
+    url = f"http://127.0.0.1:{port}{path}"
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            if payload is None:
+                req = urllib.request.Request(url)
+            else:
+                req = urllib.request.Request(
+                    url, data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError:
+            raise  # a real HTTP response (404/500) - not a transient failure
+        except (urllib.error.URLError, OSError) as e:
+            last = e
+            time.sleep(0.5 * (i + 1))
+    raise AssertionError(
+        f"dashboard {path} unreachable after {attempts} attempts: {last!r}")
+
+
 def _get_json(port, path: str):
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    return _request(port, path)
 
 
-def _post_json(port, path: str, payload, timeout: float = 5):
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{port}{path}", data=data,
-        headers={"Content-Type": "application/json"}, method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+def _post_json(port, path: str, payload, timeout: float = 30.0):
+    return _request(port, path, payload=payload, timeout=timeout)
 
 
 def test_dashboard_serves_html(running_dashboard):
