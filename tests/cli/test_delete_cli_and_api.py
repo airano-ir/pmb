@@ -6,11 +6,10 @@ dashboard default of 8765.
 """
 from __future__ import annotations
 
-import json
 import threading
-import urllib.request
 from http.server import ThreadingHTTPServer
 
+from _http import post_json as _post
 from typer.testing import CliRunner
 
 from pmb.cli.main import app
@@ -101,15 +100,6 @@ class _DashFakeEngine:
     def delete_event(self, ulid, hard=False):
         self.calls.append((ulid, hard))
         return {"ulid": ulid, "mode": "hard" if hard else "soft", "ok": True}
-
-
-def _post(port, path, body):
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{port}{path}",
-        data=json.dumps(body).encode("utf-8"), method="POST",
-        headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        return json.loads(resp.read().decode("utf-8"))
 
 
 def test_dashboard_api_delete_routes_soft_and_hard():

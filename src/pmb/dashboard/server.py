@@ -56,11 +56,17 @@ def make_handler(engine):
             self.wfile.write(body)
 
         def _send_static(self, path: Path) -> None:
-            if not path.exists() or not path.is_file():
+            # `path` is always TRUSTED: a hardcoded index.html, or a file looked
+            # up by exact name from STATIC_DIR's own listing (see the /static
+            # route) - never raw user input, so no path traversal is possible.
+            if not path.is_file():
                 self.send_error(404)
                 return
-            ctype, _ = mimetypes.guess_type(str(path))
+            ctype, _ = mimetypes.guess_type(path.name)
             ctype = ctype or "application/octet-stream"
+            # A header value must never carry CRLF (HTTP response splitting).
+            if "\r" in ctype or "\n" in ctype:
+                ctype = "application/octet-stream"
             data = path.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", ctype)
@@ -86,8 +92,18 @@ def make_handler(engine):
                     self._send_static(STATIC_DIR / "index.html")
                     return
                 if route.startswith("/static/"):
-                    rel = route[len("/static/"):]
-                    self._send_static(STATIC_DIR / rel)
+                    # Look the request up by exact name in STATIC_DIR's own
+                    # listing and serve the Path we found - the user string is
+                    # only a dict key, never used to build a filesystem path, so
+                    # traversal is impossible (no path expression on user input).
+                    name = route[len("/static/"):]
+                    catalog = {p.name: p for p in STATIC_DIR.iterdir()
+                               if p.is_file()}
+                    served = catalog.get(name)
+                    if served is None:
+                        self.send_error(404)
+                        return
+                    self._send_static(served)
                     return
                 if route == "/api/stats":
                     self._send_json(self._handle_stats())
@@ -149,7 +165,10 @@ def make_handler(engine):
                     return
                 self.send_error(404)
             except Exception as e:
-                log.exception("GET %s failed", route)
+                # Strip CRLF from the user-controlled route before logging so a
+                # crafted URL can't forge log lines (CodeQL log injection).
+                safe_route = route.replace("\r", " ").replace("\n", " ")
+                log.exception("GET %s failed", safe_route)
                 self._send_json({"error": str(e)}, status=500)
 
         def do_POST(self):
@@ -201,7 +220,10 @@ def make_handler(engine):
                     return
                 self.send_error(404)
             except Exception as e:
-                log.exception("POST %s failed", route)
+                # Strip CRLF from the user-controlled route before logging so a
+                # crafted URL can't forge log lines (CodeQL log injection).
+                safe_route = route.replace("\r", " ").replace("\n", " ")
+                log.exception("POST %s failed", safe_route)
                 self._send_json({"error": str(e)}, status=500)
 
         # ------------------------------------------------------------------

@@ -1,13 +1,13 @@
 """Tests for the web dashboard server (Improvement I)."""
 from __future__ import annotations
 
-import json
 import socket
 import threading
-import time
-import urllib.request
 
 import pytest
+from _http import get_json as _get_json
+from _http import get_text, wait_ready
+from _http import post_json as _post_json
 
 from pmb.core.engine import Engine
 from pmb.dashboard.server import make_handler
@@ -34,41 +34,50 @@ def running_dashboard(tmp_pmb_home, tmp_workspace_dir):
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    # Give it a moment
-    time.sleep(0.1)
+    # Block until the server answers (readiness), not a fixed sleep - a cold
+    # per-test engine on a loaded CI runner can be slow to first respond.
+    wait_ready(port)
     yield (eng, port)
     server.shutdown()
     server.server_close()
 
 
 # ----------------------------------------------------------------------
-# Static + API
+# Static + API. The HTTP helpers (_get_json / _post_json) and the readiness
+# wait live in tests/_http.py - resilient to CI timing flakes, shared so no
+# test re-rolls a one-off urlopen(timeout=5).
 # ----------------------------------------------------------------------
-
-def _get_json(port, path: str):
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
-
-def _post_json(port, path: str, payload, timeout: float = 5):
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{port}{path}", data=data,
-        headers={"Content-Type": "application/json"}, method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
 
 def test_dashboard_serves_html(running_dashboard):
     _, port = running_dashboard
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as resp:
-        body = resp.read().decode("utf-8")
+    body = get_text(port, "/")
     # The dashboard's HTML page identifies itself with the PMB brand and is
     # an HTML document; the rest of the markup (tabs, graph, panels) is
     # asserted via the JSON APIs in the tests below.
     assert "PMB" in body
     assert "<html" in body
+
+
+def test_static_route_rejects_path_traversal(running_dashboard):
+    """`/static/../server.py` points at a real file just outside the static
+    root. Without the confinement guard the server would read and leak it; with
+    it, the request must 404. Sent over a raw socket so the client can't
+    normalise the `..` away (CodeQL path-traversal)."""
+    _, port = running_dashboard
+    sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+    sock.sendall(
+        b"GET /static/../server.py HTTP/1.1\r\n"
+        b"Host: 127.0.0.1\r\nConnection: close\r\n\r\n")
+    resp = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        resp += chunk
+    sock.close()
+    status_line = resp.split(b"\r\n", 1)[0]
+    assert b"404" in status_line, status_line
+    assert b"make_handler" not in resp, "static traversal leaked source code"
 
 
 def test_dashboard_api_stats(running_dashboard):

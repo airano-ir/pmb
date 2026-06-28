@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# PMB dev pre-commit hook (installed by scripts/install-dev-hooks.sh).
+# Runs ruff + CodeQL (security-extended) before each commit.
+#   - bypass once:        git commit --no-verify
+#   - skip just CodeQL:   SKIP_CODEQL=1 git commit ...
+exec bash scripts/precommit.sh
