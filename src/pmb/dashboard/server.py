@@ -56,27 +56,18 @@ def make_handler(engine):
             self.wfile.write(body)
 
         def _send_static(self, path: Path) -> None:
-            # Serve ONLY files that already exist under STATIC_DIR. Look the
-            # request up in a map built from our OWN directory listing and read
-            # the Path found there - so the value used in the file read comes
-            # from rglob(), never from the request. Traversal is structurally
-            # impossible (CodeQL 'uncontrolled data used in path expression').
-            try:
-                catalog = {p.resolve(): p
-                           for p in STATIC_DIR.rglob("*") if p.is_file()}
-                target = catalog.get(path.resolve())
-            except (OSError, ValueError):
-                target = None
-            if target is None:
+            # `path` is always TRUSTED: a hardcoded index.html, or a file looked
+            # up by exact name from STATIC_DIR's own listing (see the /static
+            # route) - never raw user input, so no path traversal is possible.
+            if not path.is_file():
                 self.send_error(404)
                 return
-            # `target` is one of our own static files, not user-derived input.
-            ctype, _ = mimetypes.guess_type(target.name)
+            ctype, _ = mimetypes.guess_type(path.name)
             ctype = ctype or "application/octet-stream"
             # A header value must never carry CRLF (HTTP response splitting).
             if "\r" in ctype or "\n" in ctype:
                 ctype = "application/octet-stream"
-            data = target.read_bytes()
+            data = path.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
@@ -101,8 +92,18 @@ def make_handler(engine):
                     self._send_static(STATIC_DIR / "index.html")
                     return
                 if route.startswith("/static/"):
-                    rel = route[len("/static/"):]
-                    self._send_static(STATIC_DIR / rel)
+                    # Look the request up by exact name in STATIC_DIR's own
+                    # listing and serve the Path we found - the user string is
+                    # only a dict key, never used to build a filesystem path, so
+                    # traversal is impossible (no path expression on user input).
+                    name = route[len("/static/"):]
+                    catalog = {p.name: p for p in STATIC_DIR.iterdir()
+                               if p.is_file()}
+                    served = catalog.get(name)
+                    if served is None:
+                        self.send_error(404)
+                        return
+                    self._send_static(served)
                     return
                 if route == "/api/stats":
                     self._send_json(self._handle_stats())
