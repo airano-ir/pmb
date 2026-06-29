@@ -25,11 +25,23 @@ a remote daemon.
 
 ## The dashboard and daemon fight over a port
 
-Both default to `127.0.0.1:8765`. If you run them at once, give the dashboard a
-different port:
+Both default to `127.0.0.1:8765`. Current PMB versions auto-skip the default
+dashboard port when it is already busy:
+
+```bash
+pmb dashboard
+```
+
+If you want a fixed dashboard port, pass one explicitly:
 
 ```bash
 pmb dashboard --port 18888
+```
+
+If the OS still refuses the bind, check what is already running:
+
+```bash
+pmb daemon status
 ```
 
 ## The daemon is not warm, or processes piled up

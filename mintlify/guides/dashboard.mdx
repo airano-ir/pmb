@@ -5,7 +5,7 @@ icon: "chart-network"
 ---
 
 ```bash
-pmb dashboard   # http://127.0.0.1:8765
+pmb dashboard   # http://127.0.0.1:8765, or the next free port
 ```
 
 It binds to `127.0.0.1` only - nothing leaves your machine.
@@ -45,6 +45,7 @@ Plus **Overview**, **Entities**, and **Arcs** (narrative threads).
 </Frame>
 
 <Warning>
-  The dashboard and the MCP HTTP server both default to port `8765` - if you run
-  both, give one a different port.
+  The dashboard and the MCP HTTP server both default to port `8765`. If the
+  default dashboard port is busy, `pmb dashboard` auto-skips to the next free
+  port. Use `pmb dashboard --port 18888` when you want a fixed port.
 </Warning>

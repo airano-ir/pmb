@@ -358,7 +358,7 @@ their own mechanisms (check `pmb hooks capabilities`).
 | `pmb lesson-followcheck --dry-run` | Preview deterministic follow-through scoring for surfaced lessons. |
 | `pmb autowrite [--dry-run]` <span class="pmb-tag pmb-tag--llm">LLM optional</span> | Ambient auto-write for the current turn: if the agent didn't call a `record_*` tool, synthesize ONE activity entry from observed actions. No-op unless `autowrite.enabled`. Uses an LLM only if `autowrite.synthesizer` is an LLM backend - the default template needs no model. |
 | `pmb track-action` | (Hook-invoked.) Append one observed action to the ambient journal - the PostToolUse hot path (single SQLite INSERT, no model). |
-| `pmb ambient-watch <dir>` <span class="pmb-tag pmb-tag--llm">LLM optional</span> | Ambient auto-write for MCP-only hosts (Cursor/Zed/VS Code): poll git for changes, auto-write once the project goes idle. |
+| `pmb ambient-watch <dir> [<dir>...]` <span class="pmb-tag pmb-tag--llm">LLM optional</span> | Ambient auto-write for MCP-only hosts (Cursor/Zed/VS Code): poll git for changes, auto-write once the project goes idle. Pass several dirs to run them in one process; add `--save`, then later use `pmb ambient-watch --all`. |
 | `pmb codex-notify` <span class="pmb-tag pmb-tag--llm">LLM optional</span> | (Hook-invoked by Codex on `agent-turn-complete`.) Parse the session rollout, then run ambient auto-write. |
 | `pmb forget-auto [--minutes N]` | Archive memory the ambient layer wrote itself (`source=autowrite`). Reversible - archived, not hard-deleted. |
 
