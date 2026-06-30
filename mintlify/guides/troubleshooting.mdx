@@ -41,8 +41,18 @@ The daemon also prewarms in the background on boot. Subsequent recalls are
 
 ## Port already in use
 
-The dashboard and the MCP HTTP server both default to `8765`. Run one on another
-port, e.g. `pmb dashboard --port 18888`.
+The dashboard and the MCP HTTP server both default to `8765`. Current PMB
+versions auto-skip the default dashboard port when it is already busy:
+
+```bash
+pmb dashboard
+```
+
+Use an explicit port when you want a fixed address:
+
+```bash
+pmb dashboard --port 18888
+```
 
 ## Stray / duplicate warm processes
 

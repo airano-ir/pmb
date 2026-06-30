@@ -51,9 +51,14 @@ deploy ran).
 ### `pmb autowrite [--dry-run]`
 Ambient auto-write for the current turn. <Tooltip tip="LLM only if autowrite.synthesizer is an LLM backend; the default template needs no model">LLM optional</Tooltip>
 
-### `pmb ambient-watch <dir>`
+### `pmb ambient-watch <dir> [<dir>...]`
 Ambient auto-write for MCP-only hosts (Cursor/Zed/VS Code): poll git, auto-write
-once the project goes idle.
+once the project goes idle. Pass several directories to run them in one process:
+
+```bash
+pmb ambient-watch app api docs --save
+pmb ambient-watch --all
+```
 
 ### `pmb forget-auto [--minutes N]`
 Archive memory the ambient layer wrote itself (`source=autowrite`). Reversible.

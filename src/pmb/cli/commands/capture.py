@@ -4,6 +4,7 @@ cli/main.py imports this module so these @app.command registrations run."""
 
 from __future__ import annotations
 
+import socket
 import time
 from pathlib import Path
 
@@ -25,10 +26,49 @@ from pmb.cli._common import (  # noqa: F401
 from pmb.core.engine import Engine
 from pmb.core.workspace import detect_workspace
 
+_DASHBOARD_DEFAULT_PORT = 8765
+
+
+def _can_bind_tcp(host: str, port: int) -> bool:
+    """True when a local TCP server can bind host:port right now."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host, port))
+        return True
+    except OSError:
+        return False
+
+
+def _dashboard_port_or_next(host: str, preferred: int, tries: int = 50) -> int:
+    """Return preferred if bindable, otherwise the next bindable port.
+
+    The dashboard and warm daemon historically both defaulted to 8765. When the
+    user did not explicitly choose a port, prefer a helpful fallback over a
+    Python traceback.
+    """
+    for p in range(preferred, preferred + tries):
+        if _can_bind_tcp(host, p):
+            return p
+    return preferred
+
+
+def _print_dashboard_bind_error(host: str, port: int, exc: OSError) -> None:
+    console.print(
+        f"[red]Dashboard could not bind[/] [cyan]http://{host}:{port}[/]\n"
+        f"[dim]{type(exc).__name__}: {exc}[/]\n\n"
+        "That port may already be used by the PMB daemon / MCP server, or it "
+        "may be blocked by the OS.\n"
+        "Try: [cyan]pmb dashboard --port 18888[/]\n"
+        "Check: [cyan]pmb daemon status[/]"
+    )
+
 
 @app.command()
 def dashboard(
-    port: int = typer.Option(8765, "--port", "-p", help="Port to bind to"),
+    port: int | None = typer.Option(
+        None, "--port", "-p",
+        help="Port to bind to (default 8765; auto-skips if the default is busy).",
+    ),
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address (default localhost)"),
     export: str = typer.Option(
         None, "--export", "-e",
@@ -67,11 +107,25 @@ def dashboard(
     except Exception as e:
         console.print(f"[red]Failed to import dashboard:[/] {e}")
         return
+    bind_port = port if port is not None else _DASHBOARD_DEFAULT_PORT
+    if port is None:
+        picked = _dashboard_port_or_next(host, bind_port)
+        if picked != bind_port:
+            console.print(
+                f"[yellow]Port {bind_port} is unavailable[/] - opening the "
+                f"dashboard on [cyan]{picked}[/] instead.\n"
+                f"[dim]If you want a fixed port, pass --port explicitly.[/]"
+            )
+            bind_port = picked
     if open_browser:
         import threading
         import webbrowser
-        threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}")).start()
-    run_dashboard(eng, host=host, port=port)
+        threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{bind_port}")).start()
+    try:
+        run_dashboard(eng, host=host, port=bind_port)
+    except OSError as e:
+        _print_dashboard_bind_error(host, bind_port, e)
+        raise typer.Exit(2)
 
 
 @app.command()
@@ -862,5 +916,4 @@ def restore(ulid: str = typer.Argument(..., help="Event ULID to bring back.")):
     eng = Engine()
     eng.unforget(ulid)
     console.print(f"[green]Restored[/] {ulid}")
-
 

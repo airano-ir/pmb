@@ -77,6 +77,7 @@ DEFAULT_TIER_KEYS: frozenset[str] = frozenset({
     "autowrite.enabled",
     "autowrite.synthesizer",
     "autowrite.min_importance",
+    "ambient.watch_paths",
 
     # ── Agent behaviour (rules in CLAUDE.md / AGENTS.md) ──────────
     "agent.active_mode",
@@ -428,6 +429,12 @@ SCHEMA: dict[str, _Setting] = {
         str, "",
         "Model id for autowrite.synthesizer when it's an LLM backend. "
         "Empty = backend default (ollama → qwen2.5:3b, claude → haiku).",
+    ),
+    "ambient.watch_paths": _Setting(
+        str, "",
+        "Saved project roots for `pmb ambient-watch --all`, separated by the "
+        "platform path separator (`;` on Windows, `:` on macOS/Linux). Set it "
+        "by hand or run `pmb ambient-watch <dir> [<dir>...] --save`.",
     ),
     # ── Exploration memo auto-capture (incremental cognition) ──────
     "memo.autocapture_enabled": _Setting(

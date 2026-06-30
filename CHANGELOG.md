@@ -4,6 +4,15 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-06-29 - Dashboard port fallback and ambient watcher UX
+
+### Fixed
+- **`pmb dashboard` no longer crashes with a raw socket traceback when the default port is unavailable.** If `127.0.0.1:8765` is already held by the warm daemon / MCP server, the dashboard auto-skips to the next free port; explicit `--port` choices now get a short actionable diagnostic instead of a Python stack trace.
+- **MCP recall lesson E2E now checks the supported contract.** Procedural rules returned by MCP `recall()` live in the top-level `lessons` field, so the old quarantined assertion against only `results` was removed.
+
+### Added
+- **`pmb ambient-watch` can manage several MCP-only project observers in one process.** Run `pmb ambient-watch app api docs --save` once, then restart all saved targets with `pmb ambient-watch --all`.
+
 ## [1.2.1] - 2026-06-27 - Security and CI-stability pass
 
 ### Security

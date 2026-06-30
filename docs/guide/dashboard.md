@@ -7,13 +7,14 @@ network.
 ## Launch
 
 ```bash
-pmb dashboard                 # opens on http://127.0.0.1:8765
+pmb dashboard                 # opens on http://127.0.0.1:8765, or the next free port
 pmb dashboard --port 18888    # use another port
 ```
 
 The default port is 8765, which is also the default for the shared daemon. If
-you run both at once, give the dashboard a different port (for example
-`--port 18888`) so they do not collide.
+you run both at once, `pmb dashboard` automatically moves to the next available
+port. If you pass `--port`, PMB treats that as an explicit choice and prints a
+short diagnostic if the OS refuses the bind.
 
 ## Tabs
 

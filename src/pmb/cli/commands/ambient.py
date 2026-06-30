@@ -907,41 +907,43 @@ def forget_auto_cmd(
 
 # ─── pmb ambient-watch - ambient for MCP-only agents (observe the project) ─
 
-@app.command("ambient-watch")
-def ambient_watch_cmd(
-    path: str | None = typer.Argument(
-        None, help="Project root to watch (default: current directory).",
-    ),
-    idle: float = typer.Option(
-        25.0, "--idle",
-        help="Seconds of no file changes that counts as 'turn ended' → "
-             "triggers auto-write.",
-    ),
-    interval: float = typer.Option(
-        5.0, "--interval", help="Seconds between git snapshots.",
-    ),
-    once: bool = typer.Option(
-        False, "--once",
-        help="Single scan + maybe-write, then exit (for cron / a trigger). "
-             "No daemon loop.",
-    ),
-    quiet: bool = typer.Option(
-        False, "--quiet", "-q", help="Less chatter.",
-    ),
-):
-    """Ambient memory for MCP-only agents (Cursor, VS Code, Zed, Gemini, …).
 
-    Those hosts give no hooks, so we watch the PROJECT instead of the agent:
-    poll git for changed files, record them as actions, and auto-write the
-    turn once the project goes idle. Coordination still holds - if the agent
-    journaled via PMB's MCP tools, auto-write stays silent.
+def _split_ambient_watch_paths(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [p.strip() for p in raw.split(os.pathsep) if p.strip()]
 
-    Run it next to your editor:  `pmb ambient-watch .`
-    (Claude Code / Codex don't need this - they have precise hooks.)
-    """
+
+def _load_ambient_watch_paths() -> list[str]:
+    try:
+        from pmb.config import Config
+        home = Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb"))
+        return _split_ambient_watch_paths(
+            str(Config(pmb_home=home).get("ambient.watch_paths") or "")
+        )
+    except Exception:
+        return []
+
+
+def _save_ambient_watch_paths(paths: list[str]) -> None:
+    from pmb.config import Config
+    home = Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb"))
+    Config(pmb_home=home).set_global("ambient.watch_paths", os.pathsep.join(paths))
+
+
+def _run_ambient_watch_path(
+    path: str | None,
+    *,
+    idle: float,
+    interval: float,
+    once: bool,
+    quiet: bool,
+    stop_event=None,
+    label: str | None = None,
+) -> None:
     import time as _t
     from pathlib import Path as _P
-    repo = _P(path).resolve() if path else _P.cwd()
+    repo = _P(path).expanduser().resolve() if path else _P.cwd()
 
     try:
         from pmb.core.ambient_log import insert_agent_action
@@ -950,6 +952,8 @@ def ambient_watch_cmd(
     except Exception as e:
         console.print(f"[red]ambient-watch init failed: {e}[/]")
         raise typer.Exit(1)
+
+    prefix = f"[dim]{label or repo.name}[/] " if label else ""
 
     if not is_git_repo(repo):
         console.print(
@@ -985,7 +989,7 @@ def ambient_watch_cmd(
         pending_since_write = False
         last_write = _t.time()
         if not quiet and res.wrote:
-            console.print("[green]journaled:[/] ", end="")
+            console.print(f"{prefix}[green]journaled:[/] ", end="")
             console.print(res.summary or "", markup=False, highlight=False)
 
     def _scan():
@@ -1000,7 +1004,9 @@ def ambient_watch_cmd(
             if not quiet:
                 names = ", ".join(a["target"].split("/")[-1].split("\\")[-1]
                                   for a in actions[:4])
-                console.print(f"[dim]observed {len(actions)} change(s): {names}[/]")
+                console.print(
+                    f"{prefix}[dim]observed {len(actions)} change(s): {names}[/]"
+                )
 
     if once:
         _scan()
@@ -1011,19 +1017,125 @@ def ambient_watch_cmd(
 
     if not quiet:
         console.print(
-            f"[bold]Watching[/] {repo} · idle={idle:g}s · interval={interval:g}s"
+            f"{prefix}[bold]Watching[/] {repo} · idle={idle:g}s · interval={interval:g}s"
             f"\n[dim]ambient memory for MCP-only agents · Ctrl-C to stop[/]"
         )
     # Seed the snapshot so we don't journal the whole existing dirty tree.
     _, state = snapshot_changes(repo, {})
     try:
-        while True:
+        while not (stop_event is not None and stop_event.is_set()):
             _t.sleep(interval)
             _scan()
             now = _t.time()
             if pending_since_write and (now - last_change) >= idle:
                 _maybe_autowrite()
     except KeyboardInterrupt:
+        if not quiet:
+            console.print("\n[dim]stopped watching.[/]")
+
+
+@app.command("ambient-watch")
+def ambient_watch_cmd(
+    paths: list[str] | None = typer.Argument(
+        None, help="Project root(s) to watch (default: current directory).",
+    ),
+    idle: float = typer.Option(
+        25.0, "--idle",
+        help="Seconds of no file changes that counts as 'turn ended' → "
+             "triggers auto-write.",
+    ),
+    interval: float = typer.Option(
+        5.0, "--interval", help="Seconds between git snapshots.",
+    ),
+    once: bool = typer.Option(
+        False, "--once",
+        help="Single scan + maybe-write, then exit (for cron / a trigger). "
+             "No daemon loop.",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Less chatter.",
+    ),
+    all_: bool = typer.Option(
+        False, "--all",
+        help="Watch the saved targets from ambient.watch_paths.",
+    ),
+    save: bool = typer.Option(
+        False, "--save",
+        help="Save the supplied target list globally, then run it.",
+    ),
+):
+    """Ambient memory for MCP-only agents (Cursor, VS Code, Zed, Gemini, …).
+
+    Those hosts give no hooks, so we watch the PROJECT instead of the agent:
+    poll git for changed files, record them as actions, and auto-write the
+    turn once the project goes idle. Coordination still holds - if the agent
+    journaled via PMB's MCP tools, auto-write stays silent.
+
+    Run it next to your editor:  `pmb ambient-watch .`
+    Run several repos in one process: `pmb ambient-watch app api docs --save`
+    Later, restart them all with: `pmb ambient-watch --all`
+    (Claude Code / Codex don't need this - they have precise hooks.)
+    """
+    target_paths = list(paths or [])
+    if all_:
+        saved = _load_ambient_watch_paths()
+        if not saved:
+            console.print(
+                "[yellow]No saved ambient-watch targets.[/]\n"
+                "Save them once with: [cyan]pmb ambient-watch . --save[/]"
+            )
+            raise typer.Exit(2)
+        target_paths = saved + target_paths
+    if not target_paths:
+        target_paths = ["."]
+    if save:
+        from pathlib import Path as _P
+        saved_paths = [str(_P(p).expanduser().resolve()) for p in target_paths]
+        _save_ambient_watch_paths(saved_paths)
+        console.print(
+            "[green]Saved ambient-watch targets:[/] "
+            + ", ".join(saved_paths)
+        )
+
+    if len(target_paths) == 1:
+        _run_ambient_watch_path(
+            target_paths[0], idle=idle, interval=interval, once=once, quiet=quiet,
+        )
+        return
+
+    if once:
+        for p in target_paths:
+            _run_ambient_watch_path(
+                p, idle=idle, interval=interval, once=True, quiet=quiet,
+                label=p,
+            )
+        return
+
+    import threading
+    import time as _t
+    stop = threading.Event()
+    threads = [
+        threading.Thread(
+            target=_run_ambient_watch_path,
+            kwargs={
+                "path": p, "idle": idle, "interval": interval, "once": False,
+                "quiet": quiet, "stop_event": stop, "label": p,
+            },
+            daemon=True,
+        )
+        for p in target_paths
+    ]
+    for t in threads:
+        t.start()
+    if not quiet:
+        console.print(
+            f"[green]Watching {len(threads)} ambient target(s) in one process.[/]"
+        )
+    try:
+        while any(t.is_alive() for t in threads):
+            _t.sleep(0.25)
+    except KeyboardInterrupt:
+        stop.set()
         if not quiet:
             console.print("\n[dim]stopped watching.[/]")
 
@@ -1148,4 +1260,3 @@ def codex_notify_cmd(
 # pmb hooks install / list / uninstall - force-feed prepare() into the
 # agent's session-start hook so the READ-FIRST workflow is not optional.
 # ═══════════════════════════════════════════════════════════════════════
-
