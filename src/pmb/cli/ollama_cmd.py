@@ -96,7 +96,7 @@ def status():
 
     # Show which PMB ops would use Ollama
     cfg = Config(
-        workspace_dir=detect_workspace().storage_path,
+        workspace_dir=detect_workspace().storage_dir,
         pmb_home=Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb")),
     )
     console.print("\n[bold]PMB ops with Ollama-eligible backend:[/]")
@@ -137,7 +137,7 @@ def use(
         model_name = model
 
     cfg = Config(
-        workspace_dir=detect_workspace().storage_path,
+        workspace_dir=detect_workspace().storage_dir,
         pmb_home=Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb")),
     )
     cfg.set_global("ollama.model", model_name)
@@ -185,7 +185,7 @@ def test():
         raise typer.Exit(1)
 
     cfg = Config(
-        workspace_dir=detect_workspace().storage_path,
+        workspace_dir=detect_workspace().storage_dir,
         pmb_home=Path(os.environ.get("PMB_HOME") or (Path.home() / ".pmb")),
     )
     model = cfg.get("ollama.model") or "llama3.1:8b"
