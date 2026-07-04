@@ -471,6 +471,7 @@ def make_extractor(config=None, max_concepts: int = 8) -> EntityExtractor:
       - "regex" (default): fast, offline, no deps
       - "spacy":  POS-filter + NER via spaCy; needs `pip install pmb-ai[spacy]`
       - "llm:claude":  Claude Code CLI extracts concepts at write time
+      - "llm:openai":  OpenAI API extracts concepts at write time
       - "llm:ollama":  local Ollama model extracts concepts at write time
       - "llm:codex":   OpenAI Codex CLI extracts concepts at write time
 

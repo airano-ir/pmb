@@ -4,6 +4,9 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+### Added
+- **OpenAI API backend support** across consolidation/reasoning, `pmb-chat`, graph extraction, autowrite summaries, config, doctor, and LLM command help. Uses stdlib HTTP; no OpenAI SDK dependency.
+
 ## [1.2.2] - 2026-06-29 - Dashboard port fallback and ambient watcher UX
 
 ### Fixed
@@ -216,7 +219,7 @@ by default (or fully offline via Ollama), and idempotent.
   `--strict-mcp-config`, so headless one-shot calls (track summaries,
   consolidation) no longer load the user's full MCP server set on every call.
 
-Reuses the existing LLM client (Claude CLI / Anthropic / Ollama) and runs the
+Reuses the existing LLM client (Claude CLI / Anthropic / OpenAI / Ollama) and runs the
 model with no tools, so feeding it untrusted diffs is safe.
 
 ## [0.9.3] - 2026-06-14 - Injection precision, cross-lingual recall, model picker

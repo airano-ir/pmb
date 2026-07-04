@@ -9,7 +9,7 @@ Caveats worth knowing:
 - The **AI agent** plugged into PMB (Codex CLI / Claude Code / Cursor / etc.) talks to its own LLM provider. PMB has no control over that channel.
 - The **embedding model** runs locally (sentence-transformers, no network at inference time after the first download).
 - The **Ollama backend**, if you enable it, talks to your local Ollama server (default `http://localhost:11434`). It does not leave your machine unless you configure it to.
-- The optional **Anthropic backend** for `pmb consolidate` does send the clustered text to api.anthropic.com when invoked. Off by default.
+- Optional **Anthropic/OpenAI backends** for LLM-powered commands send clustered text or prompts to their API endpoints when invoked. Off by default.
 
 ## Reporting vulnerabilities
 

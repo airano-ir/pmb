@@ -9,7 +9,7 @@ pmb connect --help
 
 Every command is **fully offline** unless tagged
 <span class="pmb-tag pmb-tag--llm">LLM</span> - the few commands that need an LLM
-backend (Claude CLI / `ANTHROPIC_API_KEY` / Ollama, see
+backend (Claude CLI / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / Ollama, see
 [LLM-powered commands](#llm-powered-commands)). A
 <span class="pmb-tag pmb-tag--llm">LLM optional</span> tag means the command runs
 offline by default and only calls an LLM if you opt in.
@@ -264,6 +264,7 @@ at runtime, no code changes:
 | `regex` (default) | Fast file/tech regex + improved stop-list + multi-word phrase detection ("Claude Code" → one node). Fully offline. | ~0 ms | none |
 | `spacy` | Adds POS-filter (noun/proper-noun only) and real NER (PERSON / ORG / GPE / PRODUCT). Cleanest no-LLM option. | ~3-10 ms | `pip install spacy` + `python -m spacy download en_core_web_sm` |
 | `llm:claude` <span class="pmb-tag pmb-tag--llm">LLM</span> | One Claude Code CLI call per event - returns clean named-entity JSON. Same idea as graphify / Penpax. Falls back to regex on timeout / error. | ~1-3 s/event | `claude` CLI on PATH |
+| `llm:openai` <span class="pmb-tag pmb-tag--llm">LLM</span> | Same, but via OpenAI Chat Completions. Falls back to regex on timeout / error. | network | `OPENAI_API_KEY` |
 | `llm:ollama` <span class="pmb-tag pmb-tag--llm">LLM</span> | Same, but via a local Ollama model (default `qwen2.5:3b`). Fully offline if you have a model pulled. | ~1-4 s/event | `ollama` CLI + a model |
 | `llm:codex` <span class="pmb-tag pmb-tag--llm">LLM</span> | OpenAI Codex CLI. | ~1-3 s/event | `codex` CLI on PATH |
 
@@ -277,6 +278,7 @@ pmb config set graph.extractor spacy
 
 # cleanest knowledge graph (LLM at write time)
 pmb config set graph.extractor llm:claude       # uses your Claude Code login
+pmb config set graph.extractor llm:openai       # uses OPENAI_API_KEY
 pmb config set graph.llm_max_concepts 5
 pmb config set graph.llm_timeout_s 30
 
@@ -301,14 +303,14 @@ entities end up as graph nodes, not the recall pipeline.
 
 Ollama is **optional** - PMB works fully offline without any LLM. It's only used
 by the LLM-powered commands below (and only if you choose it over Claude
-CLI / Anthropic).
+CLI / Anthropic / OpenAI).
 
 ---
 
 ## LLM-powered commands
 
 These are the **only** commands that need an LLM backend (Claude CLI in PATH /
-`ANTHROPIC_API_KEY` / Ollama). They run **off the recall hot path** - recall
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / Ollama). They run **off the recall hot path** - recall
 itself never calls an LLM.
 
 | Command | What it does |
@@ -320,7 +322,7 @@ itself never calls an LLM.
 | `pmb dedupe --run-pending` <span class="pmb-tag pmb-tag--llm">LLM</span> | Resolve borderline duplicate pairs via LLM. |
 
 ```bash
-pmb consolidate --backend auto        # auto = Claude CLI > Anthropic > Ollama
+pmb consolidate --backend auto        # auto = Claude CLI > Anthropic > OpenAI > Ollama
 pmb distill                           # turn a session into lessons
 ```
 

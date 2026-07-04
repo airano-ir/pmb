@@ -1,5 +1,5 @@
 """
-pmb.agent_wrapper - scaffold for a client-side wrapper around the Claude API
+pmb.agent_wrapper - scaffold for a client-side wrapper around an LLM API
 that controls its own context compaction and uses PMB for long-term memory.
 
 This is the architecture the original "Cognitive Memory" pitch's mechanic #1
@@ -12,7 +12,7 @@ get *selective* compression you have to own the chat loop yourself.
 Scaffold only. Bones, not muscle. See `agent_wrapper/PLAN.md` for the
 concrete N-week buildout. Today this package contains:
 
-- `loop.py`      - minimal chat loop that talks to Anthropic API and writes
+- `loop.py`      - minimal chat loop that talks to an LLM backend and writes
                    each turn into PMB. **Works** as a basic agent.
 - `budget.py`    - token budget accounting (approximate; uses Anthropic's
                    `count_tokens` when available). **Works.**

@@ -22,6 +22,7 @@ from pmb.hooks.autowrite import (
     autowrite_gate,
     run_autowrite,
     score_turn_importance,
+    synthesize_llm,
     synthesize_template,
 )
 
@@ -133,6 +134,24 @@ def test_synthesis_leads_with_fix():
 def test_synthesis_edit_only_fallback():
     s = synthesize_template([_act("Edit", "a.py"), _act("Edit", "b.py")])
     assert "file(s)" in s
+
+
+def test_llm_synthesis_openai_provider(monkeypatch):
+    from pmb.graph import extractors_llm
+
+    captured = {}
+
+    def _fake_openai(prompt, timeout, model=""):
+        captured["model"] = model
+        captured["prompt"] = prompt
+        return "Updated OpenAI support.\nignored"
+
+    monkeypatch.setattr(extractors_llm, "_run_openai_api", _fake_openai)
+    out = synthesize_llm([_act("Edit", "api.py")], "llm:openai", model="gpt-test")
+
+    assert out == "Updated OpenAI support."
+    assert captured["model"] == "gpt-test"
+    assert "api.py" in captured["prompt"]
 
 
 # ── gate + run: the bar is enforced, real importance is recorded ──────────

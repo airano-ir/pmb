@@ -240,6 +240,50 @@ def test_ollama_consolidate_via_mocked_urlopen(monkeypatch):
     assert out["confidence"] == 0.9
 
 
+def test_openai_consolidate_via_mocked_urlopen(monkeypatch):
+    """Drive OpenAIClient.consolidate with mocked HTTP - no network."""
+    import json as _json
+    import urllib.request
+
+    from pmb.health.consolidate import OpenAIClient
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("PMB_OPENAI_MODEL", raising=False)
+    captured = {}
+
+    class _Resp:
+        def read(self_inner):
+            return _json.dumps({
+                "choices": [{"message": {"content": _json.dumps({
+                    "consolidate": True,
+                    "summary": "User prefers no comments.",
+                    "confidence": 0.9,
+                    "reasoning": "they all say the same",
+                })}}]
+            }).encode("utf-8")
+        def __enter__(self_inner): return self_inner
+        def __exit__(self_inner, *a): return False
+
+    def _fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["body"] = _json.loads(req.data.decode("utf-8"))
+        captured["auth"] = req.get_header("Authorization")
+        assert req.method == "POST"
+        return _Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    out = OpenAIClient().consolidate(["one", "two", "three"])
+
+    assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["auth"] == "Bearer sk-test"
+    assert captured["body"]["model"] == "gpt-4o-mini"
+    assert captured["body"]["response_format"] == {"type": "json_object"}
+    assert [m["role"] for m in captured["body"]["messages"]] == ["system", "user"]
+    assert out["consolidate"] is True
+    assert out["confidence"] == 0.9
+
+
 def test_ollama_unreachable_raises_runtimeerror(monkeypatch):
     import urllib.error
     import urllib.request
@@ -263,15 +307,28 @@ def test_resolve_auto_falls_back_to_ollama(monkeypatch):
     """No claude on PATH, no API key, ollama up → ollama."""
     from pmb.health import consolidate as C
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(C.ClaudeCLIClient, "available", staticmethod(lambda *a, **kw: False))
     monkeypatch.setattr(C.OllamaClient, "ping", staticmethod(lambda *a, **kw: True))
     client = C.resolve_llm_client(backend="auto")
     assert isinstance(client, C.OllamaClient)
 
 
+def test_resolve_auto_falls_through_to_openai(monkeypatch):
+    """No claude/no Anthropic but OpenAI key set → openai."""
+    from pmb.health import consolidate as C
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(C.ClaudeCLIClient, "available", staticmethod(lambda *a, **kw: False))
+    monkeypatch.setattr(C.OllamaClient, "ping", staticmethod(lambda *a, **kw: False))
+    client = C.resolve_llm_client(backend="auto")
+    assert isinstance(client, C.OpenAIClient)
+
+
 def test_resolve_auto_raises_when_nothing_available(monkeypatch):
     from pmb.health import consolidate as C
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(C.ClaudeCLIClient, "available", staticmethod(lambda *a, **kw: False))
     monkeypatch.setattr(C.OllamaClient, "ping", staticmethod(lambda *a, **kw: False))
     try:
@@ -279,6 +336,7 @@ def test_resolve_auto_raises_when_nothing_available(monkeypatch):
     except RuntimeError as e:
         msg = str(e)
         assert "ANTHROPIC_API_KEY" in msg
+        assert "OPENAI_API_KEY" in msg
         assert "ollama" in msg.lower()
         assert "claude" in msg.lower()
     else:
@@ -292,6 +350,17 @@ def test_resolve_explicit_ollama_when_down(monkeypatch):
         C.resolve_llm_client(backend="ollama")
     except RuntimeError as e:
         assert "not reachable" in str(e)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+
+def test_resolve_explicit_openai_without_key(monkeypatch):
+    from pmb.health import consolidate as C
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    try:
+        C.resolve_llm_client(backend="openai")
+    except RuntimeError as e:
+        assert "OPENAI_API_KEY" in str(e)
     else:
         raise AssertionError("expected RuntimeError")
 

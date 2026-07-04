@@ -156,6 +156,11 @@ PMB will use it for every subsequent operation.
 pmb config set consolidate.backend anthropic
 pmb config set chat.transport anthropic
 export ANTHROPIC_API_KEY=...
+
+# or
+pmb config set consolidate.backend openai
+pmb config set chat.transport openai
+export OPENAI_API_KEY=...
 ```
 
 Your stored memory doesn't change - only the LLM provider for sleep-mode ops.

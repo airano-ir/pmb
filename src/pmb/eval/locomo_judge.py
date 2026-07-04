@@ -24,7 +24,7 @@ What this does:
 LLM backends:
   Any object with `.complete(prompt: str) -> str`. We default to
   resolve_llm_client() from pmb.health.consolidate (auto: claude CLI,
-  Anthropic API, or Ollama). Pass `--reader-backend ollama --judge-backend ollama`
+  Anthropic API, OpenAI API, or Ollama). Pass `--reader-backend ollama --judge-backend ollama`
   to keep it fully local.
 
 Reader rubric (matches mem0 §4.2):

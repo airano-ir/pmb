@@ -386,7 +386,7 @@ def distill(
         help="Session id to distill (default: most recent session's events).",
     ),
     backend: str = typer.Option("auto", "--backend",
-                                help="auto | claude | anthropic | ollama"),
+                                help="auto | claude | anthropic | openai | ollama"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview, don't store"),
 ):
     """Auto-distill durable LESSONS & FAILURES from a session via an LLM.
@@ -397,7 +397,7 @@ def distill(
     `pmb config set lessons.auto_distill_on_session_end true` runs this
     automatically on `pmb session end`.
 
-    Needs an LLM backend (claude CLI / Anthropic key / Ollama). Off the recall
+    Needs an LLM backend (claude CLI / Anthropic key / OpenAI key / Ollama). Off the recall
     path - cannot affect recall quality or speed.
     """
     eng = Engine()
@@ -405,7 +405,7 @@ def distill(
         res = eng.distill_lessons(session_id=session, backend=backend, dry_run=dry_run)
     if res.get("skipped") == "no_llm":
         console.print("[yellow]No LLM backend available.[/] Install Claude CLI / "
-                      "Ollama, or set ANTHROPIC_API_KEY.")
+                      "Ollama, or set ANTHROPIC_API_KEY or OPENAI_API_KEY.")
         if res.get("detail"):
             console.print(f"[dim]{res['detail']}[/]")
         return
@@ -916,4 +916,3 @@ def restore(ulid: str = typer.Argument(..., help="Event ULID to bring back.")):
     eng = Engine()
     eng.unforget(ulid)
     console.print(f"[green]Restored[/] {ulid}")
-
