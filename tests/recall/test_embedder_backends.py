@@ -34,6 +34,15 @@ class FakeEmbedder:
         return self.dim
 
 
+class FakeEvent:
+    def __init__(self, ulid: str, text: str):
+        self.ulid = ulid
+        self._text = text
+
+    def to_text(self):
+        return self._text
+
+
 @pytest.fixture
 def fresh(monkeypatch):
     """A HybridSearch on a temp dir wired to a fake embedder of a given dim."""
@@ -103,6 +112,23 @@ def test_dim_mismatch_is_rejected(fresh, monkeypatch):
     with pytest.raises(RuntimeError) as exc:
         hs.add("u2", "this should be refused")
     assert "dimension mismatch" in str(exc.value).lower()
+
+
+def test_reindex_recreates_table_when_embedder_dim_changes(fresh, monkeypatch):
+    hs = fresh(384)
+    hs.add("u1", "first event at 384 dimensions")
+    assert hs._table_dim == 384
+
+    monkeypatch.setattr(
+        search_mod._ModelCache, "get",
+        classmethod(lambda cls, *a, **k: FakeEmbedder(768)),
+    )
+    hs._model = None
+
+    assert hs.reindex_all([FakeEvent("u1", "same event re-embedded")]) == 1
+    assert hs._table_dim == 768
+
+    hs.add("u2", "new event after reindex")
 
 
 # ----------------------------------------------------------------------
