@@ -17,7 +17,7 @@ Both reuse existing machinery instead of growing a parallel stack:
 
   * the LLM client abstraction in ``pmb.health.consolidate``
     (``resolve_llm_client``), which already supports Claude CLI / Anthropic /
-    Ollama and runs the model with NO tools - safe for feeding it untrusted
+    OpenAI / Ollama and runs the model with NO tools - safe for feeding it untrusted
     diffs and code.
   * ``engine.record_batch_async`` for writes (durable outbox, embeddings,
     graph linking happen downstream).

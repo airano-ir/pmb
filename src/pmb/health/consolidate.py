@@ -23,10 +23,8 @@ records. Example:
   consolidated fact:
     - "User prefers code without comments or docstrings."
 
-Cost note: each cluster = 1 LLM call. Haiku at ~$0.001/call. Run once
-a week per workspace ≈ free. The default LLM is Claude Haiku via the
-anthropic SDK; any client matching the `LLMClient` protocol works,
-which keeps tests cheap (MockLLM) and lets users swap in Ollama later.
+Cost note: each cluster = 1 LLM call. Any client matching the `LLMClient`
+protocol works, which keeps tests cheap (MockLLM) and lets users swap backends.
 """
 
 from __future__ import annotations
@@ -48,6 +46,9 @@ if TYPE_CHECKING:
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+_MODEL_ALIASES = {"haiku", "sonnet", "opus"}
 
 
 # ----------------------------------------------------------------------
@@ -138,6 +139,88 @@ class AnthropicHaikuClient:
             messages=[{"role": "user", "content": prompt}],
         )
         return "".join(block.text for block in resp.content if hasattr(block, "text")).strip()
+
+
+# ----------------------------------------------------------------------
+# OpenAI backend - stdlib HTTP, no SDK dependency
+# ----------------------------------------------------------------------
+
+
+def openai_chat_completion(
+    messages: list[dict[str, str]],
+    *,
+    model: str | None = None,
+    max_tokens: int = 800,
+    temperature: float = 0.2,
+    timeout: float = 60.0,
+    response_format: dict | None = None,
+) -> str:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set")
+    model_id = model if model and model not in _MODEL_ALIASES else None
+    model_id = model_id or os.environ.get("PMB_OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
+    base_url = (os.environ.get("OPENAI_BASE_URL") or DEFAULT_OPENAI_BASE_URL).rstrip("/")
+    payload = {
+        "model": model_id,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if response_format:
+        payload["response_format"] = response_format
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base_url}/v1/chat/completions",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"OpenAI API request failed at {base_url}: {e}") from e
+    try:
+        data = json.loads(raw)
+        return str(data["choices"][0]["message"].get("content") or "").strip()
+    except Exception as e:
+        raise RuntimeError(f"OpenAI returned invalid response: {raw[:200]}") from e
+
+
+class OpenAIClient:
+    """OpenAI chat-completions backend for consolidation/reasoning."""
+
+    def __init__(self, model: str | None = None, timeout: float = 60.0):
+        self.model = model
+        self.timeout = timeout
+
+    def consolidate(self, events_text: list[str]) -> dict:
+        joined = "\n\n---\n\n".join(f"[{i+1}] {t}" for i, t in enumerate(events_text))
+        text = openai_chat_completion(
+            [
+                {"role": "system", "content": CONSOLIDATION_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Cluster of {len(events_text)} memory items:\n\n{joined}\n\nOutput JSON now."},
+            ],
+            model=self.model,
+            max_tokens=400,
+            temperature=0.2,
+            timeout=self.timeout,
+            response_format={"type": "json_object"},
+        )
+        return _parse_llm_json(text)
+
+    def complete(self, prompt: str, max_tokens: int = 800) -> str:
+        return openai_chat_completion(
+            [{"role": "user", "content": prompt}],
+            model=self.model,
+            max_tokens=max_tokens,
+            temperature=0.2,
+            timeout=self.timeout,
+        )
 
 
 # ----------------------------------------------------------------------
@@ -398,9 +481,10 @@ def resolve_llm_client(
 
     backend:
       "auto"       - Claude CLI if `claude` on PATH; else Anthropic if API key;
-                     else Ollama if reachable.
+                     else OpenAI if API key; else Ollama if reachable.
       "claude"     - force Claude CLI subprocess (no key, uses Claude Code auth).
       "anthropic"  - force Anthropic API (requires ANTHROPIC_API_KEY).
+      "openai"     - force OpenAI API (requires OPENAI_API_KEY).
       "ollama"     - force Ollama (requires local server).
 
     The auto-priority puts Claude CLI first because that's the no-friction
@@ -415,9 +499,17 @@ def resolve_llm_client(
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise RuntimeError(
                 "backend=anthropic but ANTHROPIC_API_KEY is not set. "
-                "Use --backend claude (no key needed) or --backend ollama."
+                "Use --backend claude (no key needed), --backend openai, or --backend ollama."
             )
         return AnthropicHaikuClient(model=model)
+
+    if backend == "openai":
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise RuntimeError(
+                "backend=openai but OPENAI_API_KEY is not set. "
+                "Use --backend claude (no key needed), --backend anthropic, or --backend ollama."
+            )
+        return OpenAIClient(model=model)
 
     if backend in ("claude", "claude-cli"):
         if not ClaudeCLIClient.available():
@@ -441,12 +533,15 @@ def resolve_llm_client(
             return ClaudeCLIClient(model=model)
         if os.environ.get("ANTHROPIC_API_KEY"):
             return AnthropicHaikuClient(model=model)
+        if os.environ.get("OPENAI_API_KEY"):
+            return OpenAIClient(model=model)
         if OllamaClient.ping():
             return OllamaClient(model=model)
         raise RuntimeError(
             "No LLM backend available. Pick one:\n"
             "  - install Claude Code so `claude` is in PATH (no key, recommended), or\n"
             "  - set ANTHROPIC_API_KEY for direct API access, or\n"
+            "  - set OPENAI_API_KEY for OpenAI API access, or\n"
             f"  - run Ollama locally (`ollama serve` + `ollama pull {DEFAULT_OLLAMA_MODEL}`)\n"
             "Then re-run `pmb consolidate`."
         )

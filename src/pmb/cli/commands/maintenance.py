@@ -431,7 +431,7 @@ def reflect(
     max_age_days: float = typer.Option(30.0, "--max-age-days",
                                         help="Only consider events newer than this"),
     backend: str = typer.Option("auto", "--backend",
-                                help="LLM backend: auto / claude / anthropic / ollama"),
+                                help="LLM backend: auto / claude / anthropic / openai / ollama"),
     source: str | None = typer.Option(None, "--source",
                                           help="Reflect on a single event by ULID"),
 ):
@@ -465,7 +465,7 @@ def reflect(
         )
     if result.get("skipped") == "no_llm":
         console.print("[yellow]No LLM backend available.[/] "
-                      "Install Claude CLI / Ollama / set ANTHROPIC_API_KEY.")
+                      "Install Claude CLI / Ollama / set ANTHROPIC_API_KEY or OPENAI_API_KEY.")
         return
     console.print(
         f"[cyan]Reflected[/] {result['n_reflected']} / {result['n_candidates']} "
@@ -749,7 +749,7 @@ def consolidate(
         help="Only consolidate when auto-trigger thresholds are met (per config)",
     ),
     backend: str = typer.Option("auto", "--backend",
-                                help="auto | claude | anthropic | ollama. Auto prefers `claude` CLI if installed (no key needed), then Anthropic API, then Ollama."),
+                                help="auto | claude | anthropic | openai | ollama. Auto prefers `claude` CLI if installed (no key needed), then Anthropic API, OpenAI API, then Ollama."),
     model: str | None = typer.Option(None, "--model",
                                         help="Override default model (e.g. 'haiku' for claude/anthropic, 'llama3.1:8b' for ollama)"),
     since_days: float = typer.Option(14.0, "--since-days"),
@@ -762,8 +762,8 @@ def consolidate(
     """LLM-based sleep-stage consolidation.
 
     No API key needed if `claude` CLI is in PATH - uses your existing
-    Claude Code login. Alternative backends: ANTHROPIC_API_KEY for direct
-    API, or Ollama for fully local.
+    Claude Code login. Alternative backends: ANTHROPIC_API_KEY or
+    OPENAI_API_KEY for direct API, or Ollama for fully local.
 
     Clusters related recent memories, asks an LLM to extract one underlying
     rule per cluster, stores it as a high-importance fact, archives the
@@ -910,7 +910,5 @@ def doctor(
     rc = print_doctor(console, remote=remote)
     if rc != 0:
         raise typer.Exit(code=rc)
-
-
 
 

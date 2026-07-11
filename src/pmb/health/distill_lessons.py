@@ -10,7 +10,7 @@ events. Wire it to session-end and it's zero-command.
 Design / risk notes:
   - Off the recall hot path → cannot affect LoCoMo or recall latency.
   - Reuses the existing consolidation LLM backends (Claude CLI / Anthropic /
-    Ollama) via `resolve_llm_client`. No new dependency.
+    OpenAI / Ollama) via `resolve_llm_client`. No new dependency.
   - Dedups against existing lessons so re-running a session doesn't pile up
     duplicates.
   - Testable without an LLM: inject a fake client with `.complete(prompt)`.

@@ -325,9 +325,9 @@ side - the memory journals the agent's work even when it forgets `record_batch`:
 - **Honest + reversible.** Every ambient entry is tagged `source=autowrite`, shown as auto in the dashboard, and removable with `pmb forget-auto`. **On by default**; disable with `pmb config set autowrite.enabled false`.
 - **Works on every host.** Claude Code (hooks), Codex (`pmb codex-notify`), MCP-only hosts like Cursor/Zed/VS Code (git observer, `pmb ambient-watch .`). Check yours with `pmb hooks capabilities`.
 
-Synthesis is template-based by default (instant, no model). Opt into a local/CLI
-model summary with `pmb config set autowrite.synthesizer llm:ollama` (it has a
-timeout and falls back to the template).
+Synthesis is template-based by default (instant, no model). Opt into a local/API/CLI
+model summary with `pmb config set autowrite.synthesizer llm:ollama` or `llm:openai`
+(it has a timeout and falls back to the template).
 
 ## Self-improvement loop
 
@@ -357,7 +357,7 @@ gated.
 | `recall.keyed_fact_boost` | 0.35 | How hard personal-attr facts win on personal queries |
 | `recall.rerank` | false | Always-on cross-encoder (regresses LoCoMo, keep off) |
 | `embedding.model` | `paraphrase-multilingual-MiniLM-L12-v2` | The vector model |
-| `graph.extractor` | `regex` | `regex` / `spacy` / `llm:claude` / `llm:ollama` / `llm:codex` |
+| `graph.extractor` | `regex` | `regex` / `spacy` / `llm:claude` / `llm:openai` / `llm:ollama` / `llm:codex` |
 | `mcp.record_batch_async` | true | Fire-and-forget writes (sub-ms return) |
 | `agent.apply_lessons` | true | Agent surfaces lessons before acting |
 | `dedup.enable` | true | All four dedup layers |
@@ -397,7 +397,7 @@ python scripts/benchmarks/mega_stress_test.py
 ## FAQ
 
 **Does PMB call an LLM?** On read: never. On write: never by default. Optional:
-`pmb consolidate` can run a local Ollama or Claude CLI pass to write short
+`pmb consolidate` can run a local Ollama, Claude CLI, Anthropic, or OpenAI pass to write short
 reflections - opt-in.
 
 **What about cost?** $0. There is no PMB service.

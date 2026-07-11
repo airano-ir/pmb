@@ -37,7 +37,7 @@ def track_changes_cmd(
     ),
     backend: str = typer.Option(
         "auto", "--backend",
-        help="LLM backend: auto | claude | anthropic | ollama.",
+        help="LLM backend: auto | claude | anthropic | openai | ollama.",
     ),
     model: str = typer.Option(
         None, "--model",
@@ -92,7 +92,7 @@ def track_changes_cmd(
 def track_modules_cmd(
     path: str = typer.Argument(".", help="Project root (run `pmb index project` first)."),
     backend: str = typer.Option(
-        "auto", "--backend", help="LLM backend: auto | claude | anthropic | ollama.",
+        "auto", "--backend", help="LLM backend: auto | claude | anthropic | openai | ollama.",
     ),
     model: str = typer.Option(
         None, "--model", help="Model alias/id. Empty = backend default (Haiku).",
@@ -145,7 +145,7 @@ def track_modules_cmd(
 def track_install_cmd(
     path: str = typer.Argument(".", help="Path inside the git repo."),
     backend: str = typer.Option(
-        "auto", "--backend", help="Backend the hook will use (auto | claude | anthropic | ollama).",
+        "auto", "--backend", help="Backend the hook will use (auto | claude | anthropic | openai | ollama).",
     ),
 ):
     """Install a git post-commit hook that runs `pmb track changes` after every

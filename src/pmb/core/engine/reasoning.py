@@ -52,8 +52,8 @@ class ReasoningMixin:
         LLM-based generalization: cluster recent events by embedding similarity,
         ask the LLM to extract a rule per cluster, store as a fact, archive sources.
 
-        backend: "auto" picks Anthropic if ANTHROPIC_API_KEY is set, else Ollama
-        if a local server is reachable. "anthropic" / "ollama" force a choice.
+        backend: "auto" picks Claude CLI, then Anthropic, then OpenAI, then
+        Ollama. "claude" / "anthropic" / "openai" / "ollama" force a choice.
 
         Pass an `llm` instance with .consolidate(texts) directly for tests.
         """

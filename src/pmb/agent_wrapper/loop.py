@@ -1,12 +1,12 @@
 """
-Minimal chat loop: Anthropic API + PMB for memory.
+Minimal chat loop: LLM backend + PMB for memory.
 
 What it does right now:
 
   1. Bind to current PMB workspace (auto-detect from cwd).
   2. On startup, fetch a recall pack for the first user message and inject
      it into the system prompt.
-  3. Talk to Anthropic in turns. Every assistant reply is persisted via
+  3. Talk to the configured LLM in turns. Every assistant reply is persisted via
      `engine.remember(user, assistant)`.
   4. Before each turn, check budget; if over, run the compression policy.
   5. On exit (Ctrl-D / Ctrl-C / `/exit`), optionally run `pmb consolidate`.
@@ -48,7 +48,7 @@ class AgentConfig:
     recall_top_k: int = 5
     persist_turns: bool = True
     consolidate_on_exit: bool = False
-    transport: str = "auto"  # auto | claude | anthropic | ollama
+    transport: str = "auto"  # auto | claude | anthropic | openai | ollama
     selective_compression: bool = True
     ollama_url: str | None = None  # honours PMB_OLLAMA_URL / OLLAMA_HOST
 
@@ -97,6 +97,8 @@ class AgentLoop:
                 return "claude"
             if os.environ.get("ANTHROPIC_API_KEY"):
                 return "anthropic"
+            if os.environ.get("OPENAI_API_KEY"):
+                return "openai"
             # Last fallback: Ollama, if a server responds
             from pmb.health.consolidate import OllamaClient
             if OllamaClient.ping(self.config.ollama_url or os.environ.get("PMB_OLLAMA_URL") or os.environ.get("OLLAMA_HOST") or "http://localhost:11434"):
@@ -122,6 +124,8 @@ class AgentLoop:
             return self._call_claude_cli()
         if self._transport == "ollama":
             return self._call_ollama()
+        if self._transport == "openai":
+            return self._call_openai_api()
         return self._call_anthropic_api()
 
     def _call_ollama(self) -> str:
@@ -198,6 +202,25 @@ class AgentLoop:
             messages=self.messages,
         )
         return "".join(b.text for b in resp.content if hasattr(b, "text"))
+
+    def _call_openai_api(self) -> str:
+        from pmb.health.consolidate import openai_chat_completion
+
+        flat: list[dict[str, str]] = []
+        for m in self.messages:
+            content = m.get("content", "")
+            if isinstance(content, list):
+                content = " ".join(
+                    b.get("text", "") for b in content if isinstance(b, dict)
+                )
+            flat.append({"role": m.get("role", "user"), "content": str(content)})
+        return openai_chat_completion(
+            [{"role": "system", "content": self._system}, *flat],
+            model=self.config.model,
+            max_tokens=2048,
+            temperature=0.4,
+            timeout=180,
+        )
 
     def _call_claude_cli(self) -> str:
         """Send the rendered conversation through `claude -p`."""

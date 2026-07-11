@@ -234,6 +234,60 @@ def test_ollama_transport_calls_api_chat(monkeypatch):
     assert "user" in roles
 
 
+def test_openai_transport_calls_chat_completions(monkeypatch):
+    """AgentLoop with transport=openai hits chat completions with no SDK."""
+    import json
+    import urllib.request as urlreq
+
+    from pmb.agent_wrapper.loop import AgentConfig, AgentLoop
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("PMB_OPENAI_MODEL", raising=False)
+    captured = {}
+
+    class _Resp:
+        def __enter__(self_inner): return self_inner
+        def __exit__(self_inner, *a): return False
+        def read(self_inner):
+            return json.dumps({"choices": [{"message": {"content": "hi from openai"}}]}).encode("utf-8")
+
+    def _fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        captured["auth"] = req.get_header("Authorization")
+        return _Resp()
+
+    monkeypatch.setattr(urlreq, "urlopen", _fake_urlopen)
+
+    class _StubEngine:
+        class workspace:
+            id = "test"
+            name = "test"
+        def recall(self, q, top_k=5):
+            class _P:
+                results = []
+                def to_text(self_inner, max_results=5): return ""
+            return _P()
+        def remember(self, q, r): pass
+
+    cfg = AgentConfig(
+        model="haiku",
+        transport="openai",
+        selective_compression=False,
+        persist_turns=False,
+    )
+    out = AgentLoop(engine=_StubEngine(), config=cfg).turn("hello")
+
+    assert out == "hi from openai"
+    assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["auth"] == "Bearer sk-test"
+    assert captured["body"]["model"] == "gpt-4o-mini"
+    roles = [m["role"] for m in captured["body"]["messages"]]
+    assert roles[0] == "system"
+    assert "user" in roles
+
+
 def test_ollama_transport_unreachable_raises(monkeypatch):
     import urllib.error
     import urllib.request as urlreq

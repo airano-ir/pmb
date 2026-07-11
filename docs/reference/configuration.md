@@ -97,7 +97,7 @@ fade out of ranking; retire one with `archive`/`forget`.
 | Key | Default | What it does |
 |---|---|---|
 | `consolidate.auto_trigger` | false | run sleep stage consolidation automatically. |
-| `consolidate.backend` | auto (pro) | the offline LLM tier: auto, claude, ollama, or anthropic. Background only, never on the read path. |
+| `consolidate.backend` | auto (pro) | background LLM tier: auto, claude, anthropic, openai, or ollama. Background only, never on the read path. |
 | `decay.factor_per_day` | 0.985 | the forgetting curve applied by `pmb decay`. |
 | `dedup.enable` | true | deduplicate near identical memories. |
 | `graph.extractor` | regex | how entities are pulled from text for the graph. |

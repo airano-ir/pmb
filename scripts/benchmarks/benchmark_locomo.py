@@ -255,7 +255,7 @@ def main():
                     help="LLM-as-judge eval (reader + judge). Reports J-score "
                          "comparable to mem0/Letta papers. Slow: ~2 LLM calls per QA.")
     ap.add_argument("--judge-backend", default="auto",
-                    help="LLM backend for reader+judge (auto / claude / anthropic / ollama)")
+                    help="LLM backend for reader+judge (auto / claude / anthropic / openai / ollama)")
     ap.add_argument("--judge-limit", type=int, default=None,
                     help="Only judge first N questions per conversation (for fast smoke)")
     ap.add_argument("--out", default=data_path("pmb_locomo.json"))

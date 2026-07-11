@@ -8,7 +8,7 @@ Runs from the Stop hook. Policy:
        an activity entry and record it with metadata.source = 'autowrite'.
 
 Synthesis is template-based by default (instant, deterministic, no model).
-A local/CLI LLM can be opted in (`autowrite.synthesizer = llm:ollama` etc.)
+A local/API/CLI LLM can be opted in (`autowrite.synthesizer = llm:ollama` etc.)
 for a nicer human summary - with a timeout and an automatic fall back to
 the template, so it never blocks or fails the turn.
 
@@ -250,7 +250,7 @@ def synthesize_llm(
     timeout: float = 20.0,
 ) -> str | None:
     """Ask a CLI LLM to write a one-line human summary of the actions.
-    `backend` is 'llm:ollama' / 'llm:claude' / 'llm:codex'. Returns None on
+    `backend` is 'llm:ollama' / 'llm:claude' / 'llm:openai' / 'llm:codex'. Returns None on
     any failure so the caller can fall back to the template."""
     sig = [a for a in actions if a.get("significant")]
     if not sig:
@@ -269,6 +269,7 @@ def synthesize_llm(
             _run_claude_cli,
             _run_codex_cli,
             _run_ollama_cli,
+            _run_openai_api,
         )
         provider = backend.split(":", 1)[1] if ":" in backend else backend
         if provider == "ollama":
@@ -277,6 +278,8 @@ def synthesize_llm(
             out = _run_claude_cli(prompt, timeout, model or "haiku")
         elif provider == "codex":
             out = _run_codex_cli(prompt, timeout)
+        elif provider == "openai":
+            out = _run_openai_api(prompt, timeout, model)
         else:
             return None
         line = (out or "").strip().splitlines()

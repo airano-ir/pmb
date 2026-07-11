@@ -420,15 +420,15 @@ SCHEMA: dict[str, _Setting] = {
         str, "template",
         "How the journal line is written. 'template' = instant, "
         "deterministic, no model ('edited 3 files; ran tests; committed'). "
-        "'llm:ollama' / 'llm:claude' / 'llm:codex' = a nicer human summary "
-        "via the local/CLI model, with a timeout and automatic fallback to "
+        "'llm:ollama' / 'llm:claude' / 'llm:openai' / 'llm:codex' = a nicer human summary "
+        "via the local/API/CLI model, with a timeout and automatic fallback to "
         "the template so it never blocks the turn.",
-        choices=["template", "llm:ollama", "llm:claude", "llm:codex"],
+        choices=["template", "llm:ollama", "llm:claude", "llm:openai", "llm:codex"],
     ),
     "autowrite.llm_model": _Setting(
         str, "",
         "Model id for autowrite.synthesizer when it's an LLM backend. "
-        "Empty = backend default (ollama → qwen2.5:3b, claude → haiku).",
+        "Empty = backend default (ollama → qwen2.5:3b, claude → haiku, openai → gpt-4o-mini).",
     ),
     "ambient.watch_paths": _Setting(
         str, "",
@@ -1270,7 +1270,7 @@ SCHEMA: dict[str, _Setting] = {
         bool, False,
         "On `pmb session end`, auto-distill durable lessons/failures from the "
         "session via an LLM (zero-command memory growth). Off by default - "
-        "needs an LLM backend (claude CLI / Anthropic key / Ollama).",
+        "needs an LLM backend (claude CLI / Anthropic key / OpenAI key / Ollama).",
     ),
     "recall.lesson_boost": _Setting(
         bool, True,
@@ -1321,7 +1321,7 @@ SCHEMA: dict[str, _Setting] = {
     # Consolidation
     "consolidate.backend": _Setting(
         str, "auto", "LLM backend for consolidation",
-        choices=("auto", "claude", "anthropic", "ollama"),
+        choices=("auto", "claude", "anthropic", "openai", "ollama"),
     ),
     "consolidate.model": _Setting(
         str, "", "Override model name; empty = backend default",
@@ -1375,7 +1375,7 @@ SCHEMA: dict[str, _Setting] = {
     # Agent wrapper / pmb-chat
     "chat.transport": _Setting(
         str, "auto", "pmb-chat transport",
-        choices=("auto", "claude", "anthropic", "ollama"),
+        choices=("auto", "claude", "anthropic", "openai", "ollama"),
     ),
     "chat.model": _Setting(str, "haiku", "Model alias for pmb-chat"),
     "chat.window": _Setting(int, 200_000, "Token window", min=1024, max=10_000_000),
@@ -1446,10 +1446,10 @@ SCHEMA: dict[str, _Setting] = {
         "Entity-extraction backend. 'regex' = fast, offline, no deps "
         "(default). 'spacy' = POS-filter + NER (needs spacy + a model). "
         "'llm:claude' = Claude Code CLI extracts concepts at write time. "
-        "'llm:ollama' = local Ollama model. 'llm:codex' = OpenAI Codex CLI. "
-        "LLM backends give the cleanest 'knowledge graph' but add a CLI "
+        "'llm:openai' = OpenAI API. 'llm:ollama' = local Ollama model. "
+        "'llm:codex' = OpenAI Codex CLI. LLM backends give the cleanest 'knowledge graph' but add a model "
         "round-trip per write; off by default to preserve the no-LLM hot path.",
-        choices=["regex", "spacy", "llm:claude", "llm:ollama", "llm:codex"],
+        choices=["regex", "spacy", "llm:claude", "llm:openai", "llm:ollama", "llm:codex"],
     ),
     "graph.llm_max_concepts": _Setting(
         int, 5,
@@ -1479,8 +1479,9 @@ SCHEMA: dict[str, _Setting] = {
         str, "haiku",
         "Model identifier passed to the LLM CLI. For graph.extractor=llm:claude "
         "use 'haiku' (cheap+fast, default), 'sonnet' (better quality), or a "
-        "full Anthropic model id. For llm:ollama use the local model name like "
-        "'qwen2.5:3b'. For llm:codex leave empty.",
+        "full Anthropic model id. For llm:openai use an OpenAI model id like "
+        "'gpt-4o-mini'. For llm:ollama use the local model name like 'qwen2.5:3b'. "
+        "For llm:codex leave empty.",
     ),
     "graph.viz_min_mentions": _Setting(
         int, 1,

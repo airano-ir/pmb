@@ -553,7 +553,7 @@ def register_all(mcp, engine):
     @mcp.tool()
     def dedupe_run_pending(backend: str = "auto", limit: int = 50) -> dict:
         """Drain the borderline pair queue via LLM verify.
-        backend: 'auto' (try Ollama then Anthropic) | 'ollama' | 'anthropic'
+        backend: 'auto' | 'claude' | 'anthropic' | 'openai' | 'ollama'
         """
         return engine.dedupe_run_pending(backend=backend, limit=limit)
 
@@ -843,9 +843,9 @@ def register_all(mcp, engine):
     ) -> dict:
         """LLM-based sleep-stage consolidation.
 
-        Clusters related recent events and asks Claude Haiku to generalize
-        each cluster into a single fact. Requires ANTHROPIC_API_KEY on the
-        server side. Source events are archived (not deleted).
+        Clusters related recent events and asks the configured LLM backend to
+        generalize each cluster into a single fact. Source events are archived
+        (not deleted).
 
         Use dry_run=True to preview without storing.
         """

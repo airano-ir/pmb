@@ -1,4 +1,4 @@
-"""LLM-backed entity extractor - Claude CLI / Ollama / Codex CLI at write time.
+"""LLM-backed entity extractor - Claude CLI / OpenAI / Ollama / Codex at write time.
 
 This is the "as graphify does" option: send each event's text to a local LLM,
 get back a small JSON list of clean concept names, and use those as graph
@@ -9,13 +9,14 @@ research" instead of regex tokens like "built", "ideas", "stol").
 Optional - activated by config:
 
     pmb config set graph.extractor llm:claude        # Claude Code CLI
+    pmb config set graph.extractor llm:openai        # OpenAI API
     pmb config set graph.extractor llm:ollama        # local Ollama model
     pmb config set graph.extractor llm:codex         # OpenAI Codex CLI
 
-All providers shell out to a CLI binary that must be on PATH. We never block
-on an LLM longer than `graph.llm_timeout_s` (default 30 s); on timeout / non-
-zero exit / malformed JSON we silently fall back to the regex backend so a
-broken LLM never stalls a record_batch.
+CLI providers shell out to a binary on PATH; llm:openai uses OPENAI_API_KEY.
+We never block on an LLM longer than `graph.llm_timeout_s` (default 30 s); on
+timeout / non-zero exit / malformed JSON we silently fall back to the regex
+backend so a broken LLM never stalls a record_batch.
 
 We extend the regex backend rather than replace it - files + techs still go
 through the fast regex paths, the LLM only fills `concepts` / `persons` /
@@ -189,6 +190,18 @@ def _run_codex_cli(prompt: str, timeout: float) -> str:
     return r.stdout or ""
 
 
+def _run_openai_api(prompt: str, timeout: float, model: str = "") -> str:
+    from pmb.health.consolidate import openai_chat_completion
+    return openai_chat_completion(
+        [{"role": "user", "content": prompt}],
+        model=model,
+        max_tokens=700,
+        temperature=0.1,
+        timeout=timeout,
+        response_format={"type": "json_object"},
+    )
+
+
 class LLMExtractor(EntityExtractor):
     """LLM-extraction backend.
 
@@ -212,7 +225,7 @@ class LLMExtractor(EntityExtractor):
         super().__init__(max_concepts=max_concepts)
         self.provider = provider.lower().strip()
         self.timeout = float(timeout_s)
-        # `model` is the model id passed to the CLI. For Claude: "haiku" /
+        # `model` is the model id passed to the backend. For Claude: "haiku" /
         # "sonnet" / full id. For Ollama it overrides DEFAULT_OLLAMA_MODEL.
         self.model = (model or "").strip()
         self.ollama_model = (ollama_model or self.model
@@ -223,6 +236,10 @@ class LLMExtractor(EntityExtractor):
         self._verify_cli()
 
     def _verify_cli(self) -> None:
+        if self.provider == "openai":
+            if not os.environ.get("OPENAI_API_KEY"):
+                raise RuntimeError("OPENAI_API_KEY is not set for graph.extractor=llm:openai")
+            return
         binaries = {"claude": "claude", "ollama": "ollama", "codex": "codex"}
         bin_name = binaries.get(self.provider)
         if not bin_name:
@@ -237,6 +254,8 @@ class LLMExtractor(EntityExtractor):
             return _run_ollama_cli(prompt, self.ollama_model, self.timeout)
         if self.provider == "codex":
             return _run_codex_cli(prompt, self.timeout)
+        if self.provider == "openai":
+            return _run_openai_api(prompt, self.timeout, self.model)
         raise RuntimeError(f"unknown provider {self.provider!r}")
 
     def extract(self, text: str, files_hint: Iterable[str] = ()) -> ExtractedEntities:

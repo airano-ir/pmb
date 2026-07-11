@@ -69,6 +69,33 @@ def test_extractor_combines_layers():
     assert ext.concepts  # at least one concept
 
 
+def test_openai_llm_extractor_uses_api_provider(monkeypatch):
+    import json
+
+    from pmb.graph import extractors_llm
+    from pmb.graph.extractors_llm import LLMExtractor
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    calls = {}
+
+    def _fake_openai(prompt, timeout, model=""):
+        calls["model"] = model
+        calls["prompt"] = prompt
+        return json.dumps({
+            "persons": [], "orgs": [], "places": [], "products": [],
+            "concepts": ["session cache"],
+        })
+
+    monkeypatch.setattr(extractors_llm, "_run_openai_api", _fake_openai)
+    out = LLMExtractor(provider="openai", model="gpt-test").extract(
+        "Use Postgres for the session cache"
+    )
+
+    assert calls["model"] == "gpt-test"
+    assert "session cache" in out.concepts
+    assert "postgres" in out.techs
+
+
 # ----------------------------------------------------------------------
 # Graph writes via Engine
 # ----------------------------------------------------------------------

@@ -118,6 +118,7 @@ def check_pmb_home() -> dict:
 def check_consolidation_backend() -> dict:
     """Report whether consolidation has a working LLM backend."""
     has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
     try:
         from pmb.health.consolidate import (
             DEFAULT_OLLAMA_MODEL,
@@ -135,6 +136,8 @@ def check_consolidation_backend() -> dict:
         available.append("claude-cli")
     if has_anthropic:
         available.append("anthropic")
+    if has_openai:
+        available.append("openai")
     if ollama_up:
         available.append("ollama")
 
@@ -148,6 +151,7 @@ def check_consolidation_backend() -> dict:
         "No LLM backend for consolidation. Either:\n"
         "  - install Claude Code so `claude` is in PATH (no key needed), or\n"
         "  - set ANTHROPIC_API_KEY for direct API access, or\n"
+        "  - set OPENAI_API_KEY for OpenAI API access, or\n"
         f"  - run `ollama serve` + `ollama pull {DEFAULT_OLLAMA_MODEL}`.\n"
         "Everything else in PMB works without it."
     )
@@ -325,7 +329,7 @@ def check_multilingual_model() -> dict:
 
 def check_graph_extractor() -> dict:
     """Report the active entity-graph extractor backend and whether its
-    requirements (spaCy model / Claude / Ollama / Codex CLI) are satisfied.
+    requirements (spaCy model / Claude / OpenAI / Ollama / Codex CLI) are satisfied.
     """
     try:
         from pmb.config import Config
@@ -362,6 +366,12 @@ def check_graph_extractor() -> dict:
     if backend.startswith("llm:"):
         import shutil
         provider = backend.split(":", 1)[1]
+        if provider == "openai":
+            if os.environ.get("OPENAI_API_KEY"):
+                return {"status": "ok",
+                        "msg": "backend `llm:openai` ready (OPENAI_API_KEY set)"}
+            return {"status": "warn",
+                    "msg": "backend `llm:openai` selected but OPENAI_API_KEY is not set → falls back to regex"}
         bins = {"claude": "claude", "ollama": "ollama", "codex": "codex"}
         bin_name = bins.get(provider)
         if not bin_name:

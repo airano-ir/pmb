@@ -635,9 +635,18 @@ class HybridSearch:
 
         Returns: number of events re-encoded.
         """
-        # Drop all vectors - table will be repopulated
+        # Drop all vectors - table will be repopulated. If the active embedder
+        # changed dimensions, recreate the table too; LanceDB vector dimensions
+        # are fixed in the schema, so deleting rows is not enough.
+        target_dim = _model_dim(self.model)
         try:
-            self._table.delete("ulid IS NOT NULL")  # drop all
+            _ = self._table  # open existing table and populate _table_dim
+            if self._table_dim is not None and self._table_dim != target_dim:
+                self._lance.drop_table("events")
+                self._table_obj = None
+                self._table_dim = None
+            else:
+                self._table.delete("ulid IS NOT NULL")  # drop all rows
         except Exception:
             pass
         # Reset BM25 state

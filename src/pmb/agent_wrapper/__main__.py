@@ -11,8 +11,8 @@ def main() -> None:
     p.add_argument("--model", default="haiku",
                    help="Model alias: haiku | sonnet | opus, or full ID")
     p.add_argument("--transport", default="auto",
-                   choices=("auto", "claude", "anthropic", "ollama"),
-                   help="Which way to call the model. `claude` = CLI subprocess (no key). `anthropic` = ANTHROPIC_API_KEY. `ollama` = local or remote Ollama (set PMB_OLLAMA_URL). `auto` picks claude → anthropic → ollama in that order.")
+                   choices=("auto", "claude", "anthropic", "openai", "ollama"),
+                   help="Which way to call the model. `claude` = CLI subprocess (no key). `anthropic` = ANTHROPIC_API_KEY. `openai` = OPENAI_API_KEY. `ollama` = local or remote Ollama (set PMB_OLLAMA_URL). `auto` picks claude → anthropic → openai → ollama in that order.")
     p.add_argument("--ollama-url", default=None,
                    help="Override Ollama base URL (else PMB_OLLAMA_URL / OLLAMA_HOST / http://localhost:11434)")
     p.add_argument("--window", type=int, default=200_000)
