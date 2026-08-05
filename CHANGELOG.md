@@ -4,6 +4,9 @@ All notable changes to PMB are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **MCP call telemetry is no longer lost when a server shuts down.** `record_call` buffers rows and writes them once `_PERF_FLUSH_EVERY` (25) have accumulated, but nothing flushed the remainder on the way out - so a server that handled fewer than 25 calls recorded *nothing*, and every server dropped its final partial batch. Since most sessions never reach 25 tool calls, `mcp_calls` could stay empty indefinitely, leaving the dashboard Performance tab and `pmb mcp perf` with no data to show. The stdio server now installs an `atexit` hook plus SIGTERM/SIGINT handlers (`install_shutdown_flush`), which matters because an MCP stdio server is a child process its host terminates with a signal, and Python does not run `atexit` handlers on SIGTERM. The signal path restores the previous disposition and re-delivers, so Ctrl-C and `SIGTERM` still behave exactly as before.
+
 ### Added
 - **OpenAI API backend support** across consolidation/reasoning, `pmb-chat`, graph extraction, autowrite summaries, config, doctor, and LLM command help. Uses stdlib HTTP; no OpenAI SDK dependency.
 
