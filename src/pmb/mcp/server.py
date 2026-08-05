@@ -604,6 +604,15 @@ def main():
     except Exception:
         pass
 
+    # Perf rows are buffered and written in batches of _PERF_FLUSH_EVERY;
+    # without a flush on the way out, a server handling fewer calls than that
+    # records nothing, and every server loses its final partial batch.
+    try:
+        from pmb.mcp.perf import install_shutdown_flush
+        install_shutdown_flush()
+    except Exception:
+        pass  # telemetry must never break MCP
+
     if transport == "stdio":
         server.run()
         return

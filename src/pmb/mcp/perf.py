@@ -57,6 +57,56 @@ def flush_perf() -> None:
     for db_path_str, rows in pending.items():
         _flush_perf_rows(db_path_str, rows)
 
+
+_PREV_SIGNAL_HANDLERS: dict = {}
+_shutdown_flush_installed = False
+
+
+def install_shutdown_flush() -> None:
+    """Flush buffered perf rows when this process goes away.
+
+    `record_call` only reaches SQLite once `_PERF_FLUSH_EVERY` rows have
+    accumulated, so without this a server handling fewer calls than that
+    writes no telemetry at all, and every server loses its final partial
+    batch. An MCP stdio server is a child process its host terminates with a
+    signal, and Python does not run `atexit` handlers on SIGTERM, so both
+    paths are wired here.
+
+    Idempotent, and safe to call off the main thread (signal registration is
+    skipped there; the atexit hook still applies).
+    """
+    global _shutdown_flush_installed
+    if _shutdown_flush_installed:
+        return
+    _shutdown_flush_installed = True
+
+    import atexit
+    import signal
+
+    atexit.register(flush_perf)
+
+    def _handler(signum, frame):
+        flush_perf()
+        # Put back whatever was installed before us and re-deliver, so the
+        # original disposition runs in its normal context. This covers
+        # SIG_DFL, SIG_IGN and a custom callable uniformly; calling the
+        # previous handler directly has no meaningful branch for SIG_IGN,
+        # which is what a shell installs for SIGINT on a background job.
+        prev = _PREV_SIGNAL_HANDLERS.get(signum, signal.SIG_DFL)
+        try:
+            signal.signal(signum, prev)
+        except (TypeError, ValueError, OSError):
+            signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            _PREV_SIGNAL_HANDLERS[sig] = signal.getsignal(sig)
+            signal.signal(sig, _handler)
+        except (ValueError, OSError, AttributeError):
+            pass  # non-main thread, or a platform without this signal
+
+
 _DDL = """
 CREATE TABLE IF NOT EXISTS mcp_calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
