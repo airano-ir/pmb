@@ -430,9 +430,10 @@ class WriteMixin:
             rows = conn.execute(
                 "SELECT ulid, metadata_json, timestamp FROM events "
                 "WHERE workspace_id=? AND archived_at IS NULL "
-                "AND event_type='fact' AND metadata_json LIKE ? "
+                "AND event_type='fact' "
+                "AND json_extract(metadata_json, '$.keyed_fact_key') = ? "
                 "ORDER BY timestamp DESC",
-                (self.workspace.id, f'%"keyed_fact_key": "{key}"%'),
+                (self.workspace.id, key),
             ).fetchall()
         for r in rows:
             if r["timestamp"] >= now_ts:
@@ -541,8 +542,8 @@ class WriteMixin:
                     "SELECT ulid, metadata_json FROM events "
                     "WHERE workspace_id = ? AND archived_at IS NULL "
                     "AND event_type = 'fact' "
-                    "AND metadata_json LIKE ?",
-                    (self.workspace.id, f'%"keyed_fact_key": "{key}"%'),
+                    "AND json_extract(metadata_json, '$.keyed_fact_key') = ?",
+                    (self.workspace.id, key),
                 ).fetchall()
             import json as _json
             prior_values: list[str] = []
@@ -825,8 +826,8 @@ class WriteMixin:
                 rows = conn.execute(
                     "SELECT ulid, content, metadata_json, timestamp FROM events "
                     "WHERE workspace_id = ? AND event_type = 'fact' "
-                    "AND metadata_json LIKE ? ORDER BY timestamp ASC",
-                    (self.workspace.id, f'%"keyed_fact_key": "{key}"%'),
+                    "AND json_extract(metadata_json, '$.keyed_fact_key') = ? ORDER BY timestamp ASC",
+                    (self.workspace.id, key),
                 ).fetchall()
             for r in rows:
                 meta = _json.loads(r["metadata_json"] or "{}")
@@ -909,9 +910,9 @@ class WriteMixin:
                     "SELECT ulid, content, metadata_json, timestamp, "
                     "archived_at FROM events "
                     "WHERE workspace_id = ? AND event_type = 'fact' "
-                    "AND metadata_json LIKE ? "
+                    "AND json_extract(metadata_json, '$.keyed_fact_key') = ? "
                     "ORDER BY timestamp DESC",
-                    (self.workspace.id, f'%"keyed_fact_key": "{key}"%'),
+                    (self.workspace.id, key),
                 ).fetchall()
             out = []
             for r in rows:
