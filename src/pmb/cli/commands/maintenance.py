@@ -598,9 +598,17 @@ def decay(
         )
         return
     result = eng.apply_daily_decay(days_since=days if days is not None else 1.0)
+    # Decay is per-TIER (signals/decay.py TIER_DECAY_FACTORS), so there is no single
+    # factor to report; `apply_decay` returns `decayed_by_tier` instead. The old
+    # format string still referenced a `decay_factor` key that the function has never
+    # returned, so this line raised KeyError on EVERY run -- after the importance
+    # updates had already been written, which is why the damage was cosmetic but the
+    # command always looked like it failed.
+    by_tier = result.get("decayed_by_tier") or {}
+    tiers = ", ".join(f"{k}={v}" for k, v in sorted(by_tier.items())) or "none"
     console.print(
         f"[cyan]Decay applied:[/] {result['n_decayed']}/{result['n_active_processed']} events decayed, "
-        f"{result['n_archived']} archived (factor={result['decay_factor']:.4f})"
+        f"{result['n_archived']} archived (by tier: {tiers})"
     )
 
 
