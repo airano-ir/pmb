@@ -49,17 +49,36 @@ def _flush_perf_rows(db_path_str: str, rows: list[tuple]) -> None:
         pass  # perf tracking must never break MCP
 
 
-def flush_perf() -> None:
-    """Drain all buffered perf rows now (call on shutdown / in tests)."""
-    with _PERF_BUF_LOCK:
+def flush_perf(lock_timeout: float = -1) -> None:
+    """Drain all buffered perf rows now (call on shutdown / in tests).
+
+    `lock_timeout` bounds the wait for the buffer lock only, not the flush as
+    a whole: the SQLite write deliberately happens after the lock is released,
+    so the lock is never held across I/O. Pass a finite value from a context
+    that must not block on it - see `_handler` in `install_shutdown_flush`.
+    Giving up loses at most one partial batch, which the best-effort contract
+    of this module already allows.
+    """
+    if not _PERF_BUF_LOCK.acquire(timeout=lock_timeout):
+        return
+    try:
         pending = {k: v for k, v in _PERF_BUF.items() if v}
         _PERF_BUF.clear()
+    finally:
+        _PERF_BUF_LOCK.release()
     for db_path_str, rows in pending.items():
         _flush_perf_rows(db_path_str, rows)
 
 
 _PREV_SIGNAL_HANDLERS: dict = {}
 _shutdown_flush_installed = False
+
+# A Python signal handler runs on the main thread, which may already hold
+# `_PERF_BUF_LOCK` inside `record_call`; that lock is not reentrant, so a
+# blocking flush from the handler deadlocks the process on the very signal
+# meant to shut it down. The lock is only ever held for a few list operations
+# (the SQLite write happens outside it), so this bound is generous.
+_SIGNAL_FLUSH_TIMEOUT_S = 0.5
 
 
 def install_shutdown_flush() -> None:
@@ -86,7 +105,9 @@ def install_shutdown_flush() -> None:
     atexit.register(flush_perf)
 
     def _handler(signum, frame):
-        flush_perf()
+        # Bounded: shutting down must never hang on the buffer lock. Dropping
+        # a partial batch of telemetry is the acceptable outcome here.
+        flush_perf(lock_timeout=_SIGNAL_FLUSH_TIMEOUT_S)
         # Put back whatever was installed before us and re-deliver, so the
         # original disposition runs in its normal context. This covers
         # SIG_DFL, SIG_IGN and a custom callable uniformly; calling the

@@ -5,7 +5,9 @@ All notable changes to PMB are documented here.
 ## [Unreleased]
 
 ### Fixed
+
 - **`pmb track install` no longer appends its hook block where it can never run.** The block was appended to the end of an existing `post-commit` hook. A hook that ends in an unconditional top-level `exit 0` - the usual way to make a hook fail-open - left the PMB block *below* that exit, permanently unreachable, while the CLI still reported "Appended PMB track to your existing post-commit hook". Nothing errors; the hook simply never captures anything, and a smoke test cannot catch it because the hook still exits 0. The block is now spliced above the first unconditional top-level terminator (`exit`/`exec` at column 0). Conditional exits are deliberately *not* treated as terminators - an indented `exit` inside an `if`/`while`, a guard such as `[ -z "$ROOT" ] && exit 0`, and a commented-out exit all leave the rest of the script reachable, so appending after them stays correct - and the confirmation panel says when the block was moved above an exit.
+
 - **MCP call telemetry is no longer lost when a server shuts down.** `record_call` buffers rows and writes them once `_PERF_FLUSH_EVERY` (25) have accumulated, but nothing flushed the remainder on the way out - so a server that handled fewer than 25 calls recorded *nothing*, and every server dropped its final partial batch. Since most sessions never reach 25 tool calls, `mcp_calls` could stay empty indefinitely, leaving the dashboard Performance tab and `pmb mcp perf` with no data to show. The stdio server now installs an `atexit` hook plus SIGTERM/SIGINT handlers (`install_shutdown_flush`), which matters because an MCP stdio server is a child process its host terminates with a signal, and Python does not run `atexit` handlers on SIGTERM. The signal path restores the previous disposition and re-delivers, so Ctrl-C and `SIGTERM` still behave exactly as before.
 
 ### Added
