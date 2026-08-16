@@ -115,6 +115,23 @@ def test_synonym_attribute_supersedes_under_one_key(tmp_pmb_home, tmp_workspace_
     assert any(h["value"] == "Warsaw" and not h["is_current"] for h in hist)
 
 
+def test_keyed_fact_query_matches_key_exactly_not_as_like_pattern(
+    tmp_pmb_home, tmp_workspace_dir
+):
+    eng = _engine(tmp_workspace_dir, tmp_pmb_home)
+    eng.record_keyed_fact("user", "city", "Tampa")
+
+    # sanity: the exact key resolves to the stored fact
+    assert "Tampa" in [
+        h["value"] for h in eng.get_keyed_fact_history("user", "city")
+    ]
+
+    # "u_er::city" differs from the stored "user::city" only by a SQL LIKE
+    # single-char wildcard. The raw-JSON LIKE query used to treat the key as a
+    # pattern and return the wrong fact; an exact json_extract match must not.
+    assert eng.get_keyed_fact_history("u_er", "city") == []
+
+
 def test_record_fact_promotes_current_state(tmp_pmb_home, tmp_workspace_dir):
     eng = _engine(tmp_workspace_dir, tmp_pmb_home)
     eng.record_keyed_fact("user", "city", "Warsaw")
