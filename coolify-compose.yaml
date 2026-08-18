@@ -32,6 +32,25 @@ services:
       - pmb_data:/data
       - pmb_hf_cache:/hf-cache
     restart: unless-stopped
+    # Explicit Traefik labels: for a dockercompose-buildpack app, Coolify's
+    # `docker_compose_domains` field does not reliably translate into a live
+    # route the way `domains` does for dockerfile/nixpacks apps -- the
+    # container ran healthy but Traefik had no router for it (503 "no
+    # available server"). Labels on the compose service are the standard,
+    # dependable way to get routing here.
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.pmb-mcp-http.entrypoints=http
+      - traefik.http.routers.pmb-mcp-http.rule=Host(`pmb.palebluedot.live`)
+      - traefik.http.routers.pmb-mcp-http.middlewares=pmb-mcp-redirect-to-https
+      - traefik.http.routers.pmb-mcp-http.service=pmb-mcp
+      - traefik.http.middlewares.pmb-mcp-redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.routers.pmb-mcp-https.entrypoints=https
+      - traefik.http.routers.pmb-mcp-https.rule=Host(`pmb.palebluedot.live`)
+      - traefik.http.routers.pmb-mcp-https.tls=true
+      - traefik.http.routers.pmb-mcp-https.tls.certresolver=letsencrypt
+      - traefik.http.routers.pmb-mcp-https.service=pmb-mcp
+      - traefik.http.services.pmb-mcp.loadbalancer.server.port=8765
     healthcheck:
       # The /mcp endpoint is bearer-gated, so probe the listening socket instead
       # of an HTTP status. python3 is in the image; curl/wget need not be.
