@@ -1,0 +1,47 @@
+# Coolify deployment compose for pmb.palebluedot.live
+#
+# Deliberately separate from the upstream `compose.yaml` (which is a local dev
+# stack: bind-mounts the repo over /app, binds the dashboard to 127.0.0.1, and
+# leaves the MCP server on stdio). Keeping this in its own file means upstream
+# merges never conflict with the deploy config.
+#
+# Why compose and not the Dockerfile build pack: the image's CMD is ["bash"]
+# (upstream overrides it per-service), and Coolify's dockerfile renderer applies
+# neither the start command nor `-v` named-volume binds -- the container ran bare
+# `bash`, exited instantly, and crash-looped. The compose build pack uses this
+# file verbatim, so both the command and the volumes survive every redeploy.
+
+services:
+  pmb-mcp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["pmb-mcp"]
+    environment:
+      - PMB_HOME=/data
+      - HF_HOME=/hf-cache
+      - SENTENCE_TRANSFORMERS_HOME=/hf-cache
+      - PMB_MCP_TRANSPORT=streamable-http
+      - PMB_MCP_HOST=0.0.0.0
+      - PMB_MCP_PORT=8765
+      - PMB_MCP_PATH=/mcp
+      - PMB_MCP_BEARER_TOKEN=${PMB_MCP_BEARER_TOKEN}
+    expose:
+      - "8765"
+    volumes:
+      - pmb_data:/data
+      - pmb_hf_cache:/hf-cache
+    restart: unless-stopped
+    healthcheck:
+      # The /mcp endpoint is bearer-gated, so probe the listening socket instead
+      # of an HTTP status. python3 is in the image; curl/wget need not be.
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8765), 5).close()"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      # First boot downloads the sentence-transformers embedding model.
+      start_period: 300s
+
+volumes:
+  pmb_data:
+  pmb_hf_cache:
