@@ -16,7 +16,16 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    command: ["pmb-mcp"]
+    # PMB's own singleton guard (src/pmb/mcp/registry.py) writes
+    # $PMB_HOME/servers.json to stop a second server binding the same port,
+    # keyed by PID. PMB_HOME is the persistent pmb_data volume, but each
+    # container restart gets a fresh PID namespace starting at 1 -- so the
+    # main process is always PID 1, `os.kill(1, 0)` against the OLD
+    # container's leftover entry always succeeds, and pmb-mcp refuses to
+    # start ("already running... pid 1"), exits 0, and restart:unless-stopped
+    # loops forever. A fresh container boot has no legitimately-running prior
+    # process, so clear the stale registry before launching.
+    command: ["sh", "-c", "rm -f \"$PMB_HOME/servers.json\"; exec pmb-mcp"]
     environment:
       - PMB_HOME=/data
       - HF_HOME=/hf-cache
