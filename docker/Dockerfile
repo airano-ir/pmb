@@ -8,6 +8,12 @@ ARG GID=1000
 # build is opt-in via docker/compose.gpu.yaml / `make docker-*-gpu`.
 ARG TORCH_VARIANT=cpu
 
+# Extras to install alongside the core package, e.g. "dev" for pytest/ruff/
+# hypothesis, "tui" for the textual dashboard. Defaults to none so a plain
+# `docker build` produces a lean runtime image; local dev tooling opts in
+# explicitly via `make docker-build` (compose.yaml passes PIP_EXTRAS=dev).
+ARG PIP_EXTRAS=
+
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     HOME=/home/pmb \
@@ -44,7 +50,11 @@ RUN pip install --upgrade pip \
     && if [ "$TORCH_VARIANT" = "cpu" ]; then \
          pip install --index-url https://download.pytorch.org/whl/cpu torch; \
        fi \
-    && pip install -e ".[dev]"
+    && if [ -n "$PIP_EXTRAS" ]; then \
+         pip install -e ".[$PIP_EXTRAS]"; \
+       else \
+         pip install -e "."; \
+       fi
 
 USER pmb
 

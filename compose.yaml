@@ -19,6 +19,7 @@ x-pmb-common: &pmb-common
       UID: ${UID:-1000}
       GID: ${GID:-1000}
       TORCH_VARIANT: ${TORCH_VARIANT:-cpu}   # cpu (default) — GPU via docker/compose.gpu.yaml
+      PIP_EXTRAS: dev   # shell/dashboard/mcp all share this image; keep pytest/ruff/textual available
   image: pmb:local
   user: "${UID:-1000}:${GID:-1000}"
   environment:
