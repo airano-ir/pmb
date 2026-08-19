@@ -16,16 +16,44 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    # PMB's own singleton guard (src/pmb/mcp/registry.py) writes
-    # $PMB_HOME/servers.json to stop a second server binding the same port,
-    # keyed by PID. PMB_HOME is the persistent pmb_data volume, but each
-    # container restart gets a fresh PID namespace starting at 1 -- so the
-    # main process is always PID 1, `os.kill(1, 0)` against the OLD
-    # container's leftover entry always succeeds, and pmb-mcp refuses to
-    # start ("already running... pid 1"), exits 0, and restart:unless-stopped
-    # loops forever. A fresh container boot has no legitimately-running prior
-    # process, so clear the stale registry before launching.
-    command: ["sh", "-c", "rm -f \"$PMB_HOME/servers.json\"; exec pmb-mcp"]
+      args:
+        # Installs the `fastembed` extra (ONNX runtime) -- see the command
+        # block below for why we embed via fastembed and not torch.
+        PIP_EXTRAS: fastembed
+    # Three things happen before the server starts, all idempotent:
+    #
+    # 1. Clear the stale singleton registry. PMB's own guard
+    #    (src/pmb/mcp/registry.py) writes $PMB_HOME/servers.json keyed by PID
+    #    to stop a second server binding the same port. PMB_HOME is the
+    #    PERSISTENT volume, but every container restart gets a fresh PID
+    #    namespace starting at 1 -- so the main process is always PID 1, the
+    #    liveness check (os.kill(1, 0)) against the OLD container's leftover
+    #    entry always succeeds, and pmb-mcp refuses to start ("already
+    #    running... pid 1"), exits 0, and restart:unless-stopped loops
+    #    forever. A fresh container boot has no legitimately-running prior
+    #    process.
+    #
+    # 2. Pin the embedding runtime to fastembed (ONNX) instead of
+    #    sentence-transformers (torch). Observed live: the server started
+    #    cleanly, answered `initialize`, then the connection was severed
+    #    mid-request on the first `recall` -- the call that synchronously
+    #    loads the embedding model, exactly the shape upstream documents at
+    #    config.py:911 ("a write spawned a full torch model load ...
+    #    pressure"). Same MiniLM weights, same 384 dims as the default, so NO
+    #    reindex is needed. The model id is kept MULTILINGUAL on purpose:
+    #    fastembed's own default (all-MiniLM-L6-v2) is ENGLISH-ONLY and would
+    #    silently degrade Persian recall -- upstream measured 8/10 vs 10/10
+    #    top-1 on non-Latin queries with that default and ships a doctor
+    #    check for exactly this mistake (src/pmb/health/multilingual_check.py).
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        rm -f "$PMB_HOME/servers.json"
+        pmb config set embedding.backend fastembed
+        pmb config set embedding.fastembed_model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+        exec pmb-mcp
     environment:
       - PMB_HOME=/data
       - HF_HOME=/hf-cache
@@ -34,19 +62,13 @@ services:
       - PMB_MCP_HOST=0.0.0.0
       - PMB_MCP_PORT=8765
       - PMB_MCP_PATH=/mcp
-      - PMB_MCP_BEARER_TOKEN=${PMB_MCP_BEARER_TOKEN}
+      - 'PMB_MCP_BEARER_TOKEN=${PMB_MCP_BEARER_TOKEN}'
     expose:
       - "8765"
     volumes:
       - pmb_data:/data
       - pmb_hf_cache:/hf-cache
     restart: unless-stopped
-    # Explicit Traefik labels: for a dockercompose-buildpack app, Coolify's
-    # `docker_compose_domains` field does not reliably translate into a live
-    # route the way `domains` does for dockerfile/nixpacks apps -- the
-    # container ran healthy but Traefik had no router for it (503 "no
-    # available server"). Labels on the compose service are the standard,
-    # dependable way to get routing here.
     labels:
       - traefik.enable=true
       - traefik.http.routers.pmb-mcp-http.entrypoints=http
