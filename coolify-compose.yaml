@@ -70,18 +70,16 @@ services:
         # work on a fresh workspace" -- bge-m3's 1024 follows the same path).
         # `pmb reindex` regenerates vectors from existing event content
         # non-destructively, so any prior writes survive. Marker-gated so
-        # restarts don't redo it.
+        # restarts don't redo it. Now safe to run: lancedb-compat (Dockerfile)
+        # no longer SIGILLs on import, so reindex can actually open the vector
+        # table. bge-m3 is 1024-dim vs the old MiniLM 384-dim table -- reindex
+        # drops and regenerates vectors so the dimensions line up (otherwise
+        # new writes can't be added to a 384-dim table and recall's vector
+        # signal stays 0.0).
         if [ ! -f "$$PMB_HOME/.reindexed-ollama" ]; then
           pmb reindex && touch "$$PMB_HOME/.reindexed-ollama"
         fi
-        # DIAGNOSTIC (temporary, keep until lancedb-compat fix is verified
-        # end-to-end): capture pmb-mcp output to /tmp/pmb-recall.log, then fall
-        # back to a plain http.server on the SAME port so the log is readable
-        # via https://pmb.palebluedot.live/pmb-recall.log if the process dies.
-        # No `set -e`. Once recall is verified live, revert to `exec pmb-mcp`.
-        pmb-mcp > /tmp/pmb-recall.log 2>&1
-        echo "PMB_MCP_EXIT_CODE=$?" >> /tmp/pmb-recall.log
-        exec python3 -m http.server 8765 --directory /tmp
+        exec pmb-mcp
     environment:
       - PMB_HOME=/data
       - HF_HOME=/hf-cache
