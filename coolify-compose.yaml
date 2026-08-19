@@ -45,12 +45,20 @@ services:
     #    silently degrade Persian recall -- upstream measured 8/10 vs 10/10
     #    top-1 on non-Latin queries with that default and ships a doctor
     #    check for exactly this mistake (src/pmb/health/multilingual_check.py).
+    # NOTE: $$ (not $) below is deliberate. Docker Compose interpolates any
+    # $VAR in a command string against the BUILD HOST's environment before
+    # the container ever sees it -- confirmed live: a bare $PMB_HOME here
+    # produced a build-time warning ("PMB_HOME variable is not set,
+    # defaulting to blank"), silently turning the rm into `rm -f
+    # "/servers.json"` (wrong path, quiet no-op) instead of the intended
+    # $PMB_HOME/servers.json inside the container. $$ escapes it to a literal
+    # $ that survives into the container's own shell.
     command:
       - sh
       - -c
       - |
         set -e
-        rm -f "$PMB_HOME/servers.json"
+        rm -f "$$PMB_HOME/servers.json"
         pmb config set embedding.backend fastembed
         pmb config set embedding.fastembed_model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
         exec pmb-mcp
