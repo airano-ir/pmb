@@ -10,85 +10,71 @@
 # neither the start command nor `-v` named-volume binds -- the container ran bare
 # `bash`, exited instantly, and crash-looped. The compose build pack uses this
 # file verbatim, so both the command and the volumes survive every redeploy.
-
+#
+# Embedding backend is Ollama (embedding.backend=ollama), NOT torch or
+# fastembed/ONNX. Root cause, confirmed via a captured crash log: this VPS's
+# CPU is Intel Ivy Bridge with AVX but no AVX2/FMA. Both sentence-transformers
+# (torch) and fastembed (ONNX Runtime) are compiled assuming AVX2 and crash
+# with "Illegal instruction (core dumped)" / SIGILL / exit 132 the instant the
+# embedding model runs -- not an OOM, not a config issue, a hardware ISA
+# mismatch no software config on PMB's side can fix. Ollama runs on llama.cpp,
+# which does runtime CPU feature detection (cpuid) instead of hard-requiring
+# AVX2, so it works on this CPU. See airano-ir/ollama-deploy for that service
+# (internal-network alias `ollama`, port 11434, no public domain -- reached
+# over the shared `coolify` Docker network, same pattern as this app's own
+# internal reachability).
 services:
   pmb-mcp:
     build:
       context: .
       dockerfile: docker/Dockerfile
-      args:
-        # Installs the `fastembed` extra (ONNX runtime) -- see the command
-        # block below for why we embed via fastembed and not torch.
-        PIP_EXTRAS: fastembed
-    # Three things happen before the server starts, all idempotent:
+    # Clear the stale singleton registry before every start. PMB's own guard
+    # (src/pmb/mcp/registry.py) writes $PMB_HOME/servers.json keyed by PID to
+    # stop a second server binding the same port. PMB_HOME is the PERSISTENT
+    # volume, but every container restart gets a fresh PID namespace starting
+    # at 1 -- so the main process is always PID 1, the liveness check
+    # (os.kill(1, 0)) against the OLD container's leftover entry always
+    # succeeds, and pmb-mcp refuses to start ("already running... pid 1"),
+    # exits 0, and restart:unless-stopped loops forever. A fresh container
+    # boot has no legitimately-running prior process, so this is always safe.
     #
-    # 1. Clear the stale singleton registry. PMB's own guard
-    #    (src/pmb/mcp/registry.py) writes $PMB_HOME/servers.json keyed by PID
-    #    to stop a second server binding the same port. PMB_HOME is the
-    #    PERSISTENT volume, but every container restart gets a fresh PID
-    #    namespace starting at 1 -- so the main process is always PID 1, the
-    #    liveness check (os.kill(1, 0)) against the OLD container's leftover
-    #    entry always succeeds, and pmb-mcp refuses to start ("already
-    #    running... pid 1"), exits 0, and restart:unless-stopped loops
-    #    forever. A fresh container boot has no legitimately-running prior
-    #    process.
+    # $$ (not $) is deliberate: Docker Compose interpolates any $VAR in a
+    # command string against the BUILD HOST's environment before the
+    # container ever sees it. A bare $PMB_HOME here silently became
+    # `rm -f "/servers.json"` (wrong path, quiet no-op) -- confirmed via a
+    # build-time warning ("PMB_HOME variable is not set, defaulting to
+    # blank"). $$ escapes it to a literal $ that survives into the
+    # container's own shell, where PMB_HOME correctly expands from the
+    # environment: block below.
     #
-    # 2. Pin the embedding runtime to fastembed (ONNX) instead of
-    #    sentence-transformers (torch). Observed live: the server started
-    #    cleanly, answered `initialize`, then the connection was severed
-    #    mid-request on the first `recall` -- the call that synchronously
-    #    loads the embedding model, exactly the shape upstream documents at
-    #    config.py:911 ("a write spawned a full torch model load ...
-    #    pressure"). Same MiniLM weights, same 384 dims as the default, so NO
-    #    reindex is needed. The model id is kept MULTILINGUAL on purpose:
-    #    fastembed's own default (all-MiniLM-L6-v2) is ENGLISH-ONLY and would
-    #    silently degrade Persian recall -- upstream measured 8/10 vs 10/10
-    #    top-1 on non-Latin queries with that default and ships a doctor
-    #    check for exactly this mistake (src/pmb/health/multilingual_check.py).
-    # NOTE: $$ (not $) below is deliberate. Docker Compose interpolates any
-    # $VAR in a command string against the BUILD HOST's environment before
-    # the container ever sees it -- confirmed live: a bare $PMB_HOME here
-    # produced a build-time warning ("PMB_HOME variable is not set,
-    # defaulting to blank"), silently turning the rm into `rm -f
-    # "/servers.json"` (wrong path, quiet no-op) instead of the intended
-    # $PMB_HOME/servers.json inside the container. $$ escapes it to a literal
-    # $ that survives into the container's own shell.
-    # DIAGNOSTIC WRAPPER (temporary): recall() still kills the process with a
-    # raw connection reset (curl: "error code: 520", no JSON-RPC error body)
-    # even with fastembed instead of torch. TWO bugs found in this wrapper
-    # itself while investigating:
-    #   (a) `pmb config set KEY VAL` writes to the per-WORKSPACE config by
-    #       default (workspace = detected from cwd), not global. The MCP
-    #       server resolves its OWN workspace independently
-    #       (detect_workspace() in build_server), which may not match the cwd
-    #       this shell command ran in -- so the fastembed override may never
-    #       have reached the running server at all. Fixed: `--global`.
-    #   (b) this script had `set -e` at the top, so when pmb-mcp crashed
-    #       (any non-zero exit) the WHOLE script aborted immediately --
-    #       it never reached the EXIT_CODE echo or the fallback
-    #       `python3 -m http.server`, so the crash log was never served and
-    #       every "diagnostic" deploy just looked like a plain crash loop
-    #       again. Fixed: removed `set -e`.
-    # Also worth noting: build_server() in mcp/server.py starts a
-    # daemon=True background thread ("pmb-prewarm") on EVERY server boot
-    # that itself calls engine.search.embed(...) and
-    # engine.search._table.search(...) (LanceDB) -- the same code path
-    # recall() uses. So the crash may not need a client recall() call at
-    # all; it could be firing from prewarm shortly after boot regardless.
-    # If that thread hits a segfault (not a catchable Python exception),
-    # this crash-log tee is the only way to see it, since SIGSEGV bypasses
-    # Python's try/except entirely. Revert to a plain `exec pmb-mcp` once
-    # the actual cause is found and fixed.
+    # `pmb config set --global` (not the bare form, which defaults to
+    # per-WORKSPACE config keyed by cwd -- the running MCP server resolves
+    # its OWN workspace independently and would never see a workspace-scoped
+    # override written from this shell's cwd).
     command:
       - sh
       - -c
       - |
         rm -f "$$PMB_HOME/servers.json"
-        pmb config set --global embedding.backend fastembed
-        pmb config set --global embedding.fastembed_model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-        pmb-mcp > /tmp/pmb-crash.log 2>&1
-        echo "EXIT_CODE=$$?" >> /tmp/pmb-crash.log
-        exec python3 -m http.server 8765 --directory /tmp
+        pmb config set --global embedding.backend ollama
+        pmb config set --global embedding.ollama_model bge-m3
+        pmb config set --global embedding.ollama_url http://ollama:11434
+        # bge-m3, not nomic-embed-text: the user's usage is Persian-heavy, and
+        # bge-m3 is explicitly multilingual (nomic-embed-text is English-
+        # oriented) -- same class of mistake PMB's own
+        # health/multilingual_check.py exists to catch for the
+        # sentence-transformers backend, just one layer up at model choice.
+        # 1024-dim vs MiniLM's 384-dim; the engine detects dimension from the
+        # live model rather than assuming EMBED_DIM (see search.py's table
+        # creation comment: "This lets ollama (768) / openai (1536) backends
+        # work on a fresh workspace" -- bge-m3's 1024 follows the same path).
+        # `pmb reindex` regenerates vectors from existing event content
+        # non-destructively, so any prior writes survive. Marker-gated so
+        # restarts don't redo it.
+        if [ ! -f "$$PMB_HOME/.reindexed-ollama" ]; then
+          pmb reindex && touch "$$PMB_HOME/.reindexed-ollama"
+        fi
+        exec pmb-mcp
     environment:
       - PMB_HOME=/data
       - HF_HOME=/hf-cache
@@ -104,6 +90,12 @@ services:
       - pmb_data:/data
       - pmb_hf_cache:/hf-cache
     restart: unless-stopped
+    # Explicit `coolify` network membership: needed to resolve `ollama` by
+    # DNS alias over the shared network Ollama also joins. Coolify still
+    # auto-attaches its own per-resource UUID network for Traefik regardless
+    # of what's listed here (confirmed from prior renders of this compose).
+    networks:
+      - coolify
     labels:
       - traefik.enable=true
       - traefik.http.routers.pmb-mcp-http.entrypoints=http
@@ -124,9 +116,12 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-      # First boot downloads the sentence-transformers embedding model.
-      start_period: 300s
+      start_period: 60s
 
 volumes:
   pmb_data:
   pmb_hf_cache:
+
+networks:
+  coolify:
+    external: true
