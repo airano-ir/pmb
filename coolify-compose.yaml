@@ -55,24 +55,37 @@ services:
     # $ that survives into the container's own shell.
     # DIAGNOSTIC WRAPPER (temporary): recall() still kills the process with a
     # raw connection reset (curl: "error code: 520", no JSON-RPC error body)
-    # even with fastembed instead of torch -- ruling out the torch-load theory
-    # entirely. A silent connection reset (not a clean exception) suggests a
-    # native crash (segfault) rather than a Python-level OOM/exception, most
-    # likely in lancedb's pyarrow native extension, which recall() also
-    # touches and which the fastembed swap never addressed. Coolify's log API
-    # returns 400 for a crash-looping app, so: run pmb-mcp in the background,
-    # tee its output to a file, and if it dies, fall back to serving that file
-    # over the same port so `curl https://pmb.palebluedot.live/pmb-crash.log`
-    # can read the real traceback. Revert to a plain `exec pmb-mcp` once the
-    # actual cause is found.
+    # even with fastembed instead of torch. TWO bugs found in this wrapper
+    # itself while investigating:
+    #   (a) `pmb config set KEY VAL` writes to the per-WORKSPACE config by
+    #       default (workspace = detected from cwd), not global. The MCP
+    #       server resolves its OWN workspace independently
+    #       (detect_workspace() in build_server), which may not match the cwd
+    #       this shell command ran in -- so the fastembed override may never
+    #       have reached the running server at all. Fixed: `--global`.
+    #   (b) this script had `set -e` at the top, so when pmb-mcp crashed
+    #       (any non-zero exit) the WHOLE script aborted immediately --
+    #       it never reached the EXIT_CODE echo or the fallback
+    #       `python3 -m http.server`, so the crash log was never served and
+    #       every "diagnostic" deploy just looked like a plain crash loop
+    #       again. Fixed: removed `set -e`.
+    # Also worth noting: build_server() in mcp/server.py starts a
+    # daemon=True background thread ("pmb-prewarm") on EVERY server boot
+    # that itself calls engine.search.embed(...) and
+    # engine.search._table.search(...) (LanceDB) -- the same code path
+    # recall() uses. So the crash may not need a client recall() call at
+    # all; it could be firing from prewarm shortly after boot regardless.
+    # If that thread hits a segfault (not a catchable Python exception),
+    # this crash-log tee is the only way to see it, since SIGSEGV bypasses
+    # Python's try/except entirely. Revert to a plain `exec pmb-mcp` once
+    # the actual cause is found and fixed.
     command:
       - sh
       - -c
       - |
-        set -e
         rm -f "$$PMB_HOME/servers.json"
-        pmb config set embedding.backend fastembed
-        pmb config set embedding.fastembed_model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+        pmb config set --global embedding.backend fastembed
+        pmb config set --global embedding.fastembed_model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
         pmb-mcp > /tmp/pmb-crash.log 2>&1
         echo "EXIT_CODE=$$?" >> /tmp/pmb-crash.log
         exec python3 -m http.server 8765 --directory /tmp
