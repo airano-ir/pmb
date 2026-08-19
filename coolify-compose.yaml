@@ -95,12 +95,26 @@ services:
       - pmb_data:/data
       - pmb_hf_cache:/hf-cache
     restart: unless-stopped
-    # Explicit `coolify` network membership: needed to resolve `ollama` by
-    # DNS alias over the shared network Ollama also joins. Coolify still
-    # auto-attaches its own per-resource UUID network for Traefik regardless
-    # of what's listed here (confirmed from prior renders of this compose).
+    # Two shared networks, each for a specific internal reachability need:
+    # - `coolify`: to resolve `ollama` by DNS alias (the embedding backend
+    #   service airano-ir/ollama-deploy joins `coolify`). Coolify still
+    #   auto-attaches its own per-resource UUID network for Traefik regardless
+    #   of what's listed here (confirmed from prior renders of this compose).
+    # - `hermes-shared`: so code-server and hermes-agent can reach `pmb-mcp`
+    #   by DNS alias for the INTERNAL MCP path
+    #   (http://pmb-mcp:8765/mcp) without a Cloudflare round-trip. Both
+    #   clients already join `hermes-shared` (code-server for the Hermes
+    #   bridge, hermes-agent for Chromium CDP) -- confirmed by inspecting each
+    #   service's rendered compose. Neither is on `coolify`, so joining
+    #   `hermes-shared` here (rather than `coolify` there) is the lower blast-
+    #   radius move: only THIS service redeploys, code-server and Hermes stay
+    #   up. Adding PMB to a network both clients already share is enough --
+    #   a compose service's name registers as a DNS alias on every network it
+    #   joins, so `pmb-mcp` becomes resolvable from any container on
+    #   `hermes-shared` the moment this redeploy finishes.
     networks:
       - coolify
+      - hermes-shared
     labels:
       - traefik.enable=true
       # Two HTTPS routers, split by priority so the MCP API path stays
@@ -156,4 +170,6 @@ volumes:
 
 networks:
   coolify:
+    external: true
+  hermes-shared:
     external: true
