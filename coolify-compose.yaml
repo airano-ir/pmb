@@ -74,7 +74,17 @@ services:
         if [ ! -f "$$PMB_HOME/.reindexed-ollama" ]; then
           pmb reindex && touch "$$PMB_HOME/.reindexed-ollama"
         fi
-        exec pmb-mcp
+        # DIAGNOSTIC WRAPPER (temporary): capture all pmb-mcp output to a log
+        # file, then fall back to a plain http.server on the SAME port so the
+        # log is readable via curl https://pmb.palebluedot.live/pmb-recall.log
+        # once the process has died. No `set -e` -- that aborted the whole
+        # script before the fallback could start in a prior session. When
+        # pmb-mcp exits (a 520/520 reset means the process DIED), the http
+        # server takes over port 8765, healthcheck passes, and the container
+        # stops crash-looping so we can read the traceback at leisure.
+        pmb-mcp > /tmp/pmb-recall.log 2>&1
+        echo "PMB_MCP_EXIT_CODE=$?" >> /tmp/pmb-recall.log
+        exec python3 -m http.server 8765 --directory /tmp
     environment:
       - PMB_HOME=/data
       - HF_HOME=/hf-cache
