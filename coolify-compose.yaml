@@ -134,9 +134,12 @@ services:
       - traefik.http.routers.pmb-mcp-dashboard.tls=true
       - traefik.http.routers.pmb-mcp-dashboard.tls.certresolver=letsencrypt
       - traefik.http.routers.pmb-mcp-dashboard.service=pmb-mcp
-      # Basic auth users (htpasswd apr1 format; $$ escapes $ for Compose).
-      # Creds in /config/.claude/state/pmb-basic-auth.
-      - traefik.http.middlewares.pmb-mcp-basicauth.basicauth.users=pmb-admin:$$apr1$$ELdMkFBv$$hzW/4EZJeoVAw5Is9p3DP/
+      # Basic auth users. Using htpasswd {SHA} scheme (base64) -- NOT apr1/bcrypt,
+      # because those embed `$` chars and Coolify's `is_container_label_escape`
+      # double-escapes `$$` into `$$$$` in the rendered label, corrupting the
+      # hash. {SHA} has no `$`, so no escaping ambiguity. Creds in
+      # /config/.claude/state/pmb-basic-auth.
+      - traefik.http.middlewares.pmb-mcp-basicauth.basicauth.users=pmb-admin:{SHA}58Uub2B0j4p5cvA46MpmKlGO2NI=
       - traefik.http.services.pmb-mcp.loadbalancer.server.port=8765
     healthcheck:
       # The /mcp endpoint is bearer-gated, so probe the listening socket instead
