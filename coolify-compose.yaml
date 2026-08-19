@@ -53,6 +53,18 @@ services:
     # "/servers.json"` (wrong path, quiet no-op) instead of the intended
     # $PMB_HOME/servers.json inside the container. $$ escapes it to a literal
     # $ that survives into the container's own shell.
+    # DIAGNOSTIC WRAPPER (temporary): recall() still kills the process with a
+    # raw connection reset (curl: "error code: 520", no JSON-RPC error body)
+    # even with fastembed instead of torch -- ruling out the torch-load theory
+    # entirely. A silent connection reset (not a clean exception) suggests a
+    # native crash (segfault) rather than a Python-level OOM/exception, most
+    # likely in lancedb's pyarrow native extension, which recall() also
+    # touches and which the fastembed swap never addressed. Coolify's log API
+    # returns 400 for a crash-looping app, so: run pmb-mcp in the background,
+    # tee its output to a file, and if it dies, fall back to serving that file
+    # over the same port so `curl https://pmb.palebluedot.live/pmb-crash.log`
+    # can read the real traceback. Revert to a plain `exec pmb-mcp` once the
+    # actual cause is found.
     command:
       - sh
       - -c
@@ -61,7 +73,9 @@ services:
         rm -f "$$PMB_HOME/servers.json"
         pmb config set embedding.backend fastembed
         pmb config set embedding.fastembed_model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-        exec pmb-mcp
+        pmb-mcp > /tmp/pmb-crash.log 2>&1
+        echo "EXIT_CODE=$$?" >> /tmp/pmb-crash.log
+        exec python3 -m http.server 8765 --directory /tmp
     environment:
       - PMB_HOME=/data
       - HF_HOME=/hf-cache
