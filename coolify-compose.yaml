@@ -103,16 +103,40 @@ services:
       - coolify
     labels:
       - traefik.enable=true
+      # Two HTTPS routers, split by priority so the MCP API path stays
+      # reachable with a Bearer token (PMB's own auth) while EVERYTHING ELSE
+      # (/, /healthz, /internal/health, any future dashboard) sits behind
+      # Traefik basic auth. PMB's daemon exempts /, /healthz, /internal/health
+      # from its bearer check (for healthchecks) -- so without basic auth
+      # those would be an unauthenticated information surface. basic-auth
+      # closes it; the /mcp router bypasses basic-auth so MCP clients that
+      # send `Authorization: Bearer <token>` aren't rejected by Traefik's
+      # basic-auth check before PMB ever sees the request.
+      #
+      # Router priority: higher wins. /mcp gets 100, catch-all gets 10.
       - traefik.http.routers.pmb-mcp-http.entrypoints=http
       - traefik.http.routers.pmb-mcp-http.rule=Host(`pmb.palebluedot.live`)
       - traefik.http.routers.pmb-mcp-http.middlewares=pmb-mcp-redirect-to-https
       - traefik.http.routers.pmb-mcp-http.service=pmb-mcp
       - traefik.http.middlewares.pmb-mcp-redirect-to-https.redirectscheme.scheme=https
-      - traefik.http.routers.pmb-mcp-https.entrypoints=https
-      - traefik.http.routers.pmb-mcp-https.rule=Host(`pmb.palebluedot.live`)
-      - traefik.http.routers.pmb-mcp-https.tls=true
-      - traefik.http.routers.pmb-mcp-https.tls.certresolver=letsencrypt
-      - traefik.http.routers.pmb-mcp-https.service=pmb-mcp
+      # /mcp API -- NO basic auth, bearer-gated by PMB. High priority.
+      - traefik.http.routers.pmb-mcp-api.entrypoints=https
+      - traefik.http.routers.pmb-mcp-api.rule=Host(`pmb.palebluedot.live`) && PathPrefix(`/mcp`)
+      - traefik.http.routers.pmb-mcp-api.priority=100
+      - traefik.http.routers.pmb-mcp-api.tls=true
+      - traefik.http.routers.pmb-mcp-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.pmb-mcp-api.service=pmb-mcp
+      # Everything else -- basic auth required. Lower priority catch-all.
+      - traefik.http.routers.pmb-mcp-dashboard.entrypoints=https
+      - traefik.http.routers.pmb-mcp-dashboard.rule=Host(`pmb.palebluedot.live`)
+      - traefik.http.routers.pmb-mcp-dashboard.priority=10
+      - traefik.http.routers.pmb-mcp-dashboard.middlewares=pmb-mcp-basicauth
+      - traefik.http.routers.pmb-mcp-dashboard.tls=true
+      - traefik.http.routers.pmb-mcp-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.pmb-mcp-dashboard.service=pmb-mcp
+      # Basic auth users (htpasswd apr1 format; $$ escapes $ for Compose).
+      # Creds in /config/.claude/state/pmb-basic-auth.
+      - traefik.http.middlewares.pmb-mcp-basicauth.basicauth.users=pmb-admin:$$apr1$$ELdMkFBv$$hzW/4EZJeoVAw5Is9p3DP/
       - traefik.http.services.pmb-mcp.loadbalancer.server.port=8765
     healthcheck:
       # The /mcp endpoint is bearer-gated, so probe the listening socket instead
