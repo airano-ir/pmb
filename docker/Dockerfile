@@ -62,7 +62,20 @@ RUN pip install --upgrade pip \
 # the x86-64-v2 baseline with runtime SIMD dispatch -- same `import lancedb`
 # namespace, same API, just no hard AVX2 requirement. Must uninstall lancedb
 # first because both ship the `lancedb/` namespace and conflict at install.
-RUN pip uninstall -y lancedb && pip install lancedb-compat
+RUN pip uninstall -y lancedb && pip install lancedb-compat \
+    # lancedb-compat ships the `lancedb` namespace and API, but registers its
+    # package metadata under the name `lancedb-compat`.  lancedb's own
+    # __init__.py calls `importlib.metadata.version("lancedb")`, which raises
+    # PackageNotFoundError because no dist-info named "lancedb" exists.
+    # Create a minimal metadata shim so importlib.metadata finds it.
+    && python3 -c "import importlib.metadata,pathlib,site;\
+v=importlib.metadata.version('lancedb-compat');\
+d=pathlib.Path(site.getsitepackages()[0])/f'lancedb-{v}.dist-info';\
+d.mkdir(exist_ok=True);\
+(d/'METADATA').write_text(f'Metadata-Version: 2.1\nName: lancedb\nVersion: {v}\n');\
+(d/'INSTALLER').write_text('pip\n');\
+(d/'RECORD').write_text(f'{d.name}/METADATA,,\n{d.name}/INSTALLER,,\n{d.name}/RECORD,,\n');\
+print(f'lancedb metadata shim v{v} ok')"
 
 USER pmb
 
