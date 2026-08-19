@@ -1435,6 +1435,28 @@ class RecallMixin:
         # pin un-archives and reweights the event, so recall results change.
         self.recall_cache.bump_generation()
 
+    def unpin(self, ulid: str, importance: float = 0.5):
+        """Undo a pin: drop the forced importance back to a normal weight.
+
+        Pinning is not a flag -- `events.pin()` just sets importance to 1.0
+        (and clears archived_at), so unpinning is the inverse reweight rather
+        than a separate column to unset. The dashboard's POST /api/unpin/<ulid>
+        called this method, but it never existed on Engine, so every unpin
+        returned {"error": "'Engine' object has no attribute 'unpin'"} while
+        the UI showed the click as successful -- a pin could be applied from
+        the web UI but never removed.
+
+        Default 0.5 is the midpoint weight: it does not pretend to restore the
+        event's original pre-pin importance (that value is overwritten by
+        pin() and not recorded anywhere), it just returns the event to
+        ordinary, non-privileged ranking. Unlike pin(), this deliberately does
+        NOT touch archived_at -- un-pinning should not resurrect an event the
+        user separately archived.
+        """
+        self.events.update_importance(ulid, importance)
+        # importance feeds ranking, so cached recalls are now stale.
+        self.recall_cache.bump_generation()
+
     def forget(self, ulid: str):
         self.events.archive(ulid)
         # The recall cache is keyed by a write generation; archiving must
