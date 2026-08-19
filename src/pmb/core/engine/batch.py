@@ -30,6 +30,24 @@ def _outbox_shutdown() -> None:
 _atexit.register(_outbox_shutdown)
 
 
+def _meta_with_project(item: dict) -> dict:
+    """Merge item['project'] into item['metadata'] as project/project_name.
+
+    Was previously inlined only in the lesson/failure branch of
+    record_batch, so fact/fact_tree/goal/preference silently dropped a
+    top-level `project` key instead of scoping the record - recall(project=X)
+    would then miss it while a lesson recorded in the same batch worked.
+    Centralized here so every record_* branch that accepts metadata scopes
+    the same way.
+    """
+    meta = dict(item.get("metadata") or {})
+    project = str(item.get("project") or "").strip()
+    if project:
+        meta.setdefault("project", project)
+        meta.setdefault("project_name", project)
+    return meta
+
+
 class BatchMixin:
     def record_batch_bulk(self, items: list[dict]) -> dict:
         """Improvement #5: bulk-import mode for migrations / large imports.
@@ -480,13 +498,9 @@ class BatchMixin:
                         # high-importance facts tagged with kind so recall,
                         # `pmb lessons`, and the audit can treat them specially.
                         content_in = item.get("content") or item.get(t) or ""
-                        meta = dict(item.get("metadata") or {})
+                        meta = _meta_with_project(item)
                         meta.setdefault("source", "lesson")
                         meta["kind"] = t
-                        project = str(item.get("project") or "").strip()
-                        if project:
-                            meta.setdefault("project", project)
-                            meta.setdefault("project_name", project)
                         ulid = self.record_fact(
                             content_in,
                             importance=float(item.get("importance", 0.85)),
@@ -504,7 +518,7 @@ class BatchMixin:
                         ulid = self.record_fact(
                             content_in,
                             importance=float(item.get("importance", 0.7)),
-                            metadata=item.get("metadata"),
+                            metadata=_meta_with_project(item),
                         )
                         # capture BEFORE atomic extraction resets the flag
                         _fact_deduped = getattr(self, "_last_write_deduped", False)
@@ -545,7 +559,7 @@ class BatchMixin:
                             main=item.get("main") or item.get("content") or "",
                             subfacts=item.get("subfacts") or [],
                             importance=float(item.get("importance", 0.7)),
-                            metadata=item.get("metadata"),
+                            metadata=_meta_with_project(item),
                         )
                         if pin_after and res.get("main_ulid"):
                             try:
@@ -561,7 +575,7 @@ class BatchMixin:
                         # "remember, next we'll do X". Tagged kind=plan so it's
                         # still a goal (surfaced by prepare / open-goals) but
                         # distinguishable.
-                        goal_meta = dict(item.get("metadata") or {})
+                        goal_meta = _meta_with_project(item)
                         if t == "plan":
                             goal_meta.setdefault("kind", "plan")
                         ulid = self.record_goal(
@@ -584,6 +598,7 @@ class BatchMixin:
                             summary=item.get("content") or item.get("summary") or "",
                             actor=item.get("actor", "agent"),
                             kind=item.get("kind", "action"),
+                            details=_meta_with_project(item) or None,
                             importance=float(item.get("importance", 0.4)),
                         )
                         _act_deduped = getattr(self, "_last_write_deduped", False)
@@ -604,6 +619,7 @@ class BatchMixin:
                             state=item.get("state"),
                             triggered_by_ulid=item.get("triggered_by_ulid"),
                             importance=float(item.get("importance", 0.6)),
+                            metadata=_meta_with_project(item) or None,
                         )
                         if pin_after:
                             try:
@@ -616,7 +632,7 @@ class BatchMixin:
                         ulid = self.record_preference(
                             preference=item.get("content") or item.get("preference") or "",
                             importance=float(item.get("importance", 0.7)),
-                            metadata=item.get("metadata"),
+                            metadata=_meta_with_project(item),
                         )
                         if pin_after:
                             try:

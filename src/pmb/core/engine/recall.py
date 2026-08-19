@@ -55,10 +55,11 @@ def _result_in_project(r, project_lc: str) -> bool:
     substring against project_name / project / project_path metadata, OR the
     project name appears in the event content).
 
-    The content fallback matters because record_batch drops custom metadata on
-    type='activity' items, so an agent-recorded decision ("PMB demo decision:
-    ...") carries no project tag and would otherwise be invisible to a
-    project-scoped recall even though it is clearly about that project."""
+    The content fallback still matters as a safety net: it catches records
+    written before record_batch propagated top-level `project` to every
+    branch's metadata (fixed for fact/fact_tree/goal/preference/activity/
+    milestone in the airano-ir/pmb fork - previously only lesson/failure
+    carried it through), and any future record path that forgets to."""
     meta = r.metadata if isinstance(r.metadata, dict) else {}
     for k in ("project_name", "project"):
         v = meta.get(k)

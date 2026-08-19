@@ -343,6 +343,7 @@ class GoalsMixin:
         state: dict | None = None,
         triggered_by_ulid: str | None = None,
         importance: float = 0.6,
+        metadata: dict | None = None,
     ) -> str:
         """Record a milestone in a named state-chain.
 
@@ -356,6 +357,11 @@ class GoalsMixin:
               state={"count": 11, "added": "activity"},
               triggered_by_ulid=<event ulid for the implementation>,
           )
+
+        `metadata` (e.g. {"project": "..."}) is merged in alongside the
+        chain bookkeeping fields below - lets a milestone carry the same
+        project scoping as fact/activity records instead of being locked
+        out of project-filtered recall().
 
         Later: `chain_history("architecture_layers")` returns the full
         sequence: 6 → 7 → ... → 11, with reasons.
@@ -377,7 +383,8 @@ class GoalsMixin:
             if row:
                 prev_ulid = row[0]
 
-        meta: dict = {"chain_name": chain_name}
+        meta: dict = dict(metadata or {})
+        meta["chain_name"] = chain_name
         if prev_ulid:
             meta["previous_milestone_ulid"] = prev_ulid
         if triggered_by_ulid:
