@@ -141,6 +141,10 @@ services:
       - traefik.http.routers.pmb-mcp-api.tls.certresolver=letsencrypt
       - traefik.http.routers.pmb-mcp-api.service=pmb-mcp
       # Everything else -- basic auth required. Lower priority catch-all.
+      # NOTE: the UI lives on the SEPARATE pmb-dashboard service below, which
+      # claims /ui, /api and /static at priority 50 (above this catch-all,
+      # below /mcp). This router is the fallback for everything neither
+      # claims: /, /healthz, /internal/health.
       - traefik.http.routers.pmb-mcp-dashboard.entrypoints=https
       - traefik.http.routers.pmb-mcp-dashboard.rule=Host(`pmb.palebluedot.live`)
       - traefik.http.routers.pmb-mcp-dashboard.priority=10
@@ -159,6 +163,88 @@ services:
       # The /mcp endpoint is bearer-gated, so probe the listening socket instead
       # of an HTTP status. python3 is in the image; curl/wget need not be.
       test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8765), 5).close()"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ------------------------------------------------------------------------
+  # Web UI (`pmb dashboard`) -- the SECOND half of upstream PMB.
+  #
+  # Upstream ships two separate long-running commands over the same store:
+  # `pmb-mcp` (the machine-facing MCP server, the service above) and
+  # `pmb dashboard` (the human-facing web UI -- memory graph, git-style
+  # timeline, recall debugger, per-event inspector). They are distinct
+  # processes and BOTH default to port 8765, so they cannot be one container;
+  # this service runs the UI on 8766 instead.
+  #
+  # Shares `pmb_data` with pmb-mcp on purpose: one memory store, two faces.
+  # The UI shows exactly what the agents write over MCP, live. SQLite in WAL
+  # mode handles the two writers; dashboard write traffic is human-paced
+  # (occasional pin/archive clicks), so contention is negligible.
+  #
+  # Pure stdlib (http.server) -- no extra deps, no torch. It builds from the
+  # same image as pmb-mcp, so the lancedb-compat fix (docker/Dockerfile)
+  # applies here too; without it, opening the UI's graph/recall views would
+  # SIGILL exactly like recall() did.
+  pmb-dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    # --host 0.0.0.0 so Traefik (a different container) can reach it -- the
+    # CLI default is 127.0.0.1, which would only ever accept connections from
+    # inside this container. Public exposure is fine here BECAUSE the Traefik
+    # router below forces basic auth; the dashboard itself has NO auth of its
+    # own (upstream assumes localhost-only), so that middleware is the ONLY
+    # thing standing in front of a full read+write memory UI. Never route it
+    # without pmb-mcp-basicauth attached.
+    #
+    # --port 8766, not 8765: avoids colliding with pmb-mcp when both are up.
+    command:
+      - sh
+      - -c
+      - |
+        exec pmb dashboard --host 0.0.0.0 --port 8766
+    environment:
+      - PMB_HOME=/data
+      - HF_HOME=/hf-cache
+      - SENTENCE_TRANSFORMERS_HOME=/hf-cache
+    expose:
+      - "8766"
+    volumes:
+      - pmb_data:/data
+      - pmb_hf_cache:/hf-cache
+    restart: unless-stopped
+    networks:
+      - coolify
+      - hermes-shared
+    labels:
+      - traefik.enable=true
+      # Priority 50: above the pmb-mcp catch-all (10), below /mcp (100).
+      #
+      # The rule claims THREE prefixes, not just /ui, because the dashboard's
+      # HTML calls absolute paths -- its JS helper is
+      # `async function api(p,o){return (await fetch(p,o||{})).json();}`
+      # invoked as `api('/api/stats')`. So /api must reach this service or
+      # every panel in the UI breaks. /static is the same story for assets.
+      # (Upstream assumes it owns the whole origin at localhost:8765; we're
+      # sharing an origin with the MCP server, hence the explicit carve-out.)
+      - traefik.http.routers.pmb-dashboard.entrypoints=https
+      - traefik.http.routers.pmb-dashboard.rule=Host(`pmb.palebluedot.live`) && (PathPrefix(`/ui`) || PathPrefix(`/api`) || PathPrefix(`/static`))
+      - traefik.http.routers.pmb-dashboard.priority=50
+      - traefik.http.routers.pmb-dashboard.tls=true
+      - traefik.http.routers.pmb-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.pmb-dashboard.service=pmb-dashboard
+      # StripPrefix /ui ONLY. The dashboard serves its HTML at `/`, so a
+      # request for /ui must arrive as / -- but /api and /static must pass
+      # through UNTOUCHED (they're already the paths the server expects).
+      # Traefik's stripprefix only strips a prefix that actually matches, so
+      # listing just /ui leaves the other two alone.
+      - traefik.http.routers.pmb-dashboard.middlewares=pmb-ui-strip,pmb-mcp-basicauth
+      - traefik.http.middlewares.pmb-ui-strip.stripprefix.prefixes=/ui
+      - traefik.http.services.pmb-dashboard.loadbalancer.server.port=8766
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8766), 5).close()"]
       interval: 15s
       timeout: 10s
       retries: 5
