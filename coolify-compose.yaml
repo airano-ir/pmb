@@ -76,8 +76,12 @@ services:
         # drops and regenerates vectors so the dimensions line up (otherwise
         # new writes can't be added to a 384-dim table and recall's vector
         # signal stays 0.0).
+        # Reindex with a 120s timeout so MCP isn't blocked forever.
+        # If reindex didn't finish, it can be triggered later via /api/run.
+        # Without timeout, a stuck reindex (e.g. ollama unreachable) blocks
+        # pmb-mcp startup indefinitely, leaving the whole service down.
         if [ ! -f "$$PMB_HOME/.reindexed-ollama" ]; then
-          pmb reindex && touch "$$PMB_HOME/.reindexed-ollama"
+          timeout 120 pmb reindex && touch "$$PMB_HOME/.reindexed-ollama" || echo "WARNING: reindex timed out or failed, MCP will start without vector index"
         fi
         exec pmb-mcp
     environment:
