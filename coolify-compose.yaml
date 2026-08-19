@@ -80,9 +80,9 @@ services:
         # isolated: a SIGILL in one doesn't stop the next. Results land in the
         # same log the fallback http.server serves at /pmb-recall.log.
         for mod in numpy pyarrow torch sentence_transformers lancedb fastembed; do
-          echo "=== IMPORT PROBE: $mod ===" >> /tmp/pmb-recall.log
-          python3 -c "import $mod" >> /tmp/pmb-recall.log 2>&1
-          echo "PROBE $mod exit=$?" >> /tmp/pmb-recall.log
+          echo "=== IMPORT PROBE: $$mod ===" >> /tmp/pmb-recall.log
+          python3 -c "import $$mod" >> /tmp/pmb-recall.log 2>&1
+          echo "PROBE $$mod exit=$$?" >> /tmp/pmb-recall.log
         done
         echo "=== STARTING pmb-mcp ===" >> /tmp/pmb-recall.log
         pmb-mcp >> /tmp/pmb-recall.log 2>&1
