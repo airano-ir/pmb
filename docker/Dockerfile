@@ -55,6 +55,14 @@ RUN pip install --upgrade pip \
        else \
          pip install -e "."; \
        fi
+# Replace the default lancedb wheel with lancedb-compat. The default wheel is
+# built at the x86-64-haswell baseline (requires AVX2+FMA+F16C) and crashes
+# with SIGILL ("Illegal instruction", exit 132) on `import lancedb` on this
+# VPS's Intel Ivy Bridge CPU (AVX only, no AVX2). lancedb-compat is built at
+# the x86-64-v2 baseline with runtime SIMD dispatch -- same `import lancedb`
+# namespace, same API, just no hard AVX2 requirement. Must uninstall lancedb
+# first because both ship the `lancedb/` namespace and conflict at install.
+RUN pip uninstall -y lancedb && pip install lancedb-compat
 
 USER pmb
 
