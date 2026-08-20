@@ -426,6 +426,9 @@ class BatchMixin:
           {"type": "activity", "content": "...", "kind": "edit", "actor": "agent"}
           {"type": "milestone", "chain_name": "...", "title": "...",
                                  "state": {...}, "triggered_by_ulid": null}
+          {"type": "supersede", "old_ulid": "...", "content": "...",
+                                 "importance": 0.8}  # replaces a stale fact/
+                                 # lesson - see supersede_fact() docstring
 
         Returns: {results: [...], n_ok, n_failed, errors}
         Each result mirrors what the corresponding record_* method returns,
@@ -672,6 +675,28 @@ class BatchMixin:
                                 pass
                             res["pinned"] = True
                         res["type"] = "keyed_fact"
+                        results.append(res)
+                        n_ok += 1
+                    elif t == "supersede":
+                        # Explicit replace-and-archive for a plain fact/lesson
+                        # that has no (subject, attribute) key to auto-match
+                        # on (unlike keyed_fact) - caller names old_ulid.
+                        res = self.supersede_fact(
+                            old_ulid=item.get("old_ulid") or "",
+                            content=item.get("content") or "",
+                            importance=(
+                                float(item["importance"])
+                                if item.get("importance") is not None else None
+                            ),
+                            metadata=_meta_with_project(item) or None,
+                        )
+                        if pin_after and res.get("new_ulid"):
+                            try:
+                                self.pin(res["new_ulid"])
+                            except Exception:
+                                pass
+                            res["pinned"] = True
+                        res["type"] = "supersede"
                         results.append(res)
                         n_ok += 1
                     else:

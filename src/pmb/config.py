@@ -1424,6 +1424,14 @@ SCHEMA: dict[str, _Setting] = {
         "L2.5: enqueue borderline pairs for async LLM verify. Workers "
         "(Ollama or Anthropic) drain the queue via `pmb dedupe --run-pending`.",
     ),
+    "dedup.scan_borderline_periodic": _Setting(
+        bool, True,
+        "Run dedupe_scan_borderline() once per maintenance tick - finds "
+        "EXISTING-vs-existing near-duplicate pairs (e.g. two lessons on the "
+        "same topic written in separate turns) that write-time dedup never "
+        "compares against each other. Suggest-only: enqueues into the same "
+        "dedup_pending queue as write-time L2.5, never auto-merges.",
+    ),
 
     # ------------------------------------------------------------------
     # Improvement AA: fire-and-forget MCP record_batch

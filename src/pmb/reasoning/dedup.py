@@ -303,6 +303,137 @@ def mark_verdict(
 
 
 # ----------------------------------------------------------------------
+# Existing-vs-existing borderline scan (periodic, suggest-only)
+# ----------------------------------------------------------------------
+#
+# The write-time L2/L2.5 path (find_semantic_duplicate) only ever compares a
+# NEW fact against what's already stored - two facts written in separate
+# turns, days apart, that happen to restate the same thing (e.g. two lessons
+# about preferring high-scored SkillHub skills, phrased differently) never
+# get compared against each other at all. sweep_workspace() *does* scan
+# existing-vs-existing, but only at COSINE_HIGH (auto-merge) - anything in
+# the borderline band was silently never looked at again after each fact's
+# own write-time check passed. This fills that gap: same pairwise-cosine
+# scan as sweep_workspace, but for the [MID, HIGH) band, enqueued into the
+# same dedup_pending queue as the write-time L2.5 path (list_pending /
+# run_pending / mark_verdict all already work on rows from either source -
+# they don't care whether a pair was found at write time or by this sweep).
+#
+# Deliberately does NOT call run_pending() or archive anything itself -
+# only enqueues candidates for later human/agent review. Auto-merging two
+# existing memories based on an LLM's unattended verdict is a materially
+# bigger blast radius than auto-merging a fresh duplicate write, so this
+# stays suggest-only by design.
+
+
+def sweep_borderline_pairs(
+    db_path: Path,
+    workspace_id: str,
+    embeddings_provider,
+    threshold_high: float = COSINE_HIGH,
+    threshold_mid: float = COSINE_MID,
+    event_types: Iterable[str] | None = None,
+) -> dict:
+    """Scan all active events for existing-vs-existing pairs in the
+    [threshold_mid, threshold_high) borderline band and enqueue them into
+    dedup_pending for later review (list_pending / mark_verdict) - never
+    auto-merges. Pairs at or above threshold_high are left to
+    sweep_workspace(), which already auto-merges those with a reversible
+    archive.
+
+    `embeddings_provider` has the same shape as sweep_workspace's - callable
+    returning [(ulid, event_type, importance, access_count, timestamp, vec)].
+
+    Returns: {n_scanned, n_candidates_found, n_newly_enqueued, by_type}.
+    """
+    items = embeddings_provider() or []
+    if not items:
+        return {"n_scanned": 0, "n_candidates_found": 0, "n_newly_enqueued": 0, "by_type": {}}
+
+    by_type_groups: dict[str, list] = {}
+    for it in items:
+        ulid, etype, imp, acc, ts, vec = it
+        if event_types is not None and etype not in set(event_types):
+            continue
+        by_type_groups.setdefault(etype, []).append(it)
+
+    by_type: dict[str, int] = {}
+    n_scanned = 0
+    n_candidates_found = 0
+    n_newly_enqueued = 0
+
+    for etype, group in by_type_groups.items():
+        n_scanned += len(group)
+        if len(group) < 2:
+            continue
+        mat = np.stack([g[5] for g in group])
+        norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-9
+        mat_n = mat / norms
+        sim = mat_n @ mat_n.T
+
+        n = len(group)
+        for i in range(n):
+            for j in range(i + 1, n):
+                s = float(sim[i, j])
+                if not (threshold_mid <= s < threshold_high):
+                    continue
+                n_candidates_found += 1
+                ulid_a = group[i][0]
+                ulid_b = group[j][0]
+                if _enqueue_borderline_if_new(db_path, workspace_id, ulid_a, ulid_b, s):
+                    n_newly_enqueued += 1
+                    by_type[etype] = by_type.get(etype, 0) + 1
+
+    return {
+        "n_scanned": n_scanned,
+        "n_candidates_found": n_candidates_found,
+        "n_newly_enqueued": n_newly_enqueued,
+        "by_type": by_type,
+    }
+
+
+def _enqueue_borderline_if_new(
+    db_path: Path,
+    workspace_id: str,
+    new_ulid: str,
+    candidate_ulid: str,
+    similarity: float,
+) -> bool:
+    """Same INSERT OR IGNORE as enqueue_borderline(), but reports whether a
+    row was actually inserted (vs. already present from a prior sweep or the
+    write-time L2.5 path) via cursor.rowcount.
+
+    The UNIQUE constraint is on (workspace_id, new_ulid, candidate_ulid) -
+    DIRECTIONAL, not symmetric. The write-time L2.5 path always enqueues
+    (new write's ulid, older candidate's ulid); this sweep has no such
+    natural direction (it's comparing two already-existing events), so it
+    must check both orderings itself or it can insert a reversed-direction
+    duplicate of a pair the write-time path already queued.
+    """
+    if new_ulid == candidate_ulid:
+        return False
+    _ensure_schema(db_path)
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM dedup_pending WHERE workspace_id = ? "
+            "AND ((new_ulid = ? AND candidate_ulid = ?) "
+            "OR (new_ulid = ? AND candidate_ulid = ?)) LIMIT 1",
+            (workspace_id, new_ulid, candidate_ulid, candidate_ulid, new_ulid),
+        ).fetchone()
+        if row is not None:
+            return False
+        cur = conn.execute(
+            """
+            INSERT OR IGNORE INTO dedup_pending
+              (workspace_id, new_ulid, candidate_ulid, similarity, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (workspace_id, new_ulid, candidate_ulid, similarity, time.time()),
+        )
+        return cur.rowcount > 0
+
+
+# ----------------------------------------------------------------------
 # One-shot cleanup over an existing workspace
 # ----------------------------------------------------------------------
 

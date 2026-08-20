@@ -104,6 +104,21 @@ def run_maintenance_tick(engine: Any, *, archive: bool = True,
         return {"would_archive": int(r.get("n", 0))}
     _step("declutter_dryrun", _declutter_dryrun)
 
+    # 3b. borderline dedup scan - SUGGEST only (enqueues into dedup_pending
+    # for review via dedupe_list_pending; never archives). Catches existing
+    # facts/lessons that restate each other but were written far enough
+    # apart that write-time dedup never compared them.
+    def _dedup_scan_borderline() -> dict:
+        try:
+            if not engine.config.get("dedup.scan_borderline_periodic"):
+                return {"skipped": "dedup.scan_borderline_periodic=off"}
+        except Exception:
+            pass
+        r = engine.dedupe_scan_borderline()
+        return {"candidates_found": int(r.get("n_candidates_found", 0)),
+                "newly_enqueued": int(r.get("n_newly_enqueued", 0))}
+    _step("dedup_scan_borderline", _dedup_scan_borderline)
+
     # 4. ALD (Phase D) - distil the anchor-fire log into $PMB_HOME/lang/auto.yaml
     # so the COLD lexical path learns this machine's languages from its own
     # traffic. Writes only when n-grams clear support/precision; safe + local.

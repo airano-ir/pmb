@@ -315,6 +315,54 @@ def register_all(mcp, engine):
         )
 
     @mcp.tool()
+    def supersede_fact(old_ulid: str, content: str, importance: float | None = None) -> dict:
+        """⭐ Replace a stale fact or lesson with a corrected/updated one.
+
+        Use this when a NEW fact directly CONTRADICTS or UPDATES an OLD one
+        already in memory, and leaving both active would confuse future
+        recall (e.g. "the deploy model was X" is now actually Y - X should
+        stop surfacing as current). This is record_keyed_fact's sibling for
+        facts that have no (subject, attribute) key to auto-match on - so
+        YOU must find and pass the exact old_ulid (via recall/project_overview
+        first) rather than it being inferred automatically.
+
+        What happens:
+          1. The old fact is ARCHIVED (not deleted) with a `superseded_by`
+             pointer and `valid_to` timestamp - it stops surfacing in recall
+             but its content and history are preserved, queryable via SQL.
+          2. The new fact is written with a `supersedes` pointer back to it.
+          3. If the old fact was a lesson (metadata.kind=='lesson'), the new
+             one inherits that tag automatically - a superseded lesson stays
+             a lesson.
+
+        WRONG tool when:
+          • The two facts are both true and independently useful (e.g. two
+            different decisions on unrelated topics) - just record_fact the
+            new one, don't supersede.
+          • You're not sure the old fact is actually about to become wrong -
+            when in doubt, record_fact the new one and let a human/dedup
+            pass decide later rather than destructively archiving.
+          • The fact has a natural (subject, attribute) key (a person's city,
+            a single current employer) - use record_keyed_fact instead, it
+            auto-finds priors so you don't need to know the old ULID.
+
+        Args:
+            old_ulid: ULID of the fact/lesson being replaced. Must be an
+                active (non-archived) fact - raises if not found, already
+                archived, or not a 'fact' event_type.
+            content: the new, corrected content.
+            importance: defaults to the OLD fact's importance if omitted.
+
+        Returns:
+            {new_ulid, superseded_ulid, kind}
+        """
+        return engine.supersede_fact(
+            old_ulid=old_ulid,
+            content=content,
+            importance=importance,
+        )
+
+    @mcp.tool()
     def index_pdf(path: str, force: bool = False, importance: float = 0.6) -> dict:
         """📄 Extract text from a PDF and persist it as searchable memory.
 
@@ -563,6 +611,31 @@ def register_all(mcp, engine):
         return {"n_restored": engine.dedupe_undo()}
 
     @mcp.tool()
+    def dedupe_scan_borderline(threshold_mid: float = 0.80, threshold_high: float = 0.92,
+                                types: list[str] | None = None) -> dict:
+        """Scan ALL active facts/lessons for pairs that restate each other
+        but were written far enough apart (different turns/sessions) that
+        write-time dedup never compared them directly - e.g. two lessons
+        about the same rule, phrased differently.
+
+        SUGGEST-ONLY: enqueues candidate pairs into the same review queue
+        write-time dedup uses. Never merges or archives anything itself.
+        Runs automatically once per maintenance tick (dedup.scan_borderline_
+        periodic, default on) - call this manually for an on-demand pass
+        instead of waiting for the next tick.
+
+        After running, review candidates with dedupe_list_pending() and
+        resolve each by hand: either supersede_fact() to replace the
+        weaker one, or dedupe_run_pending() if you're comfortable letting
+        an LLM judge same/different and auto-archive on 'merge'.
+        """
+        return engine.dedupe_scan_borderline(
+            threshold_mid=threshold_mid,
+            threshold_high=threshold_high,
+            event_types=types,
+        )
+
+    @mcp.tool()
     def record_batch(items: list[dict]) -> dict:
         """⚡ PREFERRED for ANY message with multiple facts. Stores N atomic
         facts / goals / activities / milestones / fact_trees in a SINGLE call.
@@ -594,6 +667,15 @@ def register_all(mcp, engine):
                                  "title": "11 layers (added activity)",
                                  "state": {"count": 11},
                                  "triggered_by_ulid": null}
+          {"type": "supersede",  "old_ulid": "<ulid of the stale fact>",
+                                  "content": "the corrected/updated fact",
+                                  "importance": 0.8}
+                                 # Use when a NEW fact directly contradicts an
+                                 # OLD one already in memory (found via recall/
+                                 # project_overview first) - archives the old
+                                 # one with a superseded_by pointer instead of
+                                 # leaving both active. See supersede_fact's
+                                 # own docstring for the full contract.
 
         Example: user says "Fixed a bug today, ship v1 by June, tomorrow a
         meeting with Max from Grammarly, peanut allergy flared up":

@@ -272,6 +272,40 @@ class DedupMixin:
             )
         return out
 
+    def dedupe_scan_borderline(
+        self,
+        threshold_high: float | None = None,
+        threshold_mid: float | None = None,
+        event_types: list[str] | None = None,
+    ) -> dict:
+        """Periodic existing-vs-existing scan for near-duplicate facts/lessons
+        that write-time dedup never compared against each other (e.g. two
+        lessons on the same topic, phrased differently, written days apart).
+
+        Unlike dedupe_sweep() (which auto-merges at threshold_high),
+        this ONLY enqueues candidates into the same dedup_pending queue the
+        write-time L2.5 path uses - review via dedupe_list_pending(), resolve
+        by hand (supersede_fact / mark_verdict) or via dedupe_run_pending()
+        if LLM-judged auto-merge is acceptable for your use case. Never
+        archives anything itself.
+        """
+        from pmb.reasoning.dedup import sweep_borderline_pairs
+
+        hi = float(threshold_high if threshold_high is not None else self.config.get("dedup.cosine_high"))
+        mid = float(threshold_mid if threshold_mid is not None else self.config.get("dedup.cosine_mid"))
+
+        def provider():
+            return self._collect_embeddings_for_sweep()
+
+        return sweep_borderline_pairs(
+            db_path=self.workspace.db_path,
+            workspace_id=self.workspace.id,
+            embeddings_provider=provider,
+            threshold_high=hi,
+            threshold_mid=mid,
+            event_types=event_types,
+        )
+
     def dedupe_undo(self) -> int:
         """Restore events archived by dedup (metadata.merged_into is set).
         Returns count of restored events.

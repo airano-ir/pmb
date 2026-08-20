@@ -707,6 +707,117 @@ class WriteMixin:
                 pass
         return archived
 
+    def supersede_fact(
+        self,
+        old_ulid: str,
+        content: str,
+        importance: float | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        """Replace a plain fact/lesson with a corrected/updated one, the same
+        archive-and-point-forward pattern record_keyed_fact uses for
+        (subject, attribute) triples - but for arbitrary facts that have no
+        such key, so the caller must name the exact ULID being replaced
+        instead of relying on automatic key matching.
+
+        Use this when a NEW fact directly contradicts or updates an OLD one
+        already in memory (e.g. a stale note about a model/config/decision
+        that current state has since changed) and both being surfaced by
+        recall would confuse rather than help. Doesn't apply to independent
+        facts that merely relate to the same topic - only to genuine
+        replacement.
+
+        old_ulid: the ULID of the fact/lesson being superseded. Must be an
+            active (non-archived) 'fact' event - raises ValueError otherwise
+            (also if old_ulid does not exist), so a typo'd or already-archived
+            ULID fails loudly rather than silently no-op'ing.
+        content: the new, corrected content.
+        importance: defaults to the OLD fact's importance if omitted, so a
+            correction doesn't accidentally downgrade a pinned/high-value fact.
+        metadata: merged into the new event's metadata; kind/source are
+            preserved from the old fact by default (so a superseded LESSON
+            stays tagged as a lesson) unless overridden here.
+
+        Returns:
+            {new_ulid, superseded_ulid, kind}
+        """
+        import json as _json
+        import sqlite3 as _sql
+
+        with _sql.connect(str(self.workspace.db_path)) as conn:
+            conn.row_factory = _sql.Row
+            row = conn.execute(
+                "SELECT ulid, event_type, metadata_json, importance "
+                "FROM events WHERE workspace_id = ? AND ulid = ? "
+                "AND archived_at IS NULL",
+                (self.workspace.id, old_ulid),
+            ).fetchone()
+        if row is None:
+            raise ValueError(
+                f"old_ulid {old_ulid!r} not found or already archived/superseded"
+            )
+        if row["event_type"] != "fact":
+            raise ValueError(
+                f"old_ulid {old_ulid!r} is event_type={row['event_type']!r}, "
+                "not 'fact' - supersede_fact only replaces facts/lessons "
+                "(lessons are stored as event_type='fact' with metadata.kind="
+                "'lesson')"
+            )
+        try:
+            old_meta = _json.loads(row["metadata_json"] or "{}") or {}
+        except Exception:
+            old_meta = {}
+        if not isinstance(old_meta, dict):
+            old_meta = {}
+
+        new_meta = dict(old_meta)
+        # Drop pointers that describe the OLD event's own history - the new
+        # event starts a fresh chain, not a continuation of the old one's.
+        new_meta.pop("supersedes", None)
+        new_meta.pop("superseded_by", None)
+        new_meta.pop("valid_to", None)
+        new_meta["valid_from"] = time.time()
+        new_meta["supersedes"] = [old_ulid]
+        if metadata:
+            new_meta.update(metadata)
+
+        if importance is None:
+            importance = float(row["importance"] or 0.7)
+
+        new_ulid = self.record_fact(content, importance=importance, metadata=new_meta)
+        if new_ulid == old_ulid:
+            # record_fact's own write-time dedup can return an EXISTING ulid
+            # instead of writing a new event - if content collides with
+            # old_ulid itself (near-identical restatement), there is nothing
+            # to supersede. Leave old_ulid untouched rather than archiving
+            # the very event we just "wrote".
+            return {"new_ulid": new_ulid, "superseded_ulid": None, "kind": old_meta.get("kind")}
+
+        # record_fact's write-time dedup may also have deduped against some
+        # OTHER pre-existing fact (not old_ulid) - new_ulid is then that
+        # unrelated event's ulid, not a fresh write, so the metadata.supersedes
+        # pointer stamped into new_meta above (on an event we never actually
+        # wrote) is misleading but harmless dead metadata on someone else's
+        # fact. The archive+pointer below is still correct either way: the
+        # correction is real regardless of whether its content was fresh or
+        # already existed elsewhere in memory.
+        result = {"new_ulid": new_ulid, "superseded_ulid": old_ulid, "kind": old_meta.get("kind")}
+        if getattr(self, "_last_write_deduped", False):
+            result["merged_into_existing"] = True
+
+        now_ts = time.time()
+        old_meta["superseded_by"] = new_ulid
+        old_meta["valid_to"] = now_ts
+        self.events.archive(old_ulid)
+        with _sql.connect(str(self.workspace.db_path)) as conn:
+            conn.execute(
+                "UPDATE events SET metadata_json = ? WHERE ulid = ?",
+                (_json.dumps(old_meta), old_ulid),
+            )
+
+        self.recall_cache.bump_generation()
+        return result
+
     def archive_negations_for_current_keys(self, dry_run: bool = True) -> dict:
         """Repair pass (#5): for every attribute that currently has a positive
         keyed value, archive older active negation/"unknown" facts about that
