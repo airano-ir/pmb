@@ -645,7 +645,7 @@ class BatchMixin:
                         ulid = self.record_summary(
                             summary=item.get("content") or item.get("summary") or "",
                             importance=float(item.get("importance", 0.5)),
-                            metadata=item.get("metadata"),
+                            metadata=_meta_with_project(item),
                         )
                         if pin_after:
                             try:
@@ -663,7 +663,7 @@ class BatchMixin:
                             attribute=item.get("attribute") or "",
                             value=item.get("value") or item.get("content") or "",
                             importance=float(item.get("importance", 0.8)),
-                            metadata=item.get("metadata"),
+                            metadata=_meta_with_project(item),
                         )
                         if pin_after and res.get("new_ulid"):
                             try:
