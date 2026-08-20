@@ -93,6 +93,13 @@ services:
       - PMB_MCP_PORT=8765
       - PMB_MCP_PATH=/mcp
       - 'PMB_MCP_BEARER_TOKEN=${PMB_MCP_BEARER_TOKEN}'
+      # Not previously wired to any Coolify env var, so _toolspec.py's
+      # os.environ.get() always fell through to its "minimal" default (10
+      # tools) with no way to change it short of editing this file. The
+      # ${...:-minimal} form keeps that same default when the Coolify env
+      # var is unset, while making "default"/"lean"/"full" a pure Coolify
+      # env-var change (no redeploy of code) going forward.
+      - 'PMB_TOOL_PROFILE=${PMB_TOOL_PROFILE:-minimal}'
     expose:
       - "8765"
     volumes:
