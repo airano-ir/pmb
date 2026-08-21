@@ -166,6 +166,10 @@ def openai_chat_completion(
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": temperature,
+        # Explicit non-streaming: some OpenAI-compatible gateways append an
+        # SSE `data: [DONE]` trailer after the JSON body when `stream` is
+        # omitted, which breaks the json.loads() below.
+        "stream": False,
     }
     if response_format:
         payload["response_format"] = response_format
@@ -176,6 +180,10 @@ def openai_chat_completion(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # Some gateways (Cloudflare-fronted) block urllib's default
+            # "Python-urllib/x.y" UA as a bot signature (Cloudflare error
+            # 1010). Identify honestly instead of spoofing another client.
+            "User-Agent": "pmb-ai (+https://github.com/airano-ir/pmb)",
         },
         method="POST",
     )
