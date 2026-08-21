@@ -1,0 +1,135 @@
+# Coolify deployment compose for pmb2.palebluedot.live -- a SECOND, fully
+# independent PMB memory store (own SQLite+LanceDB volume, own domain, own
+# bearer token/basic-auth creds), built from the exact same image/Dockerfile
+# as coolify-compose.yaml (pmb.palebluedot.live). Every stacked bug fixed for
+# that deploy (CMD/build-pack, OOM, Traefik routing, PID-1 singleton reuse,
+# lancedb SIGILL, reindex timeout) lives in docker/Dockerfile or in the
+# recipe below, so this file inherits all of them for free -- see
+# coolify-compose.yaml for the full "why" on each. Only inline notes below
+# are things that are genuinely DIFFERENT or newly load-bearing for this
+# second instance.
+#
+# Shares the self-hosted Ollama backend (airano-ir/ollama-deploy, `coolify`
+# network) with the pmb-mcp instance -- Ollama only serves embeddings, it
+# holds none of PMB's memory content, so reusing it doesn't compromise
+# isolation between the two memory stores.
+services:
+  pmb2-mcp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command:
+      - sh
+      - -c
+      - |
+        rm -f "$$PMB_HOME/servers.json"
+        pmb config set --global embedding.backend ollama
+        pmb config set --global embedding.ollama_model bge-m3
+        pmb config set --global embedding.ollama_url http://ollama:11434
+        if [ ! -f "$$PMB_HOME/.reindexed-ollama" ]; then
+          timeout 120 pmb reindex && touch "$$PMB_HOME/.reindexed-ollama" || echo "WARNING: reindex timed out or failed, MCP will start without vector index"
+        fi
+        exec pmb-mcp
+    environment:
+      - PMB_HOME=/data
+      - HF_HOME=/hf-cache
+      - SENTENCE_TRANSFORMERS_HOME=/hf-cache
+      - PMB_MCP_TRANSPORT=streamable-http
+      - PMB_MCP_HOST=0.0.0.0
+      - PMB_MCP_PORT=8765
+      - PMB_MCP_PATH=/mcp
+      - 'PMB_MCP_BEARER_TOKEN=${PMB_MCP_BEARER_TOKEN}'
+      - 'PMB_TOOL_PROFILE=${PMB_TOOL_PROFILE:-minimal}'
+    expose:
+      - "8765"
+    volumes:
+      - pmb2_data:/data
+      - pmb2_hf_cache:/hf-cache
+    restart: unless-stopped
+    networks:
+      - coolify
+      - hermes-shared
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.pmb2-mcp-http.entrypoints=http
+      - traefik.http.routers.pmb2-mcp-http.rule=Host(`pmb2.palebluedot.live`)
+      - traefik.http.routers.pmb2-mcp-http.middlewares=pmb2-mcp-redirect-to-https
+      - traefik.http.routers.pmb2-mcp-http.service=pmb2-mcp
+      - traefik.http.middlewares.pmb2-mcp-redirect-to-https.redirectscheme.scheme=https
+      # /mcp API -- NO basic auth, bearer-gated by PMB itself. High priority.
+      - traefik.http.routers.pmb2-mcp-api.entrypoints=https
+      - traefik.http.routers.pmb2-mcp-api.rule=Host(`pmb2.palebluedot.live`) && PathPrefix(`/mcp`)
+      - traefik.http.routers.pmb2-mcp-api.priority=100
+      - traefik.http.routers.pmb2-mcp-api.tls=true
+      - traefik.http.routers.pmb2-mcp-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.pmb2-mcp-api.service=pmb2-mcp
+      # Everything else -- basic auth. Lower priority catch-all (the
+      # pmb2-dashboard service below claims /ui,/api,/static at priority 50).
+      - traefik.http.routers.pmb2-mcp-dashboard.entrypoints=https
+      - traefik.http.routers.pmb2-mcp-dashboard.rule=Host(`pmb2.palebluedot.live`)
+      - traefik.http.routers.pmb2-mcp-dashboard.priority=10
+      - traefik.http.routers.pmb2-mcp-dashboard.middlewares=pmb2-mcp-basicauth
+      - traefik.http.routers.pmb2-mcp-dashboard.tls=true
+      - traefik.http.routers.pmb2-mcp-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.pmb2-mcp-dashboard.service=pmb2-mcp
+      # {SHA} scheme only -- apr1/bcrypt embed `$` and Coolify's label
+      # escaping double-escapes it, corrupting the hash. Password in
+      # /config/.claude/state/pmb2-basic-auth (user pmb2-admin).
+      - traefik.http.middlewares.pmb2-mcp-basicauth.basicauth.users=pmb2-admin:{SHA}WZQcG4kk2iuL/lpWo2q1/oYJjjU=
+      - traefik.http.services.pmb2-mcp.loadbalancer.server.port=8765
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8765), 5).close()"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  pmb2-dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command:
+      - sh
+      - -c
+      - |
+        exec pmb dashboard --host 0.0.0.0 --port 8766
+    environment:
+      - PMB_HOME=/data
+      - HF_HOME=/hf-cache
+      - SENTENCE_TRANSFORMERS_HOME=/hf-cache
+    expose:
+      - "8766"
+    volumes:
+      - pmb2_data:/data
+      - pmb2_hf_cache:/hf-cache
+    restart: unless-stopped
+    networks:
+      - coolify
+      - hermes-shared
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.pmb2-dashboard.entrypoints=https
+      - traefik.http.routers.pmb2-dashboard.rule=Host(`pmb2.palebluedot.live`) && (PathPrefix(`/ui`) || PathPrefix(`/api`) || PathPrefix(`/static`))
+      - traefik.http.routers.pmb2-dashboard.priority=50
+      - traefik.http.routers.pmb2-dashboard.tls=true
+      - traefik.http.routers.pmb2-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.pmb2-dashboard.service=pmb2-dashboard
+      - traefik.http.routers.pmb2-dashboard.middlewares=pmb2-ui-strip,pmb2-mcp-basicauth
+      - traefik.http.middlewares.pmb2-ui-strip.stripprefix.prefixes=/ui
+      - traefik.http.services.pmb2-dashboard.loadbalancer.server.port=8766
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8766), 5).close()"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  pmb2_data:
+  pmb2_hf_cache:
+
+networks:
+  coolify:
+    external: true
+  hermes-shared:
+    external: true
