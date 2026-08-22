@@ -26,6 +26,9 @@ services:
         pmb config set --global embedding.backend ollama
         pmb config set --global embedding.ollama_model bge-m3
         pmb config set --global embedding.ollama_url http://ollama:11434
+        # Session-end auto-distill + `pmb arcs cluster` -- see coolify-compose.yaml
+        # (the pmb-mcp instance) for the full "why gemma4:e4b not qwen3.5:9b" note.
+        pmb config set --global lessons.auto_distill_on_session_end true
         if [ ! -f "$$PMB_HOME/.reindexed-ollama" ]; then
           timeout 120 pmb reindex && touch "$$PMB_HOME/.reindexed-ollama" || echo "WARNING: reindex timed out or failed, MCP will start without vector index"
         fi
@@ -40,6 +43,8 @@ services:
       - PMB_MCP_PATH=/mcp
       - 'PMB_MCP_BEARER_TOKEN=${PMB_MCP_BEARER_TOKEN}'
       - 'PMB_TOOL_PROFILE=${PMB_TOOL_PROFILE:-minimal}'
+      - PMB_OLLAMA_URL=http://ollama:11434
+      - PMB_OLLAMA_MODEL=gemma4:e4b
     expose:
       - "8765"
     volumes:

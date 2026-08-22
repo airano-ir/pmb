@@ -59,6 +59,20 @@ services:
         pmb config set --global embedding.backend ollama
         pmb config set --global embedding.ollama_model bge-m3
         pmb config set --global embedding.ollama_url http://ollama:11434
+        # Session-end auto-distill (owner-verified 2026-08-22): resolve_llm_client's
+        # "auto" chain falls through to Ollama when no Claude CLI / API key is
+        # present in this container, but OllamaClient.ping() defaults to
+        # localhost:11434 (this container itself, not the ollama service) and
+        # its DEFAULT_OLLAMA_MODEL (llama3.1:8b) is never pulled -- so without
+        # the two env vars below this silently no-ops every time. Model is
+        # gemma4:e4b, NOT qwen3.5:9b: OllamaClient never sends think:false, and
+        # qwen3.5:9b defaults to "thinking" mode at ~4.4s/token, timing out
+        # (60s default) before producing any output on every single call.
+        # gemma4:e4b answered correctly well under that timeout in a live test.
+        # These same env vars (PMB_OLLAMA_URL/PMB_OLLAMA_MODEL) also back
+        # `pmb arcs cluster` (reasoning/reasoning.py:cluster_events_into_arcs,
+        # backend="auto" default) -- one config change covers both.
+        pmb config set --global lessons.auto_distill_on_session_end true
         # bge-m3, not nomic-embed-text: the user's usage is Persian-heavy, and
         # bge-m3 is explicitly multilingual (nomic-embed-text is English-
         # oriented) -- same class of mistake PMB's own
@@ -93,6 +107,9 @@ services:
       - PMB_MCP_PORT=8765
       - PMB_MCP_PATH=/mcp
       - 'PMB_MCP_BEARER_TOKEN=${PMB_MCP_BEARER_TOKEN}'
+      # Backs lessons.auto_distill_on_session_end + pmb arcs cluster (see command block).
+      - PMB_OLLAMA_URL=http://ollama:11434
+      - PMB_OLLAMA_MODEL=gemma4:e4b
       # Not previously wired to any Coolify env var, so _toolspec.py's
       # os.environ.get() always fell through to its "minimal" default (10
       # tools) with no way to change it short of editing this file. The
